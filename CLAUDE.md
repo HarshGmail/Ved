@@ -6,14 +6,14 @@ task needs long-term context, it is long.
 
 ## Status
 
-**Phase 1 — backend + Postgres running.** The PWA renders
-`backend ok — v0.1.0 · db ok` from a live round trip. Compose stack verified
-working (pgvector 0.8.6), async SQLAlchemy pool, Alembic wired to settings.
+**Phase 1 — first MCP server working.** PWA → connector → backend → Postgres is
+live, and `mcp-servers/reminders/` serves `reminders.create/list/complete` over
+stdio against the same database (verified with a real MCP client).
 
-No application tables yet (`migrations/versions/` is empty), no MCP servers, no
-auth, no LLM, no streaming.
+Not yet: MCP client in the backend, LLM, auth, streaming.
 
-Next up: the first MCP server (`reminders`). Remaining steps: `docs/pilot.md`.
+Next up: wire the MCP client + an LLM into the backend to close the master
+plan's first milestone — *"Ved, remind me at 8 PM to call Mom."*
 
 ## Layout
 
@@ -26,7 +26,8 @@ apps/backend/      FastAPI, uv-managed, Python 3.13
   migrations/      Alembic (URL comes from settings, not alembic.ini)
   Dockerfile       uv-based image (needs BuildKit)
 infra/             compose.yaml (pgvector + backend), db/init/
-mcp-servers/       Empty; one server per capability later
+mcp-servers/
+  reminders/       MCP server (SDK v2), stdio, own uv project
 docs/              master-plan.md, README.md, pilot.md
 ```
 
@@ -40,7 +41,12 @@ memory needs no migration.
 - **No backend calls outside `src/connector/`.** It must stay free of React and
   Next imports so it can be lifted into a shared package for a future native
   wrapper. Rationale in `docs/pilot.md`.
-- MCP tools are named `<domain>.<verb>` (`reminders.create`).
+- MCP tools are named `<domain>.<verb>` (`reminders.create`). MCP SDK is **v2** —
+  `MCPServer`, not `FastMCP`; `Context` must come from `mcp.server.mcpserver.context`
+  (bare, unsubscripted) or it leaks into the tool schema; lifespan state is at
+  `ctx.request_context.lifespan_context`. Return Pydantic models, not `dict`, or
+  there is no output schema. Raise `ToolError` for bad input — other exceptions
+  are redacted to a generic message the model cannot act on.
 - The LLM never gets unrestricted system access; sensitive actions go through a
   permission layer.
 - Don't build ahead of the current phase.
@@ -55,6 +61,9 @@ cd infra && docker compose logs -f db
 cd apps/backend && uv run pytest
 cd apps/backend && uv run ruff check .
 cd apps/backend && uv run alembic upgrade head
+
+cd mcp-servers/reminders && uv run ved-mcp-reminders
+cd mcp-servers/reminders && uv run pytest   # needs VED_TEST_DATABASE_URL
 
 cd apps/web-client && npm run dev      # :3000
 cd apps/web-client && npm run build    # includes the TS check

@@ -74,8 +74,8 @@ unset and sends no header, and `openStream` is unused.
 - [x] Add `infra/` with a Docker Compose file for the backend and PostgreSQL.
 - [x] Wire the backend to PostgreSQL — connection pool, Alembic migrations, and
       a `/health` that reports database connectivity.
-- [ ] Build the first MCP server (`mcp-servers/reminders/`) with
-      `reminders.create` and `reminders.list`.
+- [x] Build the first MCP server (`mcp-servers/reminders/`) with
+      `reminders.create`, `reminders.list` and `reminders.complete`.
 - [ ] Add the MCP client and LLM call to the backend, then close the loop from
       the master plan's first milestone: *"Ved, remind me at 8 PM to call Mom."*
 
