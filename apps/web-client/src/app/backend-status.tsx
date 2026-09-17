@@ -29,12 +29,17 @@ export function BackendStatus() {
     return () => controller.abort();
   }, []);
 
+  const indicator =
+    probe.state === "reachable" && probe.health.status !== "ok"
+      ? "degraded"
+      : probe.state;
+
   return (
-    <p className={styles.status} data-state={probe.state}>
+    <p className={styles.status} data-state={indicator}>
       <span className={styles.dot} aria-hidden="true" />
       {probe.state === "checking" && "checking backend…"}
       {probe.state === "reachable" &&
-        `backend ${probe.health.status} — v${probe.health.version}`}
+        `backend ${probe.health.status} — v${probe.health.version} · db ${probe.health.database}`}
       {probe.state === "unreachable" && `backend unreachable — ${probe.reason}`}
     </p>
   );

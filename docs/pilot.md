@@ -71,8 +71,8 @@ unset and sends no header, and `openStream` is unused.
       endpoint.
 - [x] Wire the connector's existing `health()` call to it and surface the result
       on the placeholder page — the first real end-to-end round trip.
-- [ ] Add `infra/` with a Docker Compose file for the backend and PostgreSQL.
-- [ ] Wire the backend to PostgreSQL — connection pool, Alembic migrations, and
+- [x] Add `infra/` with a Docker Compose file for the backend and PostgreSQL.
+- [x] Wire the backend to PostgreSQL — connection pool, Alembic migrations, and
       a `/health` that reports database connectivity.
 - [ ] Build the first MCP server (`mcp-servers/reminders/`) with
       `reminders.create` and `reminders.list`.

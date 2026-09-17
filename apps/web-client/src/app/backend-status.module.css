@@ -24,6 +24,10 @@
   background: #3fb950;
 }
 
+.status[data-state="degraded"] .dot {
+  background: #d29922;
+}
+
 .status[data-state="unreachable"] .dot {
   background: #f85149;
 }

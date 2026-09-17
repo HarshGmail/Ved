@@ -26,7 +26,11 @@ activation needed, `uv run` handles it.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/health` | Liveness probe — `{"status": "ok", "version": "0.1.0"}` |
+| GET | `/health` | Liveness probe, including live database connectivity |
+
+`/health` returns `status: "degraded"` and `database: "down"` when Postgres is
+unreachable, rather than failing the request — the caller can tell the
+difference between "backend is gone" and "backend is up but impaired".
 
 ## Layout
 
@@ -34,20 +38,43 @@ activation needed, `uv run` handles it.
 src/ved_backend/
   main.py      FastAPI app, middleware, routes
   config.py    Settings via VED_-prefixed env vars
+  database.py  Async engine, session factory, declarative Base
+  models.py    SQLAlchemy models (empty; imported by Alembic autogenerate)
   schemas.py   Pydantic response models
+migrations/    Alembic — env.py reads the URL from settings
 tests/
 ```
+
+## Database
+
+Async SQLAlchemy over psycopg 3, against PostgreSQL with pgvector. Start it with
+the Compose stack in `infra/`.
+
+```bash
+uv run alembic revision --autogenerate -m "describe the change"
+uv run alembic upgrade head
+uv run alembic downgrade -1
+```
+
+Alembic takes its URL from `VED_DATABASE_URL` via `migrations/env.py`, not from
+`alembic.ini`, so migrations and the app can never target different databases.
+New models must be imported in `models.py` or autogenerate will not see them and
+will silently generate an empty migration.
 
 ## Configuration
 
 Settings read `VED_`-prefixed env vars, or a local `.env`. See `.env.example`.
-`VED_CORS_ALLOW_ORIGINS` defaults to `["http://localhost:3000"]` — the web
-client's dev origin.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `VED_DATABASE_URL` | `postgresql+psycopg://ved:ved@localhost:5432/ved` | Database connection |
+| `VED_CORS_ALLOW_ORIGINS` | `["http://localhost:3000"]` | JSON list of allowed origins |
+| `VED_DATABASE_POOL_SIZE` | `5` | Connection pool size |
 
 ## Current state
 
-Phase 1, first slice. `/health` exists so the web client's connector has a real
-endpoint to reach; it verifies the request path end to end, nothing more.
+Phase 1. `/health` and a working database connection — no application tables, no
+auth, no LLM, no MCP client yet.
 
-No database, no auth, no LLM, no MCP client yet. When routes grow past a handful,
-split them out of `main.py` into an `api/` package with routers.
+When routes grow past a handful, split them out of `main.py` into an `api/`
+package with routers.

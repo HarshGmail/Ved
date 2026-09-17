@@ -1,4 +1,7 @@
+export type ServiceState = "ok" | "degraded" | "down";
+
 export interface HealthStatus {
-  status: "ok" | "degraded" | "down";
+  status: ServiceState;
   version: string;
+  database: ServiceState;
 }

@@ -14,9 +14,9 @@ complete phase breakdown.
 
 ## Where we are
 
-**Phase 1 — first round trip working.** The PWA calls the backend through the
-connector and renders its health status. That is the whole feature set: there is
-no database, no MCP server, no auth, and no LLM yet.
+**Phase 1 — backend and database running.** The PWA calls the backend through
+the connector and renders its health, including live database connectivity. No
+application tables, no MCP server, no auth, and no LLM yet.
 
 See [pilot.md](pilot.md) for what this slice covers and what comes next.
 
@@ -73,10 +73,18 @@ cd apps/backend && uv run ruff check .
 
 ### Running via Docker
 
-`infra/` has a Compose stack for PostgreSQL plus the backend — see
-[../infra/README.md](../infra/README.md). It is written but **not yet verified**,
-since no container runtime is installed on the dev Mac. Until then, run the two
-apps directly as above; a database is not needed yet.
+`infra/` has a working Compose stack for PostgreSQL (pgvector) plus the backend:
+
+```bash
+cd infra
+cp .env.example .env   # set POSTGRES_PASSWORD
+docker compose up -d --build
+```
+
+The dev Mac uses Colima rather than Docker Desktop — setup steps and the
+corporate-proxy TLS workaround are in [../infra/README.md](../infra/README.md).
+
+Run the web client with `npm run dev` either way; it is not containerized.
 
 ### Testing PWA installability
 

@@ -2,10 +2,40 @@
 
 Docker Compose for running Ved's services together: PostgreSQL and the backend.
 
-> **Not yet verified by running.** These files were written on a machine without
-> a container runtime installed. The YAML and Dockerfile are reviewed but the
-> stack has never been brought up — expect to fix something on the first
-> `docker compose up`. Remove this note once it runs.
+Verified working on the dev Mac with Colima.
+
+## Prerequisites on macOS
+
+No Docker Desktop required. Colima provides the runtime:
+
+```bash
+brew install colima docker docker-compose docker-buildx
+mkdir -p ~/.docker/cli-plugins
+ln -sfn /opt/homebrew/opt/docker-compose/bin/docker-compose ~/.docker/cli-plugins/docker-compose
+ln -sfn /opt/homebrew/lib/docker/cli-plugins/docker-buildx ~/.docker/cli-plugins/docker-buildx
+colima start --cpu 2 --memory 4
+```
+
+Homebrew does not link the Compose and Buildx plugins into Docker's plugin
+directory itself, hence the symlinks. Buildx is required — the backend image
+uses BuildKit cache mounts, which the legacy builder cannot parse.
+
+`colima stop` when finished; `colima start` again later. The VM persists.
+
+### Behind a TLS-intercepting proxy
+
+On a corporate network that re-signs TLS, image pulls fail inside the VM with
+`x509: certificate signed by unknown authority` even though the host works
+fine — the VM has its own trust store. Export the CA from the host keychain and
+install it in the VM:
+
+```bash
+security find-certificate -a -p /Library/Keychains/System.keychain > /tmp/host-cas.pem
+# extract the corporate CA chain from that file into /tmp/corp-ca.crt, then:
+cat /tmp/corp-ca.crt | colima ssh -- sudo tee /usr/local/share/ca-certificates/corp.crt
+colima ssh -- sudo update-ca-certificates
+colima ssh -- sudo systemctl restart docker
+```
 
 ## First run
 
@@ -45,8 +75,11 @@ once the stack moves to the home server.
 **No password default.** `POSTGRES_PASSWORD` uses `:?`, so Compose fails with a
 clear message rather than starting with a guessable credential.
 
-**Named volume for database data.** `db-data` survives `docker compose down`.
-Only `down -v` destroys it.
+**Named volume mounted at `/var/lib/postgresql`, not `/data`.** Postgres 18
+changed this: the image now stores data in a major-version subdirectory so
+`pg_upgrade --link` can work across a mount boundary. Mounting the old
+`/var/lib/postgresql/data` path makes the container refuse to start. The volume
+survives `docker compose down`; only `down -v` destroys it.
 
 **Healthcheck gating.** The backend waits for `pg_isready`, not just for the
 container to exist, so it does not start against a database still initializing.
@@ -57,6 +90,6 @@ Production concerns, all later phases: reverse proxy and TLS, the public domain,
 secrets beyond a local `.env` file, backups of the database volume, log
 shipping, and resource limits. This file is for local development on the Mac.
 
-The database is also **not yet wired to the backend** — `VED_DATABASE_URL` is
-passed into the container, but nothing reads it. That is the next step in
-`docs/pilot.md`.
+The backend reads `VED_DATABASE_URL` and `/health` reports live database
+connectivity, but no application tables exist yet — `migrations/versions/` is
+empty until the first real model lands.

@@ -27,4 +27,4 @@ export { ConnectorError, HttpError, NetworkError, TimeoutError } from "./errors"
 export type { ConnectorConfig } from "./config";
 export type { HttpClient, HttpMethod, RequestOptions } from "./http";
 export type { StreamClient, StreamHandle, StreamHandlers } from "./stream";
-export type { HealthStatus } from "./types";
+export type { HealthStatus, ServiceState } from "./types";

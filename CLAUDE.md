@@ -6,16 +6,14 @@ task needs long-term context, it is long.
 
 ## Status
 
-**Phase 1 — first round trip working.** The PWA calls the backend through the
-connector and renders `backend ok — v0.1.0` on the home page.
+**Phase 1 — backend + Postgres running.** The PWA renders
+`backend ok — v0.1.0 · db ok` from a live round trip. Compose stack verified
+working (pgvector 0.8.6), async SQLAlchemy pool, Alembic wired to settings.
 
-`infra/` has Docker Compose (Postgres + backend) but it is **unverified** — no
-container runtime on this Mac yet, so it has never been brought up.
+No application tables yet (`migrations/versions/` is empty), no MCP servers, no
+auth, no LLM, no streaming.
 
-No database wiring, no MCP servers, no auth, no LLM, no streaming.
-
-Next up: install Docker Desktop and bring the stack up, then wire the backend to
-Postgres. Remaining steps: `docs/pilot.md`.
+Next up: the first MCP server (`reminders`). Remaining steps: `docs/pilot.md`.
 
 ## Layout
 
@@ -24,8 +22,9 @@ apps/web-client/   Next.js 16 (App Router) + TS PWA
   src/connector/   ONLY place that talks to the backend
   src/app/         manifest.ts, layout, page, backend-status
 apps/backend/      FastAPI, uv-managed, Python 3.13
-  src/ved_backend/ main.py (app + routes), config.py, schemas.py
-  Dockerfile       uv-based image
+  src/ved_backend/ main.py, config.py, database.py, models.py, schemas.py
+  migrations/      Alembic (URL comes from settings, not alembic.ini)
+  Dockerfile       uv-based image (needs BuildKit)
 infra/             compose.yaml (pgvector + backend), db/init/
 mcp-servers/       Empty; one server per capability later
 docs/              master-plan.md, README.md, pilot.md
@@ -49,9 +48,13 @@ memory needs no migration.
 ## Commands
 
 ```bash
-cd apps/backend && uv run uvicorn ved_backend.main:app --reload   # :8000
+colima start                                     # Docker runtime (not Desktop)
+cd infra && docker compose up -d                 # Postgres + backend
+cd infra && docker compose logs -f db
+
 cd apps/backend && uv run pytest
 cd apps/backend && uv run ruff check .
+cd apps/backend && uv run alembic upgrade head
 
 cd apps/web-client && npm run dev      # :3000
 cd apps/web-client && npm run build    # includes the TS check
@@ -59,6 +62,16 @@ cd apps/web-client && npm run lint
 ```
 
 Backend uses **uv** — `uv run` handles the venv, never `pip` or manual activate.
+
+Gotchas already solved, don't rediscover them:
+
+- Docker runs via **Colima**, not Desktop. Compose/buildx need symlinks into
+  `~/.docker/cli-plugins/`; buildx is required for the Dockerfile's cache mounts.
+- On the corporate network, TLS is intercepted — the Colima VM needs the FactSet
+  CA installed or image pulls fail. Steps in `infra/README.md`.
+- Postgres 18 wants the volume at `/var/lib/postgresql`, not `.../data`.
+- New SQLAlchemy models must be imported in `models.py` or Alembic autogenerate
+  silently produces an empty migration.
 
 Next.js 16 differs from older versions — `apps/web-client/AGENTS.md` says to
 check `node_modules/next/dist/docs/` before writing Next code. It is right.
