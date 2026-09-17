@@ -9,10 +9,13 @@ task needs long-term context, it is long.
 **Phase 1 — first round trip working.** The PWA calls the backend through the
 connector and renders `backend ok — v0.1.0` on the home page.
 
-No database, no MCP servers, no infra, no auth, no LLM, no streaming.
+`infra/` has Docker Compose (Postgres + backend) but it is **unverified** — no
+container runtime on this Mac yet, so it has never been brought up.
 
-Next up: `infra/` with Docker Compose (backend + PostgreSQL), then the first MCP
-server (`reminders`). Remaining steps: `docs/pilot.md`.
+No database wiring, no MCP servers, no auth, no LLM, no streaming.
+
+Next up: install Docker Desktop and bring the stack up, then wire the backend to
+Postgres. Remaining steps: `docs/pilot.md`.
 
 ## Layout
 
@@ -22,11 +25,16 @@ apps/web-client/   Next.js 16 (App Router) + TS PWA
   src/app/         manifest.ts, layout, page, backend-status
 apps/backend/      FastAPI, uv-managed, Python 3.13
   src/ved_backend/ main.py (app + routes), config.py, schemas.py
+  Dockerfile       uv-based image
+infra/             compose.yaml (pgvector + backend), db/init/
 mcp-servers/       Empty; one server per capability later
 docs/              master-plan.md, README.md, pilot.md
 ```
 
-Not created yet: `infra/`, `esphome/`.
+Not created yet: `esphome/`.
+
+Postgres uses the `pgvector/pgvector` image from the start so Phase 2 semantic
+memory needs no migration.
 
 ## Rules
 

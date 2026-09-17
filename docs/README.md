@@ -28,13 +28,13 @@ apps/
                  src/connector/  — the only code that talks to the backend
   backend/       Python/FastAPI (uv-managed)
                  src/ved_backend/  — app, config, schemas
+infra/           Docker Compose — PostgreSQL (pgvector) + backend
 mcp-servers/     One subfolder per MCP server (empty; see its README)
 docs/            This documentation
 ```
 
 Added in later phases:
 
-- `infra/` — Docker Compose, deployment, reverse proxy, backups
 - `esphome/` — home-automation device configs
 
 ## Running locally
@@ -70,6 +70,13 @@ cd apps/web-client && npm run lint
 cd apps/backend && uv run pytest
 cd apps/backend && uv run ruff check .
 ```
+
+### Running via Docker
+
+`infra/` has a Compose stack for PostgreSQL plus the backend — see
+[../infra/README.md](../infra/README.md). It is written but **not yet verified**,
+since no container runtime is installed on the dev Mac. Until then, run the two
+apps directly as above; a database is not needed yet.
 
 ### Testing PWA installability
 
