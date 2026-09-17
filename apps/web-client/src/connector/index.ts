@@ -1,5 +1,5 @@
 import { type ConnectorConfig, resolveConfig } from "./config";
-import { createHttpClient } from "./http";
+import { createHttpClient, type RequestOptions } from "./http";
 import { createStreamClient } from "./stream";
 import type { HealthStatus } from "./types";
 
@@ -12,7 +12,8 @@ export function createConnector(overrides: Partial<ConnectorConfig> = {}) {
     config,
     request,
     openStream,
-    health: () => request<HealthStatus>({ path: "/health" }),
+    health: (options: Pick<RequestOptions, "signal"> = {}) =>
+      request<HealthStatus>({ path: "/health", ...options }),
   };
 }
 

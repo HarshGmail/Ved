@@ -1,0 +1,29 @@
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  font-family: var(--font-geist-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.03em;
+  opacity: 0.6;
+}
+
+.dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.status[data-state="checking"] .dot {
+  opacity: 0.4;
+}
+
+.status[data-state="reachable"] .dot {
+  background: #3fb950;
+}
+
+.status[data-state="unreachable"] .dot {
+  background: #f85149;
+}

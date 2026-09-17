@@ -67,14 +67,21 @@ unset and sends no header, and `openStream` is unused.
 
 ## Next steps
 
-Once this slice is running:
+Done:
 
-1. Stand up the FastAPI backend in `apps/backend/` with a single `GET /health`
-   endpoint.
-2. Wire the connector's existing `health()` call to it and surface the result on
-   the placeholder page — the first real end-to-end round trip.
-3. Add `infra/` with a Docker Compose file for the backend and PostgreSQL.
-4. Build the first MCP server (`mcp-servers/reminders/`) with `reminders.create`
+1. ~~Stand up the FastAPI backend in `apps/backend/` with a single `GET /health`
+   endpoint.~~
+2. ~~Wire the connector's existing `health()` call to it and surface the result
+   on the placeholder page — the first real end-to-end round trip.~~
+
+That round trip is verified end to end: with both servers running the page
+renders `backend ok — v0.1.0` from a real cross-origin browser fetch, and with
+the backend stopped it degrades to `backend unreachable` without crashing.
+
+Remaining:
+
+1. Add `infra/` with a Docker Compose file for the backend and PostgreSQL.
+2. Build the first MCP server (`mcp-servers/reminders/`) with `reminders.create`
    and `reminders.list`.
-5. Add the MCP client and LLM call to the backend, then close the loop from the
+3. Add the MCP client and LLM call to the backend, then close the loop from the
    master plan's first milestone: *"Ved, remind me at 8 PM to call Mom."*

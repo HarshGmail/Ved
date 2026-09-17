@@ -14,11 +14,11 @@ complete phase breakdown.
 
 ## Where we are
 
-**Phase 0 — architecture skeleton only.** There is no backend, no database, no
-MCP server, and no infrastructure yet. What exists is an installable PWA shell
-with an isolated connector layer, ready for a backend to be pointed at it.
+**Phase 1 — first round trip working.** The PWA calls the backend through the
+connector and renders its health status. That is the whole feature set: there is
+no database, no MCP server, no auth, and no LLM yet.
 
-See [pilot.md](pilot.md) for what this first slice covers and what comes next.
+See [pilot.md](pilot.md) for what this slice covers and what comes next.
 
 ## Repo layout
 
@@ -26,6 +26,8 @@ See [pilot.md](pilot.md) for what this first slice covers and what comes next.
 apps/
   web-client/    Next.js (App Router) + TypeScript PWA
                  src/connector/  — the only code that talks to the backend
+  backend/       Python/FastAPI (uv-managed)
+                 src/ved_backend/  — app, config, schemas
 mcp-servers/     One subfolder per MCP server (empty; see its README)
 docs/            This documentation
 ```
@@ -34,26 +36,39 @@ Added in later phases:
 
 - `infra/` — Docker Compose, deployment, reverse proxy, backups
 - `esphome/` — home-automation device configs
-- `apps/backend/` — the Python/FastAPI backend
 
-## Running web-client locally
+## Running locally
+
+Both apps, in two terminals. Start the backend first so the web client has
+something to reach.
+
+```bash
+cd apps/backend
+uv sync
+uv run uvicorn ved_backend.main:app --reload    # localhost:8000
+```
 
 ```bash
 cd apps/web-client
 npm install
-npm run dev
+npm run dev                                      # localhost:3000
 ```
 
-The app serves at <http://localhost:3000>.
+Open <http://localhost:3000> — the page should show `backend ok — v0.1.0`. If the
+backend is not running it shows `backend unreachable` instead, which is the
+expected degraded state, not a crash.
 
-Copy `.env.example` to `.env.local` to point the connector somewhere other than
-the default `http://localhost:8000`.
+Copy each app's `.env.example` to `.env.local` (web) or `.env` (backend) to
+override defaults.
 
 Other commands:
 
 ```bash
-npm run build   # production build (also runs the TypeScript check)
-npm run lint
+cd apps/web-client && npm run build   # production build, includes the TS check
+cd apps/web-client && npm run lint
+
+cd apps/backend && uv run pytest
+cd apps/backend && uv run ruff check .
 ```
 
 ### Testing PWA installability
