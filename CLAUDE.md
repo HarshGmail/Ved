@@ -24,7 +24,8 @@ apps/web-client/   Next.js 16 (App Router) + TS PWA
 apps/backend/      FastAPI, uv-managed, Python 3.13
   src/ved_backend/ main.py, config.py, database.py, models.py, schemas.py
   migrations/      Alembic (URL comes from settings, not alembic.ini)
-  Dockerfile       uv-based image (needs BuildKit)
+  Dockerfile       uv-based image; build context is the REPO ROOT
+packages/ved-db/   Shared SQLAlchemy schema — the ONLY place tables are defined
 infra/             compose.yaml (pgvector + backend), db/init/
 mcp-servers/
   reminders/       MCP server (SDK v2), stdio, own uv project
@@ -41,6 +42,9 @@ memory needs no migration.
 - **No backend calls outside `src/connector/`.** It must stay free of React and
   Next imports so it can be lifted into a shared package for a future native
   wrapper. Rationale in `docs/pilot.md`.
+- **Tables are defined once, in `packages/ved-db`.** Never redeclare a model in a
+  service. Consumers depend on it via `[tool.uv.sources]` path + editable. Only
+  the backend runs migrations; MCP servers read and write rows, never DDL.
 - MCP tools are named `<domain>.<verb>` (`reminders.create`). MCP SDK is **v2** —
   `MCPServer`, not `FastMCP`; `Context` must come from `mcp.server.mcpserver.context`
   (bare, unsubscripted) or it leaks into the tool schema; lifespan state is at

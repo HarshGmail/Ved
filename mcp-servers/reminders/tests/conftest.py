@@ -3,8 +3,7 @@ import os
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
-from ved_reminders.models import Base
+from ved_db import Base
 
 TEST_DATABASE_URL = os.environ.get("VED_TEST_DATABASE_URL")
 

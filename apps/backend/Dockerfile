@@ -3,15 +3,16 @@ FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never \
-    PATH="/app/.venv/bin:$PATH"
+    PATH="/app/apps/backend/.venv/bin:$PATH"
 
-WORKDIR /app
+WORKDIR /app/apps/backend
 
-COPY pyproject.toml uv.lock ./
+COPY packages/ved-db /app/packages/ved-db
+COPY apps/backend/pyproject.toml apps/backend/uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-install-project --no-dev
 
-COPY . .
+COPY apps/backend/ ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
 

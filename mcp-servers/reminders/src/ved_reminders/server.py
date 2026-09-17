@@ -7,7 +7,8 @@ from datetime import datetime
 from mcp.server import MCPServer
 from mcp.server.mcpserver.context import Context
 from mcp.server.mcpserver.exceptions import ToolError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from ved_db import create_engine, create_session_factory
 
 from ved_reminders import storage
 from ved_reminders.config import settings
@@ -21,9 +22,9 @@ class ServerContext:
 
 @asynccontextmanager
 async def lifespan(_: MCPServer) -> AsyncIterator[ServerContext]:
-    engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+    engine = create_engine(settings.database_url)
     try:
-        yield ServerContext(session_factory=async_sessionmaker(engine))
+        yield ServerContext(session_factory=create_session_factory(engine))
     finally:
         await engine.dispose()
 

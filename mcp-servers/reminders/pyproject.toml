@@ -8,7 +8,11 @@ dependencies = [
     "psycopg[binary,pool]>=3.2",
     "pydantic-settings>=2.6",
     "sqlalchemy[asyncio]>=2.0",
+    "ved-db",
 ]
+
+[tool.uv.sources]
+ved-db = { path = "../../packages/ved-db", editable = true }
 
 [dependency-groups]
 dev = [

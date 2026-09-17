@@ -10,7 +10,11 @@ dependencies = [
     "pydantic-settings>=2.6",
     "sqlalchemy[asyncio]>=2.0",
     "uvicorn[standard]>=0.32",
+    "ved-db",
 ]
+
+[tool.uv.sources]
+ved-db = { path = "../../packages/ved-db", editable = true }
 
 [dependency-groups]
 dev = [

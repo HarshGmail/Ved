@@ -55,7 +55,8 @@ of the distinction.
 
 **Storage is separate from tool definitions.** `storage.py` takes a session and
 knows nothing about MCP, so the query logic is testable without a protocol
-client, and reusable if the backend ever needs the same operations directly.
+client. The queries stay here rather than in `ved-db`: that package holds the
+schema, not each service's business rules.
 
 **`limit` is capped server-side** at `VED_MAX_LIST_LIMIT` (default 100). A model
 asking for 10,000 reminders gets 100.
@@ -63,13 +64,7 @@ asking for 10,000 reminders gets 100.
 **Completion is idempotent.** Completing an already-completed reminder returns
 the existing record rather than moving the timestamp — retries are safe.
 
-## Known duplication
-
-`models.py` here repeats the `Reminder` table definition from the backend's
-`ved_backend/models.py`. Two processes, two SQLAlchemy registries, one table.
-
-The backend owns the migrations; this server only reads and writes rows. If the
-two drift, this server breaks at runtime rather than at deploy time. That is
-tolerable for one table and one server, but it is the first thing to fix when a
-second server needs the same rows — most likely by extracting a shared
-`packages/ved-db` that both import.
+**The schema comes from `packages/ved-db`.** This server does not define the
+`Reminder` table; it imports it, as the backend does. The backend owns the
+migrations that create it — this server only reads and writes rows, never runs
+DDL.

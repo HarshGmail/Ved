@@ -26,10 +26,13 @@ See [pilot.md](pilot.md) for what this slice covers and what comes next.
 apps/
   web-client/    Next.js (App Router) + TypeScript PWA
                  src/connector/  — the only code that talks to the backend
-  backend/       Python/FastAPI (uv-managed)
-                 src/ved_backend/  — app, config, schemas
+  backend/       Python/FastAPI (uv-managed), owns Alembic migrations
+                 src/ved_backend/  — app, config, database, schemas
+packages/
+  ved-db/        Shared SQLAlchemy schema, imported by backend and MCP servers
 infra/           Docker Compose — PostgreSQL (pgvector) + backend
-mcp-servers/     One subfolder per MCP server (empty; see its README)
+mcp-servers/
+  reminders/     First MCP server — create, list, complete
 docs/            This documentation
 ```
 

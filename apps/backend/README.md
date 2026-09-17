@@ -38,8 +38,8 @@ difference between "backend is gone" and "backend is up but impaired".
 src/ved_backend/
   main.py      FastAPI app, middleware, routes
   config.py    Settings via VED_-prefixed env vars
-  database.py  Async engine, session factory, declarative Base
-  models.py    SQLAlchemy models (empty; imported by Alembic autogenerate)
+  database.py  Engine and session factory, built from ved-db helpers
+  models.py    Re-exports ved-db models so Alembic autogenerate sees them
   schemas.py   Pydantic response models
 migrations/    Alembic — env.py reads the URL from settings
 tests/
@@ -58,8 +58,14 @@ uv run alembic downgrade -1
 
 Alembic takes its URL from `VED_DATABASE_URL` via `migrations/env.py`, not from
 `alembic.ini`, so migrations and the app can never target different databases.
-New models must be imported in `models.py` or autogenerate will not see them and
-will silently generate an empty migration.
+
+Table definitions live in [`packages/ved-db`](../../packages/ved-db), shared with
+the MCP servers. This app owns the migrations that apply them. A new model must
+be re-exported from `models.py` or autogenerate will not see it and will silently
+produce an empty migration.
+
+`uv run alembic check` reports whether the models and the live database agree —
+useful after changing either.
 
 ## Configuration
 

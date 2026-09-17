@@ -1,0 +1,27 @@
+[project]
+name = "ved-db"
+version = "0.1.0"
+description = "Shared SQLAlchemy models and engine helpers for Ved"
+requires-python = ">=3.13"
+dependencies = [
+    "psycopg[binary,pool]>=3.2",
+    "sqlalchemy[asyncio]>=2.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ved_db"]
+
+[tool.ruff]
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM"]

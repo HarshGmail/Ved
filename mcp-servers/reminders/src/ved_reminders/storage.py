@@ -4,8 +4,7 @@ from datetime import UTC, datetime
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from ved_reminders.models import Reminder
+from ved_db import Reminder
 
 
 class ReminderNotFoundError(LookupError):

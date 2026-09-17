@@ -1,28 +1,19 @@
 from collections.abc import AsyncIterator
 
-from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from ved_db import Base, create_engine, create_session_factory
 
 from ved_backend.config import settings
 
+__all__ = ["Base", "engine", "get_session", "session_factory"]
 
-class Base(DeclarativeBase):
-    pass
-
-
-engine: AsyncEngine = create_async_engine(
+engine: AsyncEngine = create_engine(
     settings.database_url,
     pool_size=settings.database_pool_size,
     max_overflow=settings.database_pool_max_overflow,
-    pool_pre_ping=True,
 )
 
-session_factory = async_sessionmaker(engine, expire_on_commit=False)
+session_factory = create_session_factory(engine)
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:
