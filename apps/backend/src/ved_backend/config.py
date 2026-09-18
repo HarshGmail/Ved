@@ -1,6 +1,10 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LOCAL_DATABASE_URL = "postgresql+psycopg://ved:ved@localhost:5432/ved"
+REPO_ROOT = Path(__file__).resolve().parents[4]
+REMINDERS_SERVER_DIR = REPO_ROOT / "mcp-servers" / "reminders"
 
 
 class Settings(BaseSettings):
@@ -11,6 +15,14 @@ class Settings(BaseSettings):
     database_url: str = LOCAL_DATABASE_URL
     database_pool_size: int = 5
     database_pool_max_overflow: int = 5
+
+    llm_provider: str = "stub"
+    timezone: str = "Asia/Kolkata"
+    agent_max_tool_rounds: int = 4
+
+    reminders_server_command: str = "uv"
+    reminders_server_args: list[str] = ["run", "ved-mcp-reminders"]
+    reminders_server_dir: str = str(REMINDERS_SERVER_DIR)
 
 
 settings = Settings()

@@ -6,25 +6,35 @@ task needs long-term context, it is long.
 
 ## Status
 
-**Phase 1 — first MCP server working.** PWA → connector → backend → Postgres is
-live, and `mcp-servers/reminders/` serves `reminders.create/list/complete` over
-stdio against the same database (verified with a real MCP client).
+**Phase 1 complete — the first milestone works.** *"Ved, remind me at 8 PM to
+call Mom"* typed into the PWA creates a real reminder. The full chain is live:
+PWA → connector → `POST /agent/message` → agent loop → MCP stdio →
+`reminders.create` → Postgres → phrased answer. Verified in a real browser and
+in the container.
 
-Not yet: MCP client in the backend, LLM, auth, streaming.
+The provider is a **deterministic stub**, not an LLM (`VED_LLM_PROVIDER=stub`).
+It needs no API key and doubles as the test fixture that makes the agent loop
+testable in CI. A real model is one module behind `LLMProvider`.
 
-Next up: wire the MCP client + an LLM into the backend to close the master
-plan's first milestone — *"Ved, remind me at 8 PM to call Mom."*
+Not yet: real LLM, conversation history, auth, streaming.
+
+Next up: either swap in a real provider, or start Phase 2 (memory) — persisted
+conversations, pgvector semantic search.
 
 ## Layout
 
-```
+```text
 apps/web-client/   Next.js 16 (App Router) + TS PWA
   src/connector/   ONLY place that talks to the backend
-  src/app/         manifest.ts, layout, page, backend-status
+  src/app/         manifest.ts, layout, page, backend-status, chat
 apps/backend/      FastAPI, uv-managed, Python 3.13
-  src/ved_backend/ main.py, config.py, database.py, models.py, schemas.py
+  src/ved_backend/ main.py (routes + lifespan), agent.py, config.py,
+                   database.py, models.py, schemas.py
+    llm/           LLMProvider protocol + stub.py (rule-based, no API key)
+    tools/         MCP client — toolbox.py, servers.py (NOT named mcp/)
   migrations/      Alembic (URL comes from settings, not alembic.ini)
-  Dockerfile       uv-based image; build context is the REPO ROOT
+  Dockerfile       uv-based image; build context is the REPO ROOT;
+                   also installs mcp-servers/reminders so the container can run it
 packages/ved-db/   Shared SQLAlchemy schema — the ONLY place tables are defined
 infra/             compose.yaml (pgvector + backend), db/init/
 mcp-servers/
@@ -51,6 +61,17 @@ memory needs no migration.
   `ctx.request_context.lifespan_context`. Return Pydantic models, not `dict`, or
   there is no output schema. Raise `ToolError` for bad input — other exceptions
   are redacted to a generic message the model cannot act on.
+- **No vendor SDK outside `src/ved_backend/llm/`.** Same rule as the connector —
+  the LLM must stay replaceable (Phase 8 runs one locally). Add a provider by
+  implementing `LLMProvider` and registering it in `build_provider`; the agent
+  loop does not change. Never build a client at import time or the app cannot
+  start without credentials.
+- Tool failures go back to the model as results with `is_error`, never raised —
+  that is how it recovers from a bad argument. `VED_AGENT_MAX_TOOL_ROUNDS` caps
+  a looping model.
+- MCP servers start once in the FastAPI lifespan and stay open; a stdio server
+  per request would cost hundreds of ms. A server that fails to start is logged
+  and skipped, not fatal.
 - The LLM never gets unrestricted system access; sensitive actions go through a
   permission layer.
 - Don't build ahead of the current phase.
@@ -65,6 +86,10 @@ cd infra && docker compose logs -f db
 cd apps/backend && uv run pytest
 cd apps/backend && uv run ruff check .
 cd apps/backend && uv run alembic upgrade head
+
+curl -X POST localhost:8000/agent/message \                # the whole loop
+  -H 'Content-Type: application/json' \
+  -d '{"prompt": "Ved, remind me at 8 PM to call Mom"}'
 
 cd mcp-servers/reminders && uv run ved-mcp-reminders
 cd mcp-servers/reminders && uv run pytest   # needs VED_TEST_DATABASE_URL
@@ -85,6 +110,11 @@ Gotchas already solved, don't rediscover them:
 - Postgres 18 wants the volume at `/var/lib/postgresql`, not `.../data`.
 - New SQLAlchemy models must be imported in `models.py` or Alembic autogenerate
   silently produces an empty migration.
+- The backend's MCP package is `tools/`, not `mcp/` — that would shadow the
+  installed `mcp` SDK.
+- `VED_TIMEZONE` (default `Asia/Kolkata`) is load-bearing: the reminders server
+  rejects timestamps with no UTC offset, so it is what turns "8 PM" into
+  `20:00+05:30`.
 
 Next.js 16 differs from older versions — `apps/web-client/AGENTS.md` says to
 check `node_modules/next/dist/docs/` before writing Next code. It is right.

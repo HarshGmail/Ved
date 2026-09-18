@@ -6,6 +6,7 @@ requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.20.0",
     "fastapi>=0.115",
+    "mcp>=2.2",
     "psycopg[binary,pool]>=3.2",
     "pydantic-settings>=2.6",
     "sqlalchemy[asyncio]>=2.0",
@@ -20,6 +21,7 @@ ved-db = { path = "../../packages/ved-db", editable = true }
 dev = [
     "httpx2>=2.13.0",
     "pytest>=8.3",
+    "pytest-asyncio>=1.4.0",
     "ruff>=0.8",
 ]
 
@@ -33,6 +35,9 @@ packages = ["src/ved_backend"]
 [tool.ruff]
 src = ["src", "tests"]
 
+[tool.ruff.format]
+exclude = ["migrations/versions/*"]
+
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM"]
 
@@ -41,3 +46,4 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"

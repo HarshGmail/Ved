@@ -28,6 +28,8 @@ services:
     environment:
       VED_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-ved}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ved}
       VED_CORS_ALLOW_ORIGINS: ${VED_CORS_ALLOW_ORIGINS:-["http://localhost:3000"]}
+      VED_REMINDERS_SERVER_DIR: /app/mcp-servers/reminders
+      VED_TIMEZONE: ${VED_TIMEZONE:-Asia/Kolkata}
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     depends_on:

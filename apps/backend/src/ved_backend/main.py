@@ -1,16 +1,42 @@
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
+from ved_backend.agent import Agent
 from ved_backend.config import settings
 from ved_backend.database import engine
-from ved_backend.schemas import HealthStatus, ServiceState
+from ved_backend.llm import build_provider
+from ved_backend.schemas import AgentReply, AgentRequest, HealthStatus, ServiceState
+from ved_backend.tools.servers import configured_servers
+from ved_backend.tools.toolbox import MCPToolbox
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Ved backend", version=settings.version)
+NO_TOOLS_MESSAGE = "No MCP servers are connected, so Ved cannot act yet."
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+    toolbox = MCPToolbox(configured_servers(settings))
+    await toolbox.connect()
+    application.state.toolbox = toolbox
+    application.state.agent = Agent(
+        build_provider(settings),
+        toolbox,
+        max_tool_rounds=settings.agent_max_tool_rounds,
+    )
+    try:
+        yield
+    finally:
+        await toolbox.aclose()
+        await engine.dispose()
+
+
+app = FastAPI(title="Ved backend", version=settings.version, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,3 +65,16 @@ async def health() -> HealthStatus:
         version=settings.version,
         database=database,
     )
+
+
+@app.post("/agent/message")
+async def agent_message(request: AgentRequest) -> AgentReply:
+    toolbox: MCPToolbox = app.state.toolbox
+    if not toolbox.tools:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=NO_TOOLS_MESSAGE,
+        )
+
+    agent: Agent = app.state.agent
+    return await agent.run(request.prompt)

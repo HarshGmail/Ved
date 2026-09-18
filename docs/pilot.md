@@ -76,9 +76,36 @@ unset and sends no header, and `openStream` is unused.
       a `/health` that reports database connectivity.
 - [x] Build the first MCP server (`mcp-servers/reminders/`) with
       `reminders.create`, `reminders.list` and `reminders.complete`.
-- [ ] Add the MCP client and LLM call to the backend, then close the loop from
+- [x] Add the MCP client and LLM call to the backend, then close the loop from
       the master plan's first milestone: *"Ved, remind me at 8 PM to call Mom."*
 
 The round trip is verified end to end: with both servers running the page
 renders `backend ok — v0.1.0` from a real cross-origin browser fetch, and with
 the backend stopped it degrades to `backend unreachable` without crashing.
+
+## The first milestone, closed
+
+Typing *"Ved, remind me at 8 PM to call Mom"* into the page now returns
+*"Reminder set: call Mom — Sat 19 Sep, 8:00 PM"*, with a row in Postgres to
+match. That is the master plan's Phase 1 target — `User → Ved → MCP tool →
+result → response` — working in a real browser and in the container.
+
+The provider driving it is a **stub**: a deterministic rule-based fake, not a
+language model. That was a deliberate sequencing choice. The hard, reusable part
+of this step is the agent loop and the MCP client, and neither needs a real
+model to be built or proven. Doing it this way meant no API key was required to
+reach the milestone, and it left behind a test double that keeps the loop
+testable in CI with no network and no flakiness.
+
+What a real model replaces is one file behind `LLMProvider`. The loop, the tool
+routing, the error handling and the round limit all stay. The tradeoff is
+honest, though: the stub understands reminder phrasing and nothing else, so Ved
+is not yet conversational — it is mechanically correct.
+
+## After the pilot
+
+- [ ] Swap in a real LLM provider (Anthropic, or a local model once a GPU box
+      exists) — one new module, registered in `build_provider`.
+- [ ] Persist conversations so Ved has history rather than a fresh start each
+      request. That is Phase 2, and it is where the privacy question about
+      hosted models becomes real.

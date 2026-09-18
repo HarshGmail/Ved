@@ -14,20 +14,26 @@ complete phase breakdown.
 
 ## Where we are
 
-**Phase 1 — backend and database running.** The PWA calls the backend through
-the connector and renders its health, including live database connectivity. No
-application tables, no MCP server, no auth, and no LLM yet.
+**Phase 1 complete — the first milestone works.** Typing *"Ved, remind me at
+8 PM to call Mom"* into the PWA creates a real reminder: the backend runs an
+agent loop, calls `reminders.create` on an MCP server over stdio, and answers
+from the result.
+
+The model behind it is a deterministic stub, not an LLM — the agent loop and MCP
+client are the reusable parts, and building them first meant no API key was
+needed to close the milestone. Swapping in a real model is one module behind
+`LLMProvider`. No auth, no streaming, and no conversation history yet.
 
 See [pilot.md](pilot.md) for what this slice covers and what comes next.
 
 ## Repo layout
 
-```
+```text
 apps/
   web-client/    Next.js (App Router) + TypeScript PWA
                  src/connector/  — the only code that talks to the backend
   backend/       Python/FastAPI (uv-managed), owns Alembic migrations
-                 src/ved_backend/  — app, config, database, schemas
+                 src/ved_backend/  — app, agent loop, llm/, tools/ (MCP client)
 packages/
   ved-db/        Shared SQLAlchemy schema, imported by backend and MCP servers
 infra/           Docker Compose — PostgreSQL (pgvector) + backend
@@ -60,6 +66,10 @@ npm run dev                                      # localhost:3000
 Open <http://localhost:3000> — the page should show `backend ok — v0.1.0`. If the
 backend is not running it shows `backend unreachable` instead, which is the
 expected degraded state, not a crash.
+
+Then type *"Ved, remind me at 8 PM to call Mom"* into the box. The backend
+launches the reminders MCP server itself as a subprocess, so nothing else needs
+starting — but Postgres must be up and migrated, or the tool call fails.
 
 Copy each app's `.env.example` to `.env.local` (web) or `.env` (backend) to
 override defaults.

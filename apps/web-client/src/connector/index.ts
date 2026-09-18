@@ -1,7 +1,7 @@
 import { type ConnectorConfig, resolveConfig } from "./config";
 import { createHttpClient, type RequestOptions } from "./http";
 import { createStreamClient } from "./stream";
-import type { HealthStatus } from "./types";
+import type { AgentReply, HealthStatus } from "./types";
 
 export function createConnector(overrides: Partial<ConnectorConfig> = {}) {
   const config = resolveConfig(overrides);
@@ -14,6 +14,13 @@ export function createConnector(overrides: Partial<ConnectorConfig> = {}) {
     openStream,
     health: (options: Pick<RequestOptions, "signal"> = {}) =>
       request<HealthStatus>({ path: "/health", ...options }),
+    sendMessage: (prompt: string, options: Pick<RequestOptions, "signal"> = {}) =>
+      request<AgentReply>({
+        method: "POST",
+        path: "/agent/message",
+        body: { prompt },
+        ...options,
+      }),
   };
 }
 
@@ -27,4 +34,9 @@ export { ConnectorError, HttpError, NetworkError, TimeoutError } from "./errors"
 export type { ConnectorConfig } from "./config";
 export type { HttpClient, HttpMethod, RequestOptions } from "./http";
 export type { StreamClient, StreamHandle, StreamHandlers } from "./stream";
-export type { HealthStatus, ServiceState } from "./types";
+export type {
+  AgentReply,
+  HealthStatus,
+  ServiceState,
+  ToolInvocation,
+} from "./types";

@@ -12,6 +12,16 @@ COPY apps/backend/pyproject.toml apps/backend/uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-install-project --no-dev
 
+COPY mcp-servers/reminders/pyproject.toml mcp-servers/reminders/uv.lock \
+     /app/mcp-servers/reminders/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    cd /app/mcp-servers/reminders \
+    && uv sync --locked --no-install-project --no-dev
+
+COPY mcp-servers/reminders /app/mcp-servers/reminders
+RUN --mount=type=cache,target=/root/.cache/uv \
+    cd /app/mcp-servers/reminders && uv sync --locked --no-dev
+
 COPY apps/backend/ ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
