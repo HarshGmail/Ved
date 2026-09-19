@@ -27,6 +27,10 @@ conversations, pgvector semantic search.
 apps/web-client/   Next.js 16 (App Router) + TS PWA
   src/connector/   ONLY place that talks to the backend
   src/app/         manifest.ts, layout, page, backend-status, chat
+                   favicon.ico / icon.png / apple-icon.png are Next file
+                   conventions — they generate the <link> tags themselves
+  assets/          ved-mark.png, the single source for every icon
+  scripts/         generate-icons.py — never hand-edit generated icons
 apps/backend/      FastAPI, uv-managed, Python 3.13
   src/ved_backend/ main.py (routes + lifespan), agent.py, config.py,
                    database.py, models.py, schemas.py
@@ -97,6 +101,7 @@ cd mcp-servers/reminders && uv run pytest   # needs VED_TEST_DATABASE_URL
 cd apps/web-client && npm run dev      # :3000
 cd apps/web-client && npm run build    # includes the TS check
 cd apps/web-client && npm run lint
+cd apps/web-client && uv run --with pillow python scripts/generate-icons.py
 ```
 
 Backend uses **uv** — `uv run` handles the venv, never `pip` or manual activate.

@@ -22,14 +22,10 @@ export const metadata: Metadata = {
     title: "Ved",
     statusBarStyle: "black-translucent",
   },
-  icons: {
-    icon: "/icon-192.png",
-    apple: "/apple-touch-icon.png",
-  },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#111318",
+  themeColor: "#000000",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",

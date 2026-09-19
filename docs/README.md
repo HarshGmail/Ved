@@ -99,6 +99,14 @@ corporate-proxy TLS workaround are in [../infra/README.md](../infra/README.md).
 
 Run the web client with `npm run dev` either way; it is not containerized.
 
+### Icons
+
+Every icon — favicon, PWA, Apple touch — is generated from
+`apps/web-client/assets/ved-mark.png`. Change that file and re-run
+`scripts/generate-icons.py`; the outputs are build artifacts, not to be edited
+by hand. Details and the reasoning behind the variants are in
+[../apps/web-client/scripts/README.md](../apps/web-client/scripts/README.md).
+
 ### Testing PWA installability
 
 Install prompts and service workers need a secure context. `localhost` counts as
