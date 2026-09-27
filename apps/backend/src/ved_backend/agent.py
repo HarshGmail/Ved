@@ -1,5 +1,7 @@
 import logging
 from collections.abc import Sequence
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from ved_backend.llm.base import (
     LLMProvider,
@@ -14,11 +16,15 @@ from ved_backend.tools.toolbox import MCPToolbox, ToolNotAvailableError
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are Ved, a personal assistant.
+SYSTEM_PROMPT_TEMPLATE = """You are Ved, a personal assistant.
 
 Use the available tools to act on the user's behalf rather than describing what
-you would do. Times must be sent as ISO 8601 strings that include a UTC offset.
-When a tool reports an error, read the message and correct the arguments."""
+you would do. When a tool reports an error, read the message and correct the
+arguments.
+
+The current time is {now}, and the user's timezone is {timezone}.
+Resolve every relative time the user gives you against that, and send times as
+ISO 8601 strings carrying the user's UTC offset. Never guess today's date."""
 
 TOOL_LIMIT_MESSAGE = "I stopped after too many tool calls without reaching an answer."
 
@@ -30,10 +36,19 @@ class Agent:
         toolbox: MCPToolbox,
         *,
         max_tool_rounds: int,
+        timezone: str,
     ) -> None:
         self._provider = provider
         self._toolbox = toolbox
         self._max_tool_rounds = max_tool_rounds
+        self._zone = ZoneInfo(timezone)
+        self._timezone = timezone
+
+    def _system_prompt(self) -> str:
+        return SYSTEM_PROMPT_TEMPLATE.format(
+            now=datetime.now(self._zone).strftime("%A %d %B %Y, %H:%M %z"),
+            timezone=self._timezone,
+        )
 
     async def run(self, prompt: str) -> AgentReply:
         messages: list[Message] = [UserMessage(text=prompt)]
@@ -41,7 +56,7 @@ class Agent:
 
         for _ in range(self._max_tool_rounds):
             reply = await self._provider.complete(
-                system=SYSTEM_PROMPT,
+                system=self._system_prompt(),
                 messages=messages,
                 tools=self._toolbox.tools,
             )

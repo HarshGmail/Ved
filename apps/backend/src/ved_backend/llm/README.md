@@ -21,7 +21,55 @@ disagreement belongs inside each implementation, not in `agent.py`.
 
 | `VED_LLM_PROVIDER` | Class | Needs credentials |
 | --- | --- | --- |
-| `stub` (default) | `StubProvider` | No |
+| `stub` | `StubProvider` | No |
+| `openai-compatible` | `OpenAICompatibleProvider` | Only for hosted endpoints |
+
+## Why "openai-compatible" and not "ollama"
+
+The provider targets the OpenAI chat-completions *shape*, not a vendor. Nearly
+every local runtime and most hosted gateways speak it, so changing where the
+model runs is a URL change with no new code:
+
+| Runtime | `VED_LLM_BASE_URL` |
+| --- | --- |
+| Ollama | `http://localhost:11434/v1` |
+| LM Studio | `http://localhost:1234/v1` |
+| llama.cpp / vLLM | whatever it serves on |
+| A GPU box on the LAN | `http://gpu.local:11434/v1` |
+| OpenRouter, Together, Groq | their URL plus `VED_LLM_API_KEY` |
+
+That last row is the Phase 8 path: when the GPU server exists, Ved points at it
+by editing one variable. An `ollama.py` would have made every one of these a new
+module.
+
+Anthropic will still need its own provider — its wire format genuinely differs,
+and pretending otherwise through a translation shim costs more than it saves.
+That is one module, not one per runtime.
+
+## Local models and tool calling
+
+The model must be trained for tool use, or it will answer in prose and never
+call anything. `ollama show <model>` must list `tools` under Capabilities.
+
+Two settings that matter more than they look:
+
+- **`VED_LLM_TEMPERATURE=0.0`.** Tool arguments are structured data, not prose.
+  Sampling randomness here produces malformed JSON and invented field names.
+- **Ollama's KV cache quantization.** `q8_0` is fine; `q4` measurably degrades
+  tool-call accuracy. The `OLLAMA_KV_CACHE_TYPE` in the run command is not
+  arbitrary.
+
+Small models drop or malform tool calls more often than hosted ones. The agent
+loop already absorbs this — a malformed argument blob parses to `{}` rather than
+crashing, and the tool's own validation error goes back to the model — but a
+weak model will use more rounds to get there.
+
+## Failure is a 503, not a 500
+
+`OpenAICompatibleProvider` raises `LLMRequestError` when the endpoint is
+unreachable or answers with an error status, and `main.py` turns that into a
+`503` naming the cause. A local model that is not running is an expected
+operating state — the same category as Postgres being down — not a bug in Ved.
 
 ## Why a stub exists
 

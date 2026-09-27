@@ -67,10 +67,31 @@ the rest still work.
 
 ## LLM providers
 
-Selected by `VED_LLM_PROVIDER`, default `stub` — a deterministic rule-based fake
-that needs no API key and makes the agent loop testable without a network. See
+Selected by `VED_LLM_PROVIDER`:
+
+- **`openai-compatible`** — any endpoint speaking the OpenAI chat-completions
+  shape. Runs against a local model by default, so nothing leaves the machine.
+- **`stub`** — a deterministic rule-based fake. No model, no network; this is
+  what the agent-loop tests run against.
+
+Swapping where the model runs is a URL change, not a code change. See
 [`src/ved_backend/llm/README.md`](src/ved_backend/llm/README.md) for the
-provider contract and how to add a real one.
+provider contract, the runtime table, and the tool-calling caveats.
+
+### Running a local model
+
+```bash
+brew install ollama
+OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0 ollama serve
+ollama pull qwen3.6:35b
+```
+
+The model must support tool calling — check `ollama show <model>` lists `tools`
+under Capabilities, or Ved will get prose where it expects a tool call.
+
+If the endpoint is down, `/agent/message` returns `503` naming the cause rather
+than a generic `500`. A local model that is not running is an expected state,
+not a crash.
 
 ## Layout
 
@@ -122,7 +143,12 @@ Settings read `VED_`-prefixed env vars, or a local `.env`. See `.env.example`.
 | `VED_DATABASE_URL` | `postgresql+psycopg://ved:ved@localhost:5432/ved` | Database connection |
 | `VED_CORS_ALLOW_ORIGINS` | `["http://localhost:3000"]` | JSON list of allowed origins |
 | `VED_DATABASE_POOL_SIZE` | `5` | Connection pool size |
-| `VED_LLM_PROVIDER` | `stub` | Which LLM provider to use |
+| `VED_LLM_PROVIDER` | `stub` | `stub` or `openai-compatible` |
+| `VED_LLM_BASE_URL` | `http://localhost:11434/v1` | Where the model is served |
+| `VED_LLM_MODEL` | `qwen3.6:35b` | Model name at that endpoint |
+| `VED_LLM_API_KEY` | unset | Only for hosted endpoints |
+| `VED_LLM_TEMPERATURE` | `0.0` | 0 keeps tool arguments deterministic |
+| `VED_LLM_TIMEOUT_SECONDS` | `120.0` | A cold local model loads slowly |
 | `VED_TIMEZONE` | `Asia/Kolkata` | Resolves "8 PM" to a real offset |
 | `VED_AGENT_MAX_TOOL_ROUNDS` | `4` | Stops a model that loops on tool calls |
 | `VED_REMINDERS_SERVER_DIR` | repo path | Where to launch the reminders MCP server |

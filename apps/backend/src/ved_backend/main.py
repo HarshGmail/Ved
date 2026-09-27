@@ -10,6 +10,7 @@ from ved_backend.agent import Agent
 from ved_backend.config import settings
 from ved_backend.database import engine
 from ved_backend.llm import build_provider
+from ved_backend.llm.openai_compatible import LLMRequestError
 from ved_backend.schemas import AgentReply, AgentRequest, HealthStatus, ServiceState
 from ved_backend.tools.servers import configured_servers
 from ved_backend.tools.toolbox import MCPToolbox
@@ -23,15 +24,22 @@ NO_TOOLS_MESSAGE = "No MCP servers are connected, so Ved cannot act yet."
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     toolbox = MCPToolbox(configured_servers(settings))
     await toolbox.connect()
+    provider = build_provider(settings)
+
     application.state.toolbox = toolbox
     application.state.agent = Agent(
-        build_provider(settings),
+        provider,
         toolbox,
         max_tool_rounds=settings.agent_max_tool_rounds,
+        timezone=settings.timezone,
     )
+    logger.info("Agent ready on %s with %d tools", provider.model, len(toolbox.tools))
     try:
         yield
     finally:
+        closer = getattr(provider, "aclose", None)
+        if closer is not None:
+            await closer()
         await toolbox.aclose()
         await engine.dispose()
 
@@ -77,4 +85,11 @@ async def agent_message(request: AgentRequest) -> AgentReply:
         )
 
     agent: Agent = app.state.agent
-    return await agent.run(request.prompt)
+    try:
+        return await agent.run(request.prompt)
+    except LLMRequestError as error:
+        logger.warning("LLM unreachable: %s", error)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(error),
+        ) from error

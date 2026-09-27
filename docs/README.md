@@ -19,10 +19,13 @@ complete phase breakdown.
 agent loop, calls `reminders.create` on an MCP server over stdio, and answers
 from the result.
 
-The model behind it is a deterministic stub, not an LLM — the agent loop and MCP
-client are the reusable parts, and building them first meant no API key was
-needed to close the milestone. Swapping in a real model is one module behind
-`LLMProvider`. No auth, no streaming, and no conversation history yet.
+A real model drives it, running **locally** on the dev Mac through Ollama — no
+API key, no data leaving the machine. The provider speaks the OpenAI `/v1`
+shape rather than any one vendor, so moving the model to a GPU server later is
+a URL change. The deterministic stub remains as the CI fixture.
+
+No auth, no streaming, and no conversation history yet — every request starts
+fresh.
 
 See [pilot.md](pilot.md) for what this slice covers and what comes next.
 
@@ -70,6 +73,17 @@ expected degraded state, not a crash.
 Then type *"Ved, remind me at 8 PM to call Mom"* into the box. The backend
 launches the reminders MCP server itself as a subprocess, so nothing else needs
 starting — but Postgres must be up and migrated, or the tool call fails.
+
+A model has to be serving too:
+
+```bash
+brew install ollama
+OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0 ollama serve
+ollama pull qwen3.6:35b          # or granite4.1:3b, far smaller and quicker
+```
+
+Set `VED_LLM_MODEL` to whichever you pulled. Without a model running,
+`/agent/message` returns `503` naming the cause; the rest of the app is fine.
 
 Copy each app's `.env.example` to `.env.local` (web) or `.env` (backend) to
 override defaults.

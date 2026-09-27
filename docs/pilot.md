@@ -104,8 +104,16 @@ is not yet conversational — it is mechanically correct.
 
 ## After the pilot
 
-- [ ] Swap in a real LLM provider (Anthropic, or a local model once a GPU box
-      exists) — one new module, registered in `build_provider`.
+- [x] Swap in a real LLM provider — done, and it runs **locally** on the Mac via
+      Ollama, so no API key and no data leaving the machine. The provider targets
+      the OpenAI `/v1` shape rather than Ollama specifically, which makes the
+      Phase 8 GPU server a `VED_LLM_BASE_URL` change instead of a new module.
+
+      Two things the stub had been hiding: a real model has no clock (it invented
+      a 2025 date until the system prompt carried the current time), and it
+      recovers from its own bad tool arguments — given a made-up reminder id it
+      read the `ToolError`, listed reminders to find the real UUID, and retried.
+      That second one is the error-as-data design paying off.
 - [ ] Persist conversations so Ved has history rather than a fresh start each
       request. That is Phase 2, and it is where the privacy question about
       hosted models becomes real.

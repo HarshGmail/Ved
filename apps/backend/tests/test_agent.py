@@ -1,3 +1,6 @@
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import pytest
 
 from ved_backend.agent import TOOL_LIMIT_MESSAGE, Agent
@@ -31,9 +34,11 @@ class ScriptedProvider:
     def __init__(self, replies: list[AssistantMessage]):
         self._replies = list(replies)
         self.seen: list[list[Message]] = []
+        self.systems: list[str] = []
 
     async def complete(self, *, system, messages, tools):
         self.seen.append(list(messages))
+        self.systems.append(system)
         return self._replies.pop(0)
 
 
@@ -50,7 +55,10 @@ def toolbox():
 
 async def test_plain_reply_skips_the_toolbox(toolbox):
     agent = Agent(
-        ScriptedProvider([AssistantMessage(text="hello")]), toolbox, max_tool_rounds=4
+        ScriptedProvider([AssistantMessage(text="hello")]),
+        toolbox,
+        max_tool_rounds=4,
+        timezone="Asia/Kolkata",
     )
 
     reply = await agent.run("hi")
@@ -64,7 +72,7 @@ async def test_tool_call_is_executed_then_summarised(toolbox):
     provider = ScriptedProvider(
         [create_call(text="call Mom"), AssistantMessage(text="Reminder set.")]
     )
-    agent = Agent(provider, toolbox, max_tool_rounds=4)
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
     reply = await agent.run("remind me to call Mom")
 
@@ -78,7 +86,7 @@ async def test_the_model_sees_the_tool_result(toolbox):
     provider = ScriptedProvider(
         [create_call(text="call Mom"), AssistantMessage(text="done")]
     )
-    agent = Agent(provider, toolbox, max_tool_rounds=4)
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
     await agent.run("remind me to call Mom")
 
@@ -93,7 +101,7 @@ async def test_tool_errors_are_returned_to_the_model_not_raised():
     provider = ScriptedProvider(
         [create_call(due_at="8pm"), AssistantMessage(text="Let me fix that.")]
     )
-    agent = Agent(provider, toolbox, max_tool_rounds=4)
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
     reply = await agent.run("remind me at 8pm")
 
@@ -104,7 +112,7 @@ async def test_tool_errors_are_returned_to_the_model_not_raised():
 async def test_unknown_tools_do_not_crash_the_turn():
     toolbox = FakeToolbox(tools=[])
     provider = ScriptedProvider([create_call(), AssistantMessage(text="sorry")])
-    agent = Agent(provider, toolbox, max_tool_rounds=4)
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
     reply = await agent.run("remind me")
 
@@ -114,9 +122,23 @@ async def test_unknown_tools_do_not_crash_the_turn():
 
 async def test_a_looping_model_is_cut_off(toolbox):
     provider = ScriptedProvider([create_call(text="again") for _ in range(4)])
-    agent = Agent(provider, toolbox, max_tool_rounds=4)
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
     reply = await agent.run("remind me")
 
     assert reply.text == TOOL_LIMIT_MESSAGE
     assert len(toolbox.calls) == 4
+
+
+async def test_system_prompt_tells_the_model_the_current_time(toolbox):
+    provider = ScriptedProvider([AssistantMessage(text="hi")])
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    await agent.run("hello")
+
+    prompt = provider.systems[0]
+    now = datetime.now(ZoneInfo("Asia/Kolkata"))
+    assert str(now.year) in prompt
+    assert now.strftime("%B") in prompt
+    assert "Asia/Kolkata" in prompt
+    assert "+0530" in prompt

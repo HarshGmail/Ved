@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     timezone: str = "Asia/Kolkata"
     agent_max_tool_rounds: int = 4
 
+    llm_base_url: str = "http://localhost:11434/v1"
+    llm_model: str = "qwen3.6:35b"
+    llm_api_key: str | None = None
+    llm_timeout_seconds: float = 120.0
+    llm_temperature: float | None = 0.0
+
     reminders_server_command: str = "uv"
     reminders_server_args: list[str] = ["run", "ved-mcp-reminders"]
     reminders_server_dir: str = str(REMINDERS_SERVER_DIR)

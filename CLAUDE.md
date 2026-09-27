@@ -12,14 +12,18 @@ PWA → connector → `POST /agent/message` → agent loop → MCP stdio →
 `reminders.create` → Postgres → phrased answer. Verified in a real browser and
 in the container.
 
-The provider is a **deterministic stub**, not an LLM (`VED_LLM_PROVIDER=stub`).
-It needs no API key and doubles as the test fixture that makes the agent loop
-testable in CI. A real model is one module behind `LLMProvider`.
+A **real local model** now drives it, via Ollama on the Mac — nothing leaves the
+machine and there is no API key. Verified end to end in the browser and in the
+container: relative times ("tomorrow at 7am") resolve correctly, and the model
+recovers from its own bad tool arguments by reading the `ToolError` and retrying.
 
-Not yet: real LLM, conversation history, auth, streaming.
+The `stub` provider stays as the CI fixture, so the agent-loop tests still run
+with no model and no network.
 
-Next up: either swap in a real provider, or start Phase 2 (memory) — persisted
-conversations, pgvector semantic search.
+Not yet: conversation history (every request starts fresh), auth, streaming.
+
+Next up: Phase 2 (memory) — persisted conversations first, then pgvector
+semantic search. Follow-ups like *"actually make it 9 PM"* need it.
 
 ## Layout
 
@@ -34,7 +38,8 @@ apps/web-client/   Next.js 16 (App Router) + TS PWA
 apps/backend/      FastAPI, uv-managed, Python 3.13
   src/ved_backend/ main.py (routes + lifespan), agent.py, config.py,
                    database.py, models.py, schemas.py
-    llm/           LLMProvider protocol + stub.py (rule-based, no API key)
+    llm/           LLMProvider protocol, openai_compatible.py (any /v1
+                   endpoint — Ollama today, GPU box later), stub.py (CI)
     tools/         MCP client — toolbox.py, servers.py (NOT named mcp/)
   migrations/      Alembic (URL comes from settings, not alembic.ini)
   Dockerfile       uv-based image; build context is the REPO ROOT;
@@ -66,10 +71,18 @@ memory needs no migration.
   there is no output schema. Raise `ToolError` for bad input — other exceptions
   are redacted to a generic message the model cannot act on.
 - **No vendor SDK outside `src/ved_backend/llm/`.** Same rule as the connector —
-  the LLM must stay replaceable (Phase 8 runs one locally). Add a provider by
-  implementing `LLMProvider` and registering it in `build_provider`; the agent
-  loop does not change. Never build a client at import time or the app cannot
-  start without credentials.
+  the LLM must stay replaceable. Add a provider by implementing `LLMProvider`
+  and registering it in `build_provider`; the agent loop does not change. Never
+  build a client at import time or the app cannot start without credentials.
+- **Moving the model is a URL change, not a code change.** The provider targets
+  the OpenAI `/v1` *shape*, not a vendor, so Ollama, LM Studio, llama.cpp, a LAN
+  GPU box or a hosted gateway are all `VED_LLM_BASE_URL`. Only Anthropic needs
+  its own module; its wire format genuinely differs.
+- **The system prompt carries the current time and timezone.** A model has no
+  clock — without it, it invents dates (it produced a 2025 timestamp before this
+  was added). `agent.py` rebuilds the prompt per turn.
+- Local models need `tools` in `ollama show <model>` capabilities, and
+  `VED_LLM_TEMPERATURE=0.0` — sampling randomness corrupts tool arguments.
 - Tool failures go back to the model as results with `is_error`, never raised —
   that is how it recovers from a bad argument. `VED_AGENT_MAX_TOOL_ROUNDS` caps
   a looping model.
@@ -86,6 +99,9 @@ memory needs no migration.
 colima start                                     # Docker runtime (not Desktop)
 cd infra && docker compose up -d                 # Postgres + backend
 cd infra && docker compose logs -f db
+
+OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0 ollama serve   # the model
+ollama list                                      # what is pulled
 
 cd apps/backend && uv run pytest
 cd apps/backend && uv run ruff check .

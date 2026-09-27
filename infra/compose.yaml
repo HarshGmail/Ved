@@ -30,6 +30,11 @@ services:
       VED_CORS_ALLOW_ORIGINS: ${VED_CORS_ALLOW_ORIGINS:-["http://localhost:3000"]}
       VED_REMINDERS_SERVER_DIR: /app/mcp-servers/reminders
       VED_TIMEZONE: ${VED_TIMEZONE:-Asia/Kolkata}
+      VED_LLM_PROVIDER: ${VED_LLM_PROVIDER:-openai-compatible}
+      VED_LLM_BASE_URL: ${VED_LLM_BASE_URL:-http://host.docker.internal:11434/v1}
+      VED_LLM_MODEL: ${VED_LLM_MODEL:-qwen3.6:35b}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     depends_on:
