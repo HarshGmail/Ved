@@ -1,7 +1,12 @@
 import { type ConnectorConfig, resolveConfig } from "./config";
 import { createHttpClient, type RequestOptions } from "./http";
 import { createStreamClient } from "./stream";
-import type { AgentReply, HealthStatus } from "./types";
+import type {
+  AgentReply,
+  ConversationList,
+  ConversationTranscript,
+  HealthStatus,
+} from "./types";
 
 export function createConnector(overrides: Partial<ConnectorConfig> = {}) {
   const config = resolveConfig(overrides);
@@ -14,11 +19,25 @@ export function createConnector(overrides: Partial<ConnectorConfig> = {}) {
     openStream,
     health: (options: Pick<RequestOptions, "signal"> = {}) =>
       request<HealthStatus>({ path: "/health", ...options }),
-    sendMessage: (prompt: string, options: Pick<RequestOptions, "signal"> = {}) =>
+    sendMessage: (
+      prompt: string,
+      conversationId?: string,
+      options: Pick<RequestOptions, "signal"> = {},
+    ) =>
       request<AgentReply>({
         method: "POST",
         path: "/agent/message",
-        body: { prompt },
+        body: { prompt, conversation_id: conversationId ?? null },
+        ...options,
+      }),
+    listConversations: (options: Pick<RequestOptions, "signal"> = {}) =>
+      request<ConversationList>({ path: "/conversations", ...options }),
+    readConversation: (
+      conversationId: string,
+      options: Pick<RequestOptions, "signal"> = {},
+    ) =>
+      request<ConversationTranscript>({
+        path: `/conversations/${conversationId}`,
         ...options,
       }),
   };
@@ -36,7 +55,11 @@ export type { HttpClient, HttpMethod, RequestOptions } from "./http";
 export type { StreamClient, StreamHandle, StreamHandlers } from "./stream";
 export type {
   AgentReply,
+  ConversationList,
+  ConversationSummary,
+  ConversationTranscript,
   HealthStatus,
   ServiceState,
   ToolInvocation,
+  TranscriptMessage,
 } from "./types";

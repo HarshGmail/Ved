@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     timezone: str = "Asia/Kolkata"
     agent_max_tool_rounds: int = 4
 
+    conversation_history_limit: int = 20
+    conversation_list_limit: int = 50
+
     llm_base_url: str = "http://localhost:11434/v1"
     llm_model: str = "qwen3.6:35b"
     llm_api_key: str | None = None

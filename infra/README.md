@@ -4,6 +4,21 @@ Docker Compose for running Ved's services together: PostgreSQL and the backend.
 
 Verified working on the dev Mac with Colima.
 
+## Browsing the database
+
+```bash
+docker compose --profile tools up -d studio   # http://localhost:5050
+```
+
+A web UI over the same Postgres — click through tables, browse rows, run SQL.
+Useful for seeing what Ved actually stored rather than inferring it from logs.
+
+It sits behind the `tools` profile so a plain `docker compose up -d` never
+starts it: this is a developer convenience, not part of the running system. The
+port is bound to `127.0.0.1` like everything else here, and it connects with the
+same credentials the backend uses, so it is as privileged as the backend is.
+Do not expose it beyond the loopback interface.
+
 ## Prerequisites on macOS
 
 No Docker Desktop required. Colima provides the runtime:

@@ -1,4 +1,5 @@
 import logging
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -8,10 +9,20 @@ from sqlalchemy import text
 
 from ved_backend.agent import Agent
 from ved_backend.config import settings
-from ved_backend.database import engine
+from ved_backend.database import engine, session_factory
 from ved_backend.llm import build_provider
+from ved_backend.llm.base import Message
 from ved_backend.llm.openai_compatible import LLMRequestError
-from ved_backend.schemas import AgentReply, AgentRequest, HealthStatus, ServiceState
+from ved_backend.memory import ConversationNotFoundError, ConversationStore
+from ved_backend.schemas import (
+    AgentReply,
+    AgentRequest,
+    ConversationList,
+    ConversationSummary,
+    ConversationTranscript,
+    HealthStatus,
+    ServiceState,
+)
 from ved_backend.tools.servers import configured_servers
 from ved_backend.tools.toolbox import MCPToolbox
 
@@ -27,6 +38,9 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     provider = build_provider(settings)
 
     application.state.toolbox = toolbox
+    application.state.conversations = ConversationStore(
+        session_factory, history_limit=settings.conversation_history_limit
+    )
     application.state.agent = Agent(
         provider,
         toolbox,
@@ -85,11 +99,60 @@ async def agent_message(request: AgentRequest) -> AgentReply:
         )
 
     agent: Agent = app.state.agent
+    store: ConversationStore = app.state.conversations
+
     try:
-        return await agent.run(request.prompt)
+        history: list[Message] = (
+            []
+            if request.conversation_id is None
+            else await store.history(request.conversation_id)
+        )
+    except ConversationNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
+        ) from error
+
+    try:
+        reply = await agent.run(request.prompt, history)
     except LLMRequestError as error:
         logger.warning("LLM unreachable: %s", error)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(error),
         ) from error
+
+    conversation_id = request.conversation_id or await store.start(request.prompt)
+    await store.record_turn(
+        conversation_id,
+        prompt=request.prompt,
+        answer=reply.text,
+        model=reply.model,
+        tool_calls=reply.tool_calls,
+    )
+    return AgentReply(
+        text=reply.text,
+        model=reply.model,
+        conversation_id=conversation_id,
+        tool_calls=reply.tool_calls,
+    )
+
+
+@app.get("/conversations")
+async def list_conversations() -> ConversationList:
+    store: ConversationStore = app.state.conversations
+    rows = await store.recent_conversations(settings.conversation_list_limit)
+    return ConversationList(
+        conversations=[ConversationSummary.model_validate(row) for row in rows]
+    )
+
+
+@app.get("/conversations/{conversation_id}")
+async def read_conversation(conversation_id: uuid.UUID) -> ConversationTranscript:
+    store: ConversationStore = app.state.conversations
+    try:
+        conversation = await store.transcript(conversation_id)
+    except ConversationNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
+        ) from error
+    return ConversationTranscript.model_validate(conversation)

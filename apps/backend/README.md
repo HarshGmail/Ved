@@ -28,6 +28,8 @@ activation needed, `uv run` handles it.
 | --- | --- | --- |
 | GET | `/health` | Liveness probe, including live database connectivity |
 | POST | `/agent/message` | Send a prompt; Ved answers, calling MCP tools as needed |
+| GET | `/conversations` | Recent conversations, most recently used first |
+| GET | `/conversations/{id}` | Full transcript, including the tool calls each turn made |
 
 `/health` returns `status: "degraded"` and `database: "down"` when Postgres is
 unreachable, rather than failing the request — the caller can tell the
@@ -43,6 +45,38 @@ curl -X POST localhost:8000/agent/message \
   -H 'Content-Type: application/json' \
   -d '{"prompt": "Ved, remind me at 8 PM to call Mom"}'
 ```
+
+Omit `conversation_id` to start a thread; the reply carries the id the server
+assigned. Send it back to continue, and Ved remembers:
+
+```bash
+curl -X POST localhost:8000/agent/message \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt": "actually make it 9 PM", "conversation_id": "<id>"}'
+```
+
+The server mints the id rather than accepting one from the client, so a typo
+cannot silently create a thread. An unknown id is a `404`.
+
+## Conversation memory
+
+`memory.py` loads prior turns and saves each new one; `agent.py` stays unaware
+of storage and simply accepts a `history` argument.
+
+**Only user prompts and final answers are replayed** — never the intermediate
+tool calls, though those are stored for the transcript. Two reasons. The
+OpenAI wire format requires every assistant `tool_calls` to be followed by
+matching `tool` results, so trimming a window mid-chain produces a malformed
+request. And the answer already contains the fact that mattered ("Reminder set
+for 8 PM"); replaying the raw JSON spends a local model's context on detail it
+can re-fetch by calling the tool again.
+
+`VED_CONVERSATION_HISTORY_LIMIT` caps how many messages are replayed. It is a
+message count, not a token count — a crude bound that is honest about being
+crude. Summarising older turns is the obvious next step when it starts to bite.
+
+**A failed turn creates nothing.** The conversation row is written after the
+model answers, so an unreachable model leaves no empty thread behind.
 
 ## Agent loop
 
@@ -102,6 +136,7 @@ src/ved_backend/
   config.py    Settings via VED_-prefixed env vars
   database.py  Engine and session factory, built from ved-db helpers
   models.py    Re-exports ved-db models so Alembic autogenerate sees them
+  memory.py    Conversation history — load, record, list, transcript
   schemas.py   Pydantic request and response models
   llm/         Provider interface and implementations
   tools/       MCP client — connects to servers, routes tool calls
@@ -151,6 +186,8 @@ Settings read `VED_`-prefixed env vars, or a local `.env`. See `.env.example`.
 | `VED_LLM_TIMEOUT_SECONDS` | `120.0` | A cold local model loads slowly |
 | `VED_TIMEZONE` | `Asia/Kolkata` | Resolves "8 PM" to a real offset |
 | `VED_AGENT_MAX_TOOL_ROUNDS` | `4` | Stops a model that loops on tool calls |
+| `VED_CONVERSATION_HISTORY_LIMIT` | `20` | Messages replayed into each turn |
+| `VED_CONVERSATION_LIST_LIMIT` | `50` | Conversations `/conversations` returns |
 | `VED_REMINDERS_SERVER_DIR` | repo path | Where to launch the reminders MCP server |
 
 `VED_TIMEZONE` is not cosmetic. The reminders server rejects timestamps without
@@ -159,9 +196,10 @@ guess.
 
 ## Current state
 
-Phase 1 complete. The full loop works: prompt → provider → MCP tool → database →
-answer, verified in a browser and in the container. No auth, no streaming, and
-no conversation history — every request starts fresh.
+Phase 2 in progress. The full loop works and Ved now remembers: *"remind me at
+8 PM to call Mom"* followed by *"actually make it 9 PM"* reschedules the right
+reminder without the context being restated. No auth, no streaming, and no
+semantic search yet.
 
 When routes grow past a handful, split them out of `main.py` into an `api/`
 package with routers.

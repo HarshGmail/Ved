@@ -25,6 +25,16 @@ class LLMRequestError(RuntimeError):
     pass
 
 
+def _describe(error: Exception) -> str:
+    detail = str(error) or type(error).__name__
+    if isinstance(error, httpx2.TimeoutException):
+        return (
+            f"The model did not answer in time ({detail}). "
+            "A large local model may need a longer VED_LLM_TIMEOUT_SECONDS."
+        )
+    return f"Could not reach the model: {detail}"
+
+
 def _tool_payload(tool: ToolSpec) -> dict[str, Any]:
     return {
         "type": "function",
@@ -157,7 +167,7 @@ class OpenAICompatibleProvider:
                 json=self._build_body(system, messages, tools),
             )
         except httpx2.HTTPError as error:
-            raise LLMRequestError(f"Could not reach the model: {error}") from error
+            raise LLMRequestError(_describe(error)) from error
 
         if response.status_code != httpx2.codes.OK:
             raise LLMRequestError(

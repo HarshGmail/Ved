@@ -11,7 +11,7 @@ from ved_backend.llm.base import (
     ToolResultMessage,
     UserMessage,
 )
-from ved_backend.schemas import AgentReply, ToolInvocation
+from ved_backend.schemas import AgentTurn, ToolInvocation
 from ved_backend.tools.toolbox import MCPToolbox, ToolNotAvailableError
 
 logger = logging.getLogger(__name__)
@@ -50,8 +50,8 @@ class Agent:
             timezone=self._timezone,
         )
 
-    async def run(self, prompt: str) -> AgentReply:
-        messages: list[Message] = [UserMessage(text=prompt)]
+    async def run(self, prompt: str, history: Sequence[Message] = ()) -> AgentTurn:
+        messages: list[Message] = [*history, UserMessage(text=prompt)]
         invocations: list[ToolInvocation] = []
 
         for _ in range(self._max_tool_rounds):
@@ -63,7 +63,7 @@ class Agent:
             messages.append(reply)
 
             if not reply.tool_calls:
-                return AgentReply(
+                return AgentTurn(
                     text=reply.text,
                     model=self._provider.model,
                     tool_calls=invocations,
@@ -73,7 +73,7 @@ class Agent:
             messages.append(ToolResultMessage(outcomes=outcomes))
 
         logger.warning("Agent hit the tool round limit for prompt %r", prompt)
-        return AgentReply(
+        return AgentTurn(
             text=TOOL_LIMIT_MESSAGE,
             model=self._provider.model,
             tool_calls=invocations,

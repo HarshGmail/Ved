@@ -22,7 +22,14 @@ export function Chat() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [prompt, setPrompt] = useState("");
   const [pending, setPending] = useState(false);
+  const [conversationId, setConversationId] = useState<string | undefined>();
   const inputRef = useRef<HTMLInputElement>(null);
+
+  function startNewConversation() {
+    setConversationId(undefined);
+    setTurns([]);
+    inputRef.current?.focus();
+  }
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -34,7 +41,8 @@ export function Chat() {
     setPending(true);
 
     try {
-      const reply = await connector.sendMessage(trimmed);
+      const reply = await connector.sendMessage(trimmed, conversationId);
+      setConversationId(reply.conversation_id);
       setTurns((current) => [...current, { role: "ved", reply }]);
     } catch (error: unknown) {
       setTurns((current) => [
@@ -52,6 +60,22 @@ export function Chat() {
 
   return (
     <section className={styles.chat}>
+      {turns.length > 0 && (
+        <div className={styles.toolbar}>
+          <span className={styles.thread}>
+            {conversationId ? "remembering this thread" : "new thread"}
+          </span>
+          <button
+            className={styles.reset}
+            type="button"
+            onClick={startNewConversation}
+            disabled={pending}
+          >
+            New conversation
+          </button>
+        </div>
+      )}
+
       <ol className={styles.turns}>
         {turns.map((turn, index) => (
           <li key={index} className={styles.turn} data-role={turn.role}>

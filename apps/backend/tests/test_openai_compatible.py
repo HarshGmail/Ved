@@ -230,3 +230,23 @@ async def test_empty_choices_raises_llm_request_error():
 
     with pytest.raises(LLMRequestError, match="no choices"):
         await provider.complete(system="s", messages=[UserMessage(text="hi")], tools=[])
+
+
+async def test_timeouts_name_the_timeout_setting():
+    def handler(request):
+        raise httpx2.ReadTimeout("")
+
+    provider = build_provider(handler)
+
+    with pytest.raises(LLMRequestError, match="VED_LLM_TIMEOUT_SECONDS"):
+        await provider.complete(system="s", messages=[UserMessage(text="hi")], tools=[])
+
+
+async def test_a_silent_exception_still_names_its_type():
+    def handler(request):
+        raise httpx2.ConnectError("")
+
+    provider = build_provider(handler)
+
+    with pytest.raises(LLMRequestError, match="ConnectError"):
+        await provider.complete(system="s", messages=[UserMessage(text="hi")], tools=[])

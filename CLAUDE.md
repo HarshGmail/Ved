@@ -20,10 +20,15 @@ recovers from its own bad tool arguments by reading the `ToolError` and retrying
 The `stub` provider stays as the CI fixture, so the agent-loop tests still run
 with no model and no network.
 
-Not yet: conversation history (every request starts fresh), auth, streaming.
+**Phase 2 started — Ved remembers.** Conversations persist, and *"remind me at
+8 PM to call Mom"* → *"actually make it 9 PM"* reschedules the right reminder
+with no context restated (verified against qwen3.6:35b: it chained list →
+complete → create on its own).
 
-Next up: Phase 2 (memory) — persisted conversations first, then pgvector
-semantic search. Follow-ups like *"actually make it 9 PM"* need it.
+Not yet: semantic search (pgvector is installed but unused), auth, streaming.
+
+Next up: finish Phase 2 — structured user memory, then embeddings for fuzzy
+recall. The plan is explicit that not everything should be an embedding.
 
 ## Layout
 
@@ -36,8 +41,8 @@ apps/web-client/   Next.js 16 (App Router) + TS PWA
   assets/          ved-mark.png, the single source for every icon
   scripts/         generate-icons.py — never hand-edit generated icons
 apps/backend/      FastAPI, uv-managed, Python 3.13
-  src/ved_backend/ main.py (routes + lifespan), agent.py, config.py,
-                   database.py, models.py, schemas.py
+  src/ved_backend/ main.py (routes + lifespan), agent.py, memory.py,
+                   config.py, database.py, models.py, schemas.py
     llm/           LLMProvider protocol, openai_compatible.py (any /v1
                    endpoint — Ollama today, GPU box later), stub.py (CI)
     tools/         MCP client — toolbox.py, servers.py (NOT named mcp/)
@@ -89,6 +94,12 @@ memory needs no migration.
 - MCP servers start once in the FastAPI lifespan and stay open; a stdio server
   per request would cost hundreds of ms. A server that fails to start is logged
   and skipped, not fatal.
+- **History replays prompts and final answers only, never tool calls.** Tool
+  calls are stored for the transcript but not resent: the wire format requires
+  every assistant `tool_calls` to be followed by matching `tool` results, so a
+  trimmed window would be malformed. The answer already carries the fact.
+- The **server** mints `conversation_id`, and only after the model answers — so
+  a failed turn leaves no empty thread and a client typo cannot create one.
 - The LLM never gets unrestricted system access; sensitive actions go through a
   permission layer.
 - Don't build ahead of the current phase.
@@ -99,6 +110,7 @@ memory needs no migration.
 colima start                                     # Docker runtime (not Desktop)
 cd infra && docker compose up -d                 # Postgres + backend
 cd infra && docker compose logs -f db
+cd infra && docker compose --profile tools up -d studio   # DB browser :5050
 
 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0 ollama serve   # the model
 ollama list                                      # what is pulled
