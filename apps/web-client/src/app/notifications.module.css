@@ -1,0 +1,68 @@
+.panel {
+  width: 100%;
+  max-width: 34rem;
+  margin-top: 1.25rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: 0.75rem;
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  text-align: left;
+}
+
+.panel[data-state="on"] {
+  border-color: color-mix(in srgb, #3fb950 40%, transparent);
+}
+
+.panel[data-state="blocked"],
+.panel[data-state="error"] {
+  border-color: color-mix(in srgb, #f85149 45%, transparent);
+}
+
+.line {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  opacity: 0.85;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.button,
+.quiet {
+  padding: 0.4375rem 0.875rem;
+  border-radius: 0.625rem;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  color: inherit;
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.button {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.quiet {
+  background: transparent;
+  opacity: 0.7;
+}
+
+.button:disabled,
+.quiet:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.note {
+  margin: 0;
+  font-family: var(--font-geist-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
+  opacity: 0.6;
+}

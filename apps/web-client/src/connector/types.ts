@@ -19,6 +19,17 @@ export interface AgentReply {
   tool_calls: ToolInvocation[];
 }
 
+export interface PushStatus {
+  configured: boolean;
+  public_key: string | null;
+  subscriptions: number;
+}
+
+export interface PushTestResult {
+  sent: number;
+  expired: number;
+}
+
 export interface ConversationSummary {
   id: string;
   title: string | null;

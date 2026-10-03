@@ -25,6 +25,10 @@ with no model and no network.
 with no context restated (verified against qwen3.6:35b: it chained list →
 complete → create on its own).
 
+**Reminders now actually fire.** A background scheduler polls for due reminders
+and sends a Web Push notification — your phone buzzes with Ved closed. Verified
+end to end in a real browser: asked in the chat, notification arrived.
+
 Not yet: semantic search (pgvector is installed but unused), auth, streaming.
 
 Next up: finish Phase 2 — structured user memory, then embeddings for fuzzy
@@ -42,7 +46,9 @@ apps/web-client/   Next.js 16 (App Router) + TS PWA
   scripts/         generate-icons.py — never hand-edit generated icons
 apps/backend/      FastAPI, uv-managed, Python 3.13
   src/ved_backend/ main.py (routes + lifespan), agent.py, memory.py,
-                   config.py, database.py, models.py, schemas.py
+                   scheduler.py, push.py, config.py, database.py,
+                   models.py, schemas.py
+  scripts/         generate_vapid_keys.py — writes to gitignored .env files
     llm/           LLMProvider protocol, openai_compatible.py (any /v1
                    endpoint — Ollama today, GPU box later), stub.py (CI)
     tools/         MCP client — toolbox.py, servers.py (NOT named mcp/)
@@ -100,6 +106,12 @@ memory needs no migration.
   trimmed window would be malformed. The answer already carries the fact.
 - The **server** mints `conversation_id`, and only after the model answers — so
   a failed turn leaves no empty thread and a client typo cannot create one.
+- **Reminders are claimed `FOR UPDATE SKIP LOCKED`** with `notified_at` stamped
+  in the same transaction, so one fires exactly once even with two pollers.
+- Push subscriptions answering 404/410 are **deleted, not retried** — browsers
+  rotate endpoints and dead ones would otherwise accumulate forever.
+- VAPID keys live only in gitignored `.env` files. Rotating them invalidates
+  every subscription, so `generate_vapid_keys.py` refuses to overwrite.
 - The LLM never gets unrestricted system access; sensitive actions go through a
   permission layer.
 - Don't build ahead of the current phase.

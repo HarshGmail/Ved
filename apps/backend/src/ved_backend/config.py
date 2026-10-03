@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     conversation_history_limit: int = 20
     conversation_list_limit: int = 50
 
+    vapid_public_key: str | None = None
+    vapid_private_key: str | None = None
+    vapid_subject: str = "mailto:ved@example.com"
+    scheduler_poll_seconds: float = 30.0
+
     llm_base_url: str = "http://localhost:11434/v1"
     llm_model: str = "qwen3.6:35b"
     llm_api_key: str | None = None

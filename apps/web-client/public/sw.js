@@ -31,3 +31,40 @@ self.addEventListener("fetch", (event) => {
     );
   }
 });
+
+function readPush(event) {
+  if (!event.data) return { title: "Ved", body: "You have a reminder." };
+  try {
+    return event.data.json();
+  } catch {
+    return { title: "Ved", body: event.data.text() };
+  }
+}
+
+self.addEventListener("push", (event) => {
+  const payload = readPush(event);
+  event.waitUntil(
+    self.registration.showNotification(payload.title ?? "Ved", {
+      body: payload.body ?? "",
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      tag: payload.tag ?? "ved",
+      renotify: true,
+      vibrate: [120, 60, 120],
+      data: { url: payload.url ?? "/" },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url ?? "/", self.location.origin).href;
+
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+      const open = windows.find((client) => client.url.startsWith(self.location.origin));
+      if (open) return open.focus();
+      return self.clients.openWindow(target);
+    }),
+  );
+});

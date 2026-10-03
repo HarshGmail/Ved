@@ -63,6 +63,32 @@ class TranscriptMessage(BaseModel):
     created_at: datetime
 
 
+class PushKeys(BaseModel):
+    p256dh: str
+    auth: str
+
+
+class PushSubscribeRequest(BaseModel):
+    endpoint: str = Field(min_length=1, max_length=2000)
+    keys: PushKeys
+    label: str | None = Field(default=None, max_length=200)
+
+
+class PushUnsubscribeRequest(BaseModel):
+    endpoint: str = Field(min_length=1, max_length=2000)
+
+
+class PushStatus(BaseModel):
+    configured: bool
+    public_key: str | None
+    subscriptions: int
+
+
+class PushTestResult(BaseModel):
+    sent: int
+    expired: int
+
+
 class ConversationTranscript(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

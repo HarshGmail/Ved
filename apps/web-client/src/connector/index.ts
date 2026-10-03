@@ -6,6 +6,8 @@ import type {
   ConversationList,
   ConversationTranscript,
   HealthStatus,
+  PushStatus,
+  PushTestResult,
 } from "./types";
 
 export function createConnector(overrides: Partial<ConnectorConfig> = {}) {
@@ -32,6 +34,35 @@ export function createConnector(overrides: Partial<ConnectorConfig> = {}) {
       }),
     listConversations: (options: Pick<RequestOptions, "signal"> = {}) =>
       request<ConversationList>({ path: "/conversations", ...options }),
+    pushStatus: (options: Pick<RequestOptions, "signal"> = {}) =>
+      request<PushStatus>({ path: "/push/status", ...options }),
+    subscribeToPush: (
+      subscription: PushSubscriptionJSON,
+      label?: string,
+      options: Pick<RequestOptions, "signal"> = {},
+    ) =>
+      request<PushStatus>({
+        method: "POST",
+        path: "/push/subscribe",
+        body: {
+          endpoint: subscription.endpoint,
+          keys: subscription.keys,
+          label: label ?? null,
+        },
+        ...options,
+      }),
+    unsubscribeFromPush: (
+      endpoint: string,
+      options: Pick<RequestOptions, "signal"> = {},
+    ) =>
+      request<PushStatus>({
+        method: "POST",
+        path: "/push/unsubscribe",
+        body: { endpoint },
+        ...options,
+      }),
+    sendTestPush: (options: Pick<RequestOptions, "signal"> = {}) =>
+      request<PushTestResult>({ method: "POST", path: "/push/test", ...options }),
     readConversation: (
       conversationId: string,
       options: Pick<RequestOptions, "signal"> = {},
@@ -59,6 +90,8 @@ export type {
   ConversationSummary,
   ConversationTranscript,
   HealthStatus,
+  PushStatus,
+  PushTestResult,
   ServiceState,
   ToolInvocation,
   TranscriptMessage,
