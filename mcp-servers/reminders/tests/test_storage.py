@@ -2,6 +2,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from ved_db import Reminder
 
 from ved_reminders import storage
 from ved_reminders.storage import ReminderNotFoundError
@@ -74,3 +75,33 @@ async def test_complete_is_idempotent(session):
 async def test_complete_unknown_id_raises(session):
     with pytest.raises(ReminderNotFoundError):
         await storage.complete_reminder(session, uuid.uuid4())
+
+
+@requires_database
+async def test_rescheduling_moves_the_same_reminder(session):
+    created = await storage.create_reminder(session, "call Mom", at(2))
+
+    moved = await storage.reschedule_reminder(session, uuid.UUID(created.id), at(3))
+
+    assert moved.id == created.id
+    assert moved.completed is False
+    assert moved.due_at != created.due_at
+
+
+@requires_database
+async def test_rescheduling_lets_it_fire_again(session):
+    created = await storage.create_reminder(session, "call Mom", at(1))
+    row = await session.get(Reminder, uuid.UUID(created.id))
+    row.notified_at = datetime.now(UTC)
+    await session.commit()
+
+    await storage.reschedule_reminder(session, uuid.UUID(created.id), at(4))
+
+    refreshed = await session.get(Reminder, uuid.UUID(created.id))
+    assert refreshed.notified_at is None
+
+
+@requires_database
+async def test_rescheduling_something_unknown_is_reported(session):
+    with pytest.raises(storage.ReminderNotFoundError):
+        await storage.reschedule_reminder(session, uuid.uuid4(), at(1))

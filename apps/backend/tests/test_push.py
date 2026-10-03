@@ -1,5 +1,7 @@
+import asyncio
 import json
 import os
+import time
 
 import pytest
 from pywebpush import WebPushException
@@ -7,6 +9,8 @@ from sqlalchemy import select
 from ved_db import PushSubscription
 
 from ved_backend.push import (
+    DEFAULT_TIMEOUT_SECONDS,
+    DEFAULT_TTL_SECONDS,
     Notification,
     PushNotConfiguredError,
     PushService,
@@ -174,3 +178,42 @@ async def test_delivery_stamps_last_used(session_factory, monkeypatch):
     async with session_factory() as session:
         stored = await session.scalar(select(PushSubscription))
         assert stored.last_used_at is not None
+
+
+async def test_a_hanging_endpoint_does_not_stall_forever(session_factory, monkeypatch):
+    service = PushService(
+        session_factory,
+        public_key="public",
+        private_key="private",
+        subject="mailto:ved@example.com",
+        timeout_seconds=0.05,
+    )
+    await service.subscribe("https://push.example/slow", KEYS, None)
+
+    def hang(row, payload):
+        time.sleep(2)
+
+    monkeypatch.setattr(service, "_send_blocking", hang)
+
+    report = await asyncio.wait_for(
+        service.send(Notification(title="Ved", body="hi", tag="t")), timeout=5
+    )
+
+    assert report.sent == 0
+    assert await service.subscription_count() == 1
+
+
+async def test_sends_carry_a_timeout_and_a_ttl(session_factory, monkeypatch):
+    service = build(session_factory)
+    await service.subscribe("https://push.example/abc", KEYS, None)
+    captured: dict = {}
+
+    def capture(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr("ved_backend.push.webpush", capture)
+    await service.send(Notification(title="Ved", body="hi", tag="t"))
+
+    assert captured["timeout"] == DEFAULT_TIMEOUT_SECONDS
+    assert captured["ttl"] == DEFAULT_TTL_SECONDS
+    assert captured["ttl"] > 0

@@ -39,6 +39,13 @@ mcp = MCPServer(
 )
 
 
+def parse_reminder_id(value: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(value)
+    except ValueError as error:
+        raise ToolError(f"reminder_id must be a UUID, got {value!r}") from error
+
+
 def parse_due_at(value: str) -> datetime:
     try:
         parsed = datetime.fromisoformat(value)
@@ -95,6 +102,29 @@ async def list_all(
     return ReminderList(reminders=records)
 
 
+@mcp.tool(name="reminders.reschedule")
+async def reschedule(reminder_id: str, due_at: str, ctx: Context) -> ReminderRecord:
+    """Move an existing reminder to a new time.
+
+    Prefer this over completing one and creating another: it keeps the same
+    reminder rather than leaving a completed one the user never finished.
+
+    Args:
+        reminder_id: The id returned by reminders.create or reminders.list.
+        due_at: The new time, ISO 8601 with a UTC offset.
+    """
+    parsed_id = parse_reminder_id(reminder_id)
+
+    context: ServerContext = ctx.request_context.lifespan_context
+    async with context.session_factory() as session:
+        try:
+            return await storage.reschedule_reminder(
+                session, parsed_id, parse_due_at(due_at)
+            )
+        except storage.ReminderNotFoundError as error:
+            raise ToolError(str(error)) from error
+
+
 @mcp.tool(name="reminders.complete")
 async def complete(reminder_id: str, ctx: Context) -> ReminderRecord:
     """Mark a reminder as completed.
@@ -102,10 +132,7 @@ async def complete(reminder_id: str, ctx: Context) -> ReminderRecord:
     Args:
         reminder_id: The id returned by reminders.create or reminders.list.
     """
-    try:
-        parsed_id = uuid.UUID(reminder_id)
-    except ValueError as error:
-        raise ToolError(f"reminder_id must be a UUID, got {reminder_id!r}") from error
+    parsed_id = parse_reminder_id(reminder_id)
 
     context: ServerContext = ctx.request_context.lifespan_context
     async with context.session_factory() as session:

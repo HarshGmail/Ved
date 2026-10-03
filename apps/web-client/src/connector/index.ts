@@ -1,4 +1,4 @@
-import { type ConnectorConfig, resolveConfig } from "./config";
+import { AGENT_TIMEOUT_MS, type ConnectorConfig, resolveConfig } from "./config";
 import { createHttpClient, type RequestOptions } from "./http";
 import { createStreamClient } from "./stream";
 import type {
@@ -30,6 +30,7 @@ export function createConnector(overrides: Partial<ConnectorConfig> = {}) {
         method: "POST",
         path: "/agent/message",
         body: { prompt, conversation_id: conversationId ?? null },
+        timeoutMs: AGENT_TIMEOUT_MS,
         ...options,
       }),
     listConversations: (options: Pick<RequestOptions, "signal"> = {}) =>

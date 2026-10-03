@@ -2,11 +2,22 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func
+from sqlalchemy import (
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    Index,
+    Sequence,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 MessageRole = Literal["user", "assistant"]
+
+CONVERSATION_MESSAGE_SEQUENCE = Sequence("conversation_messages_sequence_seq")
 
 
 class Base(DeclarativeBase):
@@ -66,14 +77,14 @@ class Conversation(Base):
     messages: Mapped[list["ConversationMessage"]] = relationship(
         back_populates="conversation",
         cascade="all, delete-orphan",
-        order_by="ConversationMessage.created_at",
+        order_by="ConversationMessage.sequence",
     )
 
 
 class ConversationMessage(Base):
     __tablename__ = "conversation_messages"
     __table_args__ = (
-        Index("ix_conversation_messages_thread", "conversation_id", "created_at"),
+        Index("ix_conversation_messages_thread", "conversation_id", "sequence"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -83,6 +94,11 @@ class ConversationMessage(Base):
         UUID(as_uuid=True),
         ForeignKey("conversations.id", ondelete="CASCADE"),
         nullable=False,
+    )
+    sequence: Mapped[int] = mapped_column(
+        BigInteger,
+        CONVERSATION_MESSAGE_SEQUENCE,
+        server_default=CONVERSATION_MESSAGE_SEQUENCE.next_value(),
     )
     role: Mapped[MessageRole] = mapped_column(String(16))
     text: Mapped[str] = mapped_column(Text)

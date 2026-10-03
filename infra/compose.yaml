@@ -33,6 +33,11 @@ services:
       VED_LLM_PROVIDER: ${VED_LLM_PROVIDER:-openai-compatible}
       VED_LLM_BASE_URL: ${VED_LLM_BASE_URL:-http://host.docker.internal:11434/v1}
       VED_LLM_MODEL: ${VED_LLM_MODEL:-qwen3.6:35b}
+      VED_LLM_TIMEOUT_SECONDS: ${VED_LLM_TIMEOUT_SECONDS:-120.0}
+      VED_VAPID_PUBLIC_KEY: ${VED_VAPID_PUBLIC_KEY:-}
+      VED_VAPID_PRIVATE_KEY: ${VED_VAPID_PRIVATE_KEY:-}
+      VED_VAPID_SUBJECT: ${VED_VAPID_SUBJECT:-mailto:ved@example.com}
+      VED_SCHEDULER_POLL_SECONDS: ${VED_SCHEDULER_POLL_SECONDS:-30}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

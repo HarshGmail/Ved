@@ -9,6 +9,7 @@ PostgreSQL database as the backend.
 | --- | --- | --- |
 | `reminders.create` | `text`, `due_at` | The created reminder |
 | `reminders.list` | `include_completed=false`, `limit=20` | Reminders, soonest first |
+| `reminders.reschedule` | `reminder_id`, `due_at` | The moved reminder |
 | `reminders.complete` | `reminder_id` | The completed reminder |
 
 All three return structured output with a declared schema, so a model gets typed
@@ -60,6 +61,11 @@ schema, not each service's business rules.
 
 **`limit` is capped server-side** at `VED_MAX_LIST_LIMIT` (default 100). A model
 asking for 10,000 reminders gets 100.
+
+**Rescheduling is its own tool, not complete-then-create.** Moving a reminder
+that way left a completed reminder the user never finished, and burned four
+tool rounds on what is one change. `reschedule` also clears `notified_at`, so a
+reminder pushed into the future can fire again.
 
 **Completion is idempotent.** Completing an already-completed reminder returns
 the existing record rather than moving the timestamp — retries are safe.

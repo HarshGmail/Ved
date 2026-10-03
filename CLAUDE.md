@@ -56,7 +56,8 @@ apps/backend/      FastAPI, uv-managed, Python 3.13
   Dockerfile       uv-based image; build context is the REPO ROOT;
                    also installs mcp-servers/reminders so the container can run it
 packages/ved-db/   Shared SQLAlchemy schema — the ONLY place tables are defined
-infra/             compose.yaml (pgvector + backend), db/init/
+infra/             compose.yaml (pgvector + backend + studio), db/init/
+.github/workflows/ CI — lint, tests, migration drift, web build
 mcp-servers/
   reminders/       MCP server (SDK v2), stdio, own uv project
 docs/              master-plan.md, README.md, pilot.md
@@ -106,8 +107,19 @@ memory needs no migration.
   trimmed window would be malformed. The answer already carries the fact.
 - The **server** mints `conversation_id`, and only after the model answers — so
   a failed turn leaves no empty thread and a client typo cannot create one.
+- **Conversation order comes from `sequence`, never `created_at`.** Both
+  messages in a turn share one transaction timestamp, so sorting by time breaks
+  ties arbitrarily — with real table statistics it replayed answer-before-prompt
+  every time. Tiny test tables hide this.
 - **Reminders are claimed `FOR UPDATE SKIP LOCKED`** with `notified_at` stamped
-  in the same transaction, so one fires exactly once even with two pollers.
+  in the same transaction, so one fires exactly once even with two pollers. If
+  nothing was reachable the stamp is cleared and it retries, until
+  `give_up_after`.
+- Push sends carry a socket timeout, an asyncio deadline and a 24h TTL. Without
+  the first two a hanging endpoint stalls the scheduler for every later
+  reminder; without the TTL a sleeping phone may never get the message.
+- **Prefer `reminders.reschedule` over complete+create.** The old chain left
+  reminders marked done that the user never did, and used the whole tool budget.
 - Push subscriptions answering 404/410 are **deleted, not retried** — browsers
   rotate endpoints and dead ones would otherwise accumulate forever.
 - VAPID keys live only in gitignored `.env` files. Rotating them invalidates
@@ -127,7 +139,9 @@ cd infra && docker compose --profile tools up -d studio   # DB browser :5050
 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0 ollama serve   # the model
 ollama list                                      # what is pulled
 
-cd apps/backend && uv run pytest
+cd apps/backend && uv run pytest     # DB tests skip without the URL below
+VED_TEST_DATABASE_URL=postgresql+psycopg://ved:PW@localhost:5432/ved_test \
+  uv run pytest                      # fixture refuses a db without "test" in it
 cd apps/backend && uv run ruff check .
 cd apps/backend && uv run alembic upgrade head
 

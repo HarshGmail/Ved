@@ -2,6 +2,7 @@ import os
 import uuid
 
 import pytest
+from sqlalchemy import text
 
 from ved_backend.llm.base import AssistantMessage, UserMessage
 from ved_backend.memory import ConversationNotFoundError, ConversationStore
@@ -156,3 +157,25 @@ async def test_conversations_do_not_leak_into_each_other(store):
 
     assert await store.history(second) == []
     assert len(await store.history(first)) == 2
+
+
+async def test_history_replays_the_prompt_before_the_answer(session_factory):
+    store = ConversationStore(session_factory, history_limit=20)
+    conversations = []
+    for index in range(30):
+        conversation_id = await store.start(f"prompt {index}")
+        await store.record_turn(
+            conversation_id,
+            prompt=f"prompt {index}",
+            answer=f"answer {index}",
+            model="m",
+            tool_calls=[],
+        )
+        conversations.append(conversation_id)
+
+    async with session_factory() as session:
+        await session.execute(text("ANALYZE conversation_messages"))
+
+    for conversation_id in conversations:
+        history = await store.history(conversation_id)
+        assert [m.role for m in history] == ["user", "assistant"]

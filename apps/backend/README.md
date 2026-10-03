@@ -22,6 +22,17 @@ uv run ruff format .
 `uv sync` creates the venv and installs from `uv.lock` — no manual venv
 activation needed, `uv run` handles it.
 
+Database-backed tests drop and recreate every table, so they need their own
+database and are skipped without one:
+
+```bash
+VED_TEST_DATABASE_URL=postgresql+psycopg://ved:PASSWORD@localhost:5432/ved_test \
+  uv run pytest
+```
+
+The fixture refuses any database whose name does not contain `test`. Pointing
+it at the real database would otherwise wipe it.
+
 ## Endpoints
 
 | Method | Path | Purpose |
@@ -79,6 +90,13 @@ can re-fetch by calling the tool again.
 message count, not a token count — a crude bound that is honest about being
 crude. Summarising older turns is the obvious next step when it starts to bite.
 
+**Order comes from a `sequence` column, not `created_at`.** Both messages in a
+turn are written in one transaction, so `now()` gives them an identical
+timestamp and the tie breaks arbitrarily — on a table with real statistics
+Postgres returned the answer before the prompt every time, silently destroying
+the follow-up behaviour. Small test tables hid it by happening to come back in
+insert order.
+
 **A failed turn creates nothing.** The conversation row is written after the
 model answers, so an unreachable model leaves no empty thread behind.
 
@@ -114,6 +132,12 @@ pushes a notification.
 reminder fires exactly once even if two backend processes poll simultaneously.
 Without that, a restart mid-send would notify twice.
 
+**A reminder nothing received is released, not lost.** Claiming marks it sent
+up front to avoid double-delivery, but if no device was reachable the stamp is
+cleared so the next tick retries. After `give_up_after` (24h) it stops retrying
+and logs an error — otherwise an undeliverable reminder would be announced
+forever.
+
 The scheduler only runs while the backend does. That is honest about what this
 is: good enough on a machine that stays on, which is what the i7 home server is
 for. It is not a durable job queue, and does not pretend to be.
@@ -142,7 +166,11 @@ Two behaviours worth knowing:
   `404` or `410` means that browser's subscription is dead; it is deleted rather
   than retried forever. Browsers rotate endpoints, so this is routine.
 - **One dead device does not block the others.** Sends run concurrently and each
-  outcome is handled independently.
+  outcome is handled independently, under both a socket timeout and an asyncio
+  deadline. A push endpoint that accepts a connection then never answers would
+  otherwise stall the scheduler and stop every later reminder.
+- **Messages carry a 24-hour TTL.** With the default of zero, a push service may
+  discard the message outright if the phone is asleep at that instant.
 
 Without keys configured, due reminders are logged and nothing is sent — the
 scheduler still marks them fired, so it is visible but silent.

@@ -5,12 +5,21 @@ export class ConnectorError extends Error {
   }
 }
 
+function explain(body: unknown): string | null {
+  if (typeof body === "string" && body.trim()) return body.trim();
+  if (body && typeof body === "object" && "detail" in body) {
+    const detail = (body as { detail: unknown }).detail;
+    if (typeof detail === "string" && detail.trim()) return detail.trim();
+  }
+  return null;
+}
+
 export class HttpError extends ConnectorError {
   readonly status: number;
   readonly body: unknown;
 
   constructor(status: number, statusText: string, body: unknown) {
-    super(`Request failed with status ${status} ${statusText}`);
+    super(explain(body) ?? `Request failed with status ${status} ${statusText}`);
     this.name = "HttpError";
     this.status = status;
     this.body = body;

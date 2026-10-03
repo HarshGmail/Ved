@@ -15,6 +15,10 @@ logger = logging.getLogger(__name__)
 
 GONE_STATUSES = frozenset({404, 410})
 
+DEFAULT_TIMEOUT_SECONDS = 10.0
+DEFAULT_TTL_SECONDS = 86400
+DEADLINE_MULTIPLIER = 3
+
 
 class PushNotConfiguredError(RuntimeError):
     def __init__(self) -> None:
@@ -55,11 +59,16 @@ class PushService:
         public_key: str | None,
         private_key: str | None,
         subject: str,
+        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+        ttl_seconds: int = DEFAULT_TTL_SECONDS,
     ) -> None:
         self._session_factory = session_factory
         self._public_key = public_key
         self._private_key = private_key
         self._subject = subject
+        self._timeout_seconds = timeout_seconds
+        self._ttl_seconds = ttl_seconds
+        self._deadline_seconds = timeout_seconds * DEADLINE_MULTIPLIER
 
     @property
     def configured(self) -> bool:
@@ -124,7 +133,11 @@ class PushService:
 
     async def _deliver(self, row: PushSubscription, payload: str) -> bool | None:
         try:
-            await asyncio.to_thread(self._send_blocking, row, payload)
+            async with asyncio.timeout(self._deadline_seconds):
+                await asyncio.to_thread(self._send_blocking, row, payload)
+        except TimeoutError:
+            logger.warning("Push to %s timed out", row.id)
+            return False
         except WebPushException as error:
             status = getattr(error.response, "status_code", None)
             if status in GONE_STATUSES:
@@ -143,6 +156,8 @@ class PushService:
             data=payload,
             vapid_private_key=self._private_key,
             vapid_claims={"sub": self._subject},
+            ttl=self._ttl_seconds,
+            timeout=self._timeout_seconds,
         )
 
     async def _reconcile(self, delivered: list[uuid.UUID], expired: list[str]) -> None:

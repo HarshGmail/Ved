@@ -15,6 +15,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 ZONE = ZoneInfo("Asia/Kolkata")
+GIVE_UP = timedelta(hours=24)
 
 
 def at(offset_minutes: int) -> datetime:
@@ -140,11 +141,54 @@ async def test_claim_marks_rows_in_one_transaction(session_factory):
         await session.commit()
 
     async with session_factory() as session:
-        claimed = await claim_due_reminders(session, now=datetime.now(UTC))
+        claimed = await claim_due_reminders(
+            session, now=datetime.now(UTC), zone=ZONE, give_up_after=GIVE_UP
+        )
 
     assert len(claimed) == 1
 
     async with session_factory() as session:
-        again = await claim_due_reminders(session, now=datetime.now(UTC))
+        again = await claim_due_reminders(
+            session, now=datetime.now(UTC), zone=ZONE, give_up_after=GIVE_UP
+        )
 
     assert again == []
+
+
+async def test_an_undelivered_reminder_is_retried_not_lost(session_factory):
+    async with session_factory() as session:
+        session.add(Reminder(text="call Mom", due_at=at(-1)))
+        await session.commit()
+
+    unreachable = RecordingPush(sent=0)
+    scheduler = build(session_factory, unreachable)
+
+    assert await scheduler.tick() == 1
+
+    async with session_factory() as session:
+        stored = await session.scalar(select(Reminder))
+        assert stored.notified_at is None, "should be released for another attempt"
+
+    reachable = RecordingPush(sent=1)
+    assert await build(session_factory, reachable).tick() == 1
+    assert len(reachable.sent) == 1
+
+
+async def test_a_long_undeliverable_reminder_is_given_up_on(session_factory):
+    async with session_factory() as session:
+        session.add(Reminder(text="ancient", due_at=at(-60 * 48)))
+        await session.commit()
+
+    scheduler = ReminderScheduler(
+        session_factory,
+        RecordingPush(sent=0),
+        timezone="Asia/Kolkata",
+        poll_seconds=30.0,
+        give_up_after=timedelta(hours=24),
+    )
+
+    assert await scheduler.tick() == 1
+
+    async with session_factory() as session:
+        stored = await session.scalar(select(Reminder))
+        assert stored.notified_at is not None, "should stop retrying forever"

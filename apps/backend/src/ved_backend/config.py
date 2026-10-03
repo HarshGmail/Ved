@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     llm_provider: str = "stub"
     timezone: str = "Asia/Kolkata"
-    agent_max_tool_rounds: int = 4
+    agent_max_tool_rounds: int = 8
 
     conversation_history_limit: int = 20
     conversation_list_limit: int = 50

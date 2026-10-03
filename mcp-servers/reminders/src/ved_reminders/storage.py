@@ -67,3 +67,17 @@ async def complete_reminder(
         await session.refresh(reminder)
 
     return ReminderRecord.from_row(reminder)
+
+
+async def reschedule_reminder(
+    session: AsyncSession, reminder_id: uuid.UUID, due_at: datetime
+) -> ReminderRecord:
+    reminder = await session.get(Reminder, reminder_id)
+    if reminder is None:
+        raise ReminderNotFoundError(reminder_id)
+
+    reminder.due_at = due_at
+    reminder.notified_at = None
+    await session.commit()
+    await session.refresh(reminder)
+    return ReminderRecord.from_row(reminder)

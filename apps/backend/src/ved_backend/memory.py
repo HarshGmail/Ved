@@ -51,7 +51,7 @@ class ConversationStore:
             recent = await session.scalars(
                 select(ConversationMessage)
                 .where(ConversationMessage.conversation_id == conversation_id)
-                .order_by(ConversationMessage.created_at.desc())
+                .order_by(ConversationMessage.sequence.desc())
                 .limit(self._history_limit)
             )
             return to_llm_messages(list(reversed(recent.all())))
