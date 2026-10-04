@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+# Short commands for running Ved. Run `./ved help` for the list.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INFRA="$ROOT/infra"
+BACKEND="$ROOT/apps/backend"
+WEB="$ROOT/apps/web-client"
+REMINDERS="$ROOT/mcp-servers/reminders"
+
+OLLAMA_PORT=11434
+BACKEND_PORT=8000
+DEFAULT_MODEL="qwen3.6:35b"
+
+say() { printf '\033[1m==> %s\033[0m\n' "$*"; }
+fail() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+
+compose() { (cd "$INFRA" && docker compose "$@"); }
+
+port_in_use() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
+
+ensure_colima() {
+  if ! colima status >/dev/null 2>&1; then
+    say "starting Colima"
+    colima start
+  fi
+}
+
+ensure_env_files() {
+  [ -f "$INFRA/.env" ] || fail "infra/.env missing. Run ./ved setup first."
+  [ -f "$BACKEND/.env" ] || fail "apps/backend/.env missing. Run ./ved setup first."
+}
+
+cmd_db() {
+  ensure_env_files
+  ensure_colima
+  say "starting Postgres"
+  compose up -d db
+}
+
+cmd_model() {
+  if port_in_use "$OLLAMA_PORT"; then
+    say "Ollama is already running on :$OLLAMA_PORT"
+    return
+  fi
+  say "starting Ollama (Ctrl+C to stop)"
+  OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0 exec ollama serve
+}
+
+cmd_api() {
+  ensure_env_files
+  if port_in_use "$BACKEND_PORT"; then
+    fail "port $BACKEND_PORT is taken. If it's the Docker backend: ./ved stop"
+  fi
+  say "starting backend on :$BACKEND_PORT (Ctrl+C to stop)"
+  cd "$BACKEND"
+  exec uv run uvicorn ved_backend.main:app --reload --port "$BACKEND_PORT"
+}
+
+cmd_web() {
+  say "starting web client on :3000 (Ctrl+C to stop)"
+  cd "$WEB"
+  exec npm run dev
+}
+
+cmd_migrate() {
+  say "applying database migrations"
+  cd "$BACKEND"
+  uv run alembic upgrade head
+}
+
+cmd_studio() {
+  ensure_colima
+  say "starting the DB browser on http://localhost:5050"
+  compose --profile tools up -d studio
+}
+
+cmd_status() {
+  local name port
+  for entry in "Postgres:5432" "Ollama:$OLLAMA_PORT" "backend:$BACKEND_PORT" "web:3000" "DB browser:5050"; do
+    name="${entry%%:*}"
+    port="${entry##*:}"
+    if port_in_use "$port"; then
+      printf '  \033[32m●\033[0m %-11s :%s\n' "$name" "$port"
+    else
+      printf '  \033[2m○\033[0m %-11s :%s\n' "$name" "$port"
+    fi
+  done
+}
+
+cmd_stop() {
+  say "stopping the Docker backend, if running"
+  compose stop backend >/dev/null 2>&1 || true
+  say "done. Terminals started with ./ved model|api|web stop with Ctrl+C"
+}
+
+cmd_down() {
+  say "stopping all containers"
+  compose --profile tools stop
+  say "stopping Colima"
+  colima stop
+}
+
+cmd_setup() {
+  say "creating env files (existing ones are kept)"
+  [ -f "$INFRA/.env" ] || cp "$INFRA/.env.example" "$INFRA/.env"
+  [ -f "$BACKEND/.env" ] || cp "$BACKEND/.env.example" "$BACKEND/.env"
+  [ -f "$WEB/.env.local" ] || cp "$WEB/.env.example" "$WEB/.env.local"
+
+  if ! grep -q '^POSTGRES_PASSWORD=.' "$INFRA/.env"; then
+    printf '\nSet a password first:\n'
+    printf '  1. infra/.env          POSTGRES_PASSWORD=<choose one>\n'
+    printf '  2. apps/backend/.env   use the same password in VED_DATABASE_URL\n'
+    printf '\nThen run ./ved setup again.\n'
+    exit 1
+  fi
+
+  say "installing Python dependencies"
+  (cd "$REMINDERS" && uv sync)
+  (cd "$BACKEND" && uv sync)
+
+  if grep -q '^VED_VAPID_PRIVATE_KEY=.' "$BACKEND/.env"; then
+    say "push keys already exist, keeping them"
+  else
+    say "generating push keys"
+    (cd "$BACKEND" && uv run python scripts/generate_vapid_keys.py)
+  fi
+
+  cmd_db
+  say "waiting for Postgres"
+  until compose exec -T db pg_isready -U ved >/dev/null 2>&1; do sleep 1; done
+  cmd_migrate
+
+  say "installing web dependencies"
+  (cd "$WEB" && npm install)
+
+  if ! ollama list 2>/dev/null | grep -q "${DEFAULT_MODEL%%:*}"; then
+    printf '\nOne more step, a 22GB download:\n  ollama pull %s\n' "$DEFAULT_MODEL"
+    printf 'Ollama must be running for that, so start ./ved model first.\n'
+  fi
+
+  printf '\nSetup done. Start Ved with ./ved db, then in three terminals:\n'
+  printf '  ./ved model\n  ./ved api\n  ./ved web\n'
+}
+
+cmd_help() {
+  cat <<'EOF'
+Usage: ./ved <command>
+
+First time
+  setup     Create env files, install dependencies, generate push keys,
+            start Postgres and apply migrations
+
+Every time
+  db        Start Colima and Postgres (runs in the background)
+  model     Start Ollama, the local model        (keep this terminal open)
+  api       Start the backend on :8000           (keep this terminal open)
+  web       Start the web client on :3000        (keep this terminal open)
+
+Other
+  status    Show which services are running
+  migrate   Apply new database migrations
+  studio    Start the DB browser on :5050
+  stop      Stop the Docker backend, freeing :8000
+  down      Stop all containers and Colima
+EOF
+}
+
+case "${1:-help}" in
+  setup) cmd_setup ;;
+  db) cmd_db ;;
+  model) cmd_model ;;
+  api) cmd_api ;;
+  web) cmd_web ;;
+  migrate) cmd_migrate ;;
+  studio) cmd_studio ;;
+  status) cmd_status ;;
+  stop) cmd_stop ;;
+  down) cmd_down ;;
+  help | -h | --help) cmd_help ;;
+  *) printf 'Unknown command: %s\n\n' "$1" >&2; cmd_help; exit 1 ;;
+esac

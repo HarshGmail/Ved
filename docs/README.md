@@ -14,29 +14,26 @@ complete phase breakdown.
 
 ## Where we are
 
-**Phase 1 complete — the first milestone works.** Typing *"Ved, remind me at
-8 PM to call Mom"* into the PWA creates a real reminder: the backend runs an
-agent loop, calls `reminders.create` on an MCP server over stdio, and answers
-from the result.
+**Phase 2 in progress — memory and reminders.** Ved runs on a local model through
+Ollama, remembers each conversation, and pushes reminders to your devices when
+they come due, even with the app closed. *"Remind me at 8 PM to call Mom"*
+followed by *"actually make it 9 PM"* reschedules the right reminder without the
+context being restated.
 
-A real model drives it, running **locally** on the dev Mac through Ollama — no
-API key, no data leaving the machine. The provider speaks the OpenAI `/v1`
-shape rather than any one vendor, so moving the model to a GPU server later is
-a URL change. The deterministic stub remains as the CI fixture.
+Not yet: semantic search (pgvector is installed but unused), auth, streaming.
 
-No auth, no streaming, and no conversation history yet — every request starts
-fresh.
-
-See [pilot.md](pilot.md) for what this slice covers and what comes next.
+See [pilot.md](pilot.md) for how the first slice was built.
 
 ## Repo layout
 
 ```text
+ved              Short commands for setup and running — ./ved help
 apps/
   web-client/    Next.js (App Router) + TypeScript PWA
                  src/connector/  — the only code that talks to the backend
   backend/       Python/FastAPI (uv-managed), owns Alembic migrations
-                 src/ved_backend/  — app, agent loop, llm/, tools/ (MCP client)
+                 src/ved_backend/  — agent loop, memory, scheduler, push,
+                                     llm/, tools/ (MCP client)
 packages/
   ved-db/        Shared SQLAlchemy schema, imported by backend and MCP servers
 infra/           Docker Compose — PostgreSQL (pgvector) + backend
@@ -51,67 +48,18 @@ Added in later phases:
 
 ## Running locally
 
-Both apps, in two terminals. Start the backend first so the web client has
-something to reach.
+Setup and day-to-day commands live in the root [README](../README.md). In short,
+after `./ved setup`:
 
 ```bash
-cd apps/backend
-uv sync
-uv run uvicorn ved_backend.main:app --reload    # localhost:8000
+./ved db       # Postgres, in the background
+./ved model    # terminal 1
+./ved api      # terminal 2
+./ved web      # terminal 3
 ```
 
-```bash
-cd apps/web-client
-npm install
-npm run dev                                      # localhost:3000
-```
-
-Open <http://localhost:3000> — the page should show `backend ok — v0.1.0`. If the
-backend is not running it shows `backend unreachable` instead, which is the
-expected degraded state, not a crash.
-
-Then type *"Ved, remind me at 8 PM to call Mom"* into the box. The backend
-launches the reminders MCP server itself as a subprocess, so nothing else needs
-starting — but Postgres must be up and migrated, or the tool call fails.
-
-A model has to be serving too:
-
-```bash
-brew install ollama
-OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0 ollama serve
-ollama pull qwen3.6:35b          # or granite4.1:3b, far smaller and quicker
-```
-
-Set `VED_LLM_MODEL` to whichever you pulled. Without a model running,
-`/agent/message` returns `503` naming the cause; the rest of the app is fine.
-
-Copy each app's `.env.example` to `.env.local` (web) or `.env` (backend) to
-override defaults.
-
-Other commands:
-
-```bash
-cd apps/web-client && npm run build   # production build, includes the TS check
-cd apps/web-client && npm run lint
-
-cd apps/backend && uv run pytest
-cd apps/backend && uv run ruff check .
-```
-
-### Running via Docker
-
-`infra/` has a working Compose stack for PostgreSQL (pgvector) plus the backend:
-
-```bash
-cd infra
-cp .env.example .env   # set POSTGRES_PASSWORD
-docker compose up -d --build
-```
-
-The dev Mac uses Colima rather than Docker Desktop — setup steps and the
-corporate-proxy TLS workaround are in [../infra/README.md](../infra/README.md).
-
-Run the web client with `npm run dev` either way; it is not containerized.
+The backend launches the reminders MCP server itself as a subprocess, so there
+is nothing extra to start for it.
 
 ### Icons
 

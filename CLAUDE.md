@@ -37,6 +37,8 @@ recall. The plan is explicit that not everything should be an embedding.
 ## Layout
 
 ```text
+ved                Short commands — ./ved help (bash script, repo root)
+README.md          Clone-to-running setup
 apps/web-client/   Next.js 16 (App Router) + TS PWA
   src/connector/   ONLY place that talks to the backend
   src/app/         manifest.ts, layout, page, backend-status, chat
@@ -130,33 +132,40 @@ memory needs no migration.
 
 ## Commands
 
+Day to day, use the `ved` script at the repo root (setup steps: `README.md`):
+
 ```bash
-colima start                                     # Docker runtime (not Desktop)
-cd infra && docker compose up -d                 # Postgres + backend
-cd infra && docker compose logs -f db
-cd infra && docker compose --profile tools up -d studio   # DB browser :5050
+./ved setup      # one-time: env files, deps, push keys, db, migrations
+./ved db         # Colima + Postgres in the background
+./ved model      # Ollama        (own terminal)
+./ved api        # backend :8000 (own terminal, --reload)
+./ved web        # web :3000     (own terminal)
+./ved status     # what's up
+./ved migrate    # alembic upgrade head
+./ved studio     # DB browser :5050
+./ved stop       # stop the Docker backend if it holds :8000
+./ved down       # stop containers and Colima
+```
 
-OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0 ollama serve   # the model
-ollama list                                      # what is pulled
+Checks and one-offs:
 
+```bash
 cd apps/backend && uv run pytest     # DB tests skip without the URL below
 VED_TEST_DATABASE_URL=postgresql+psycopg://ved:PW@localhost:5432/ved_test \
   uv run pytest                      # fixture refuses a db without "test" in it
 cd apps/backend && uv run ruff check .
-cd apps/backend && uv run alembic upgrade head
+cd mcp-servers/reminders && uv run pytest
+cd apps/web-client && npm run lint && npm run build
+cd apps/web-client && uv run --with pillow python scripts/generate-icons.py
 
-curl -X POST localhost:8000/agent/message \                # the whole loop
+curl -X POST localhost:8000/agent/message \
   -H 'Content-Type: application/json' \
   -d '{"prompt": "Ved, remind me at 8 PM to call Mom"}'
-
-cd mcp-servers/reminders && uv run ved-mcp-reminders
-cd mcp-servers/reminders && uv run pytest   # needs VED_TEST_DATABASE_URL
-
-cd apps/web-client && npm run dev      # :3000
-cd apps/web-client && npm run build    # includes the TS check
-cd apps/web-client && npm run lint
-cd apps/web-client && uv run --with pillow python scripts/generate-icons.py
 ```
+
+`./ved api` reads `apps/backend/.env` (gitignored): database URL, CORS, model,
+VAPID keys. The Docker backend reads `infra/.env` instead; run one or the other,
+never both, because both want port 8000.
 
 Backend uses **uv** — `uv run` handles the venv, never `pip` or manual activate.
 
