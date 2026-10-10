@@ -20,7 +20,11 @@ they come due, even with the app closed. *"Remind me at 8 PM to call Mom"*
 followed by *"actually make it 9 PM"* reschedules the right reminder without the
 context being restated.
 
-Not yet: semantic search (pgvector is installed but unused), auth, streaming.
+It also remembers people and reminds you ahead of their birthdays every year,
+searches past conversations by meaning, renders replies as formatted text, and
+can be reached from your phone over Tailscale.
+
+Not yet: auth, streaming replies, proactive check-ins.
 
 See [pilot.md](pilot.md) for how the first slice was built.
 
@@ -40,6 +44,7 @@ infra/           Docker Compose — PostgreSQL (pgvector) + backend
 mcp-servers/
   reminders/     First MCP server — create, list, reschedule, complete
   people/        People and birthdays — remember, list, forget
+  memory/        Search past conversations by meaning
 docs/            This documentation
 ```
 
@@ -59,8 +64,9 @@ after `./ved setup`:
 ./ved web      # terminal 3
 ```
 
-The backend launches the reminders and people MCP servers itself as
-subprocesses, so there is nothing extra to start for them.
+The backend launches the reminders, people and memory MCP servers itself as
+subprocesses, so there is nothing extra to start for them. To use Ved from your
+phone, see [phone-access.md](phone-access.md).
 
 ### Icons
 

@@ -35,11 +35,18 @@ then plans the early notice and the on-the-day reminder itself, every year, and
 they arrive through the same push path. Verified against qwen3.6:35b, including
 changing the notice and listing upcoming birthdays.
 
-Not yet: semantic search (pgvector is installed but unused), auth, streaming.
+**Semantic search over past conversations.** Every recorded message is
+embedded in the background (`nomic-embed-text` via Ollama) into a pgvector
+column; the `memory` MCP server's `memory.search` finds them by meaning.
+Verified: in a fresh conversation, *"what did I decide about the home server?"*
+made qwen3.6:35b call `memory.search` and answer from an earlier chat.
 
-Next up: proactive birthday follow-ups ("Mom's birthday is in 10 days, any
-plans?"), then embeddings for fuzzy recall. The plan is explicit that not
-everything should be an embedding.
+**Replies render as markdown** in the chat. **Phone access** is wired through
+`./ved phone` (Tailscale serve) but unverified end to end — Tailscale isn't
+installed yet.
+
+Not yet: auth, streaming, proactive birthday follow-ups ("Mom's birthday is in
+10 days, any plans?").
 
 ## Layout
 
@@ -55,22 +62,26 @@ apps/web-client/   Next.js 16 (App Router) + TS PWA
   scripts/         generate-icons.py — never hand-edit generated icons
 apps/backend/      FastAPI, uv-managed, Python 3.13
   src/ved_backend/ main.py (routes + lifespan), agent.py, memory.py,
-                   scheduler.py, birthdays.py, push.py, config.py,
-                   database.py, models.py, schemas.py
+                   indexing.py (background embedding), scheduler.py,
+                   birthdays.py, push.py, config.py, database.py,
+                   models.py, schemas.py
   scripts/         generate_vapid_keys.py — writes to gitignored .env files
     llm/           LLMProvider protocol, openai_compatible.py (any /v1
-                   endpoint — Ollama today, GPU box later), stub.py (CI)
+                   endpoint — Ollama today, GPU box later), embeddings.py,
+                   stub.py (CI)
     tools/         MCP client — toolbox.py, servers.py (NOT named mcp/)
   migrations/      Alembic (URL comes from settings, not alembic.ini)
   Dockerfile       uv-based image; build context is the REPO ROOT;
                    also installs every mcp-servers/* so the container can run them
 packages/ved-db/   Shared SQLAlchemy schema — the ONLY place tables are defined
+                   testing.py: the one DB test fixture every suite uses
 infra/             compose.yaml (pgvector + backend + studio), db/init/
 .github/workflows/ CI — lint, tests, migration drift, web build
 mcp-servers/
   reminders/       MCP server (SDK v2), stdio, own uv project
   people/          people + birthdays; same shape as reminders
-docs/              master-plan.md, README.md, pilot.md
+  memory/          memory.search over embedded messages
+docs/              master-plan.md, README.md, pilot.md, phone-access.md
 ```
 
 Not created yet: `esphome/`.
@@ -140,6 +151,17 @@ memory needs no migration.
   rotate endpoints and dead ones would otherwise accumulate forever.
 - VAPID keys live only in gitignored `.env` files. Rotating them invalidates
   every subscription, so `generate_vapid_keys.py` refuses to overwrite.
+- **Embedding never blocks or fails a turn.** It runs in the background after
+  the reply; failures and old rows are backfilled by the scheduler tick. The
+  dimension is coupled three ways — `vector(768)`, `VED_EMBEDDING_DIMENSIONS`,
+  and the model — so changing models needs a migration and a re-embed.
+- **DB tests set up schema only through `ved_db.testing`.** It creates required
+  extensions (pgvector) before `create_all` and refuses a database without
+  "test" in its name. Four hand-copied fixtures once each missed the extension.
+- Phone access is `tailscale serve`, tailnet only — **never Funnel**. Web on
+  :443 → 127.0.0.1:3000, backend on :8443 → 127.0.0.1:8000. `./ved phone`
+  writes `VED_TAILNET_HOST` (feeds Next's `allowedDevOrigins`) and merges the
+  CORS origin as JSON.
 - The LLM never gets unrestricted system access; sensitive actions go through a
   permission layer.
 - Don't build ahead of the current phase.
@@ -157,6 +179,7 @@ Day to day, use the `ved` script at the repo root (setup steps: `README.md`):
 ./ved status     # what's up
 ./ved migrate    # alembic upgrade head
 ./ved studio     # DB browser :5050
+./ved phone      # reach Ved from the phone over Tailscale; `phone off` undoes
 ./ved stop       # stop the Docker backend if it holds :8000
 ./ved down       # stop containers and Colima
 ```

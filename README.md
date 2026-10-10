@@ -30,6 +30,7 @@ running.
 | Backend (FastAPI) | `./ved api` | 8000 |
 | Reminders MCP server | started by the backend | — |
 | People MCP server | started by the backend | — |
+| Memory MCP server | started by the backend | — |
 | Web client (Next.js PWA) | `./ved web` | 3000 |
 | DB browser (optional) | `./ved studio` (Docker) | 5050 |
 
@@ -74,15 +75,19 @@ The password is baked into the database volume the first time Postgres starts.
 Changing it later means `docker compose down -v` in `infra/`, which deletes all
 data.
 
-### 3. Download the model
+### 3. Download the models
 
 ```bash
-./ved model                # in one terminal, leave it running
-ollama pull qwen3.6:35b    # in another, a 22GB download
+./ved model                    # in one terminal, leave it running
+ollama pull qwen3.6:35b        # in another: the chat model, a 22GB download
+ollama pull nomic-embed-text   # the embedding model for search, small
 ```
 
-For a quicker start, `ollama pull granite4.1:3b` (2GB) also works: set
-`VED_LLM_MODEL=granite4.1:3b` in `apps/backend/.env`.
+For a quicker start, `ollama pull granite4.1:3b` (2GB) also works as the chat
+model: set `VED_LLM_MODEL=granite4.1:3b` in `apps/backend/.env`.
+
+Without the embedding model, chat still works, but Ved can't search past
+conversations.
 
 Setup is done. Start Ved with the [quick start](#quick-start) commands.
 
@@ -95,6 +100,13 @@ Setup is done. Start Ved with the [quick start](#quick-start) commands.
 3. **Try it.** Ask *"remind me in 2 minutes to stretch"* and close the window.
    The notification arrives anyway.
 
+Other things it understands:
+
+- *"Mom's birthday is March 4th, remind me 15 days before."* Every year from
+  then on, you get a reminder 15 days ahead and another on the day.
+- *"What did I decide about the home server?"* It searches past conversations
+  by meaning, so the wording doesn't have to match.
+
 The first message after a pause can take a minute or two while the model loads
 into memory. Later messages are much faster.
 
@@ -104,6 +116,13 @@ Google Chrome**. macOS can mute it.
 `localhost` counts as a secure context, so installing and push both work here.
 Opening it from another device needs HTTPS. A plain `192.168.x.x` address isn't
 enough.
+
+## Using it from your phone
+
+`./ved phone` serves Ved privately to your own devices over Tailscale, with real
+HTTPS, so install-to-home-screen and notifications work on the phone too.
+Nothing is exposed to the public internet. Setup steps, including installing
+Tailscale on both devices: [docs/phone-access.md](docs/phone-access.md).
 
 ## Commands
 
@@ -117,6 +136,8 @@ enough.
 | `./ved status` | Show which services are up |
 | `./ved migrate` | Apply new database migrations, after pulling changes |
 | `./ved studio` | Start the DB browser at <http://localhost:5050> |
+| `./ved phone` | Serve Ved to your phone over Tailscale |
+| `./ved phone off` | Stop serving it to your phone |
 | `./ved stop` | Stop the Docker backend if it's holding port 8000 |
 | `./ved down` | Stop all containers and Colima, freeing about 4GB |
 
@@ -146,6 +167,7 @@ export VED_TEST_DATABASE_URL=postgresql+psycopg://ved:PASSWORD@localhost:5432/ve
 cd apps/backend && uv run pytest && uv run ruff check .
 cd mcp-servers/reminders && uv run pytest
 cd mcp-servers/people && uv run pytest
+cd mcp-servers/memory && uv run pytest
 cd apps/web-client && npm run lint && npm run build
 ```
 
@@ -163,5 +185,7 @@ your real data by mistake. CI runs all of this on every push.
 | `Could not reach the model` | `./ved model` isn't running |
 | `Push keys are not set up` | Setup didn't finish, or `./ved web` was started before it. Restart `./ved web` |
 | `relation "..." does not exist` | Migrations not applied: `./ved migrate` |
+| Ved can't find something from a past chat | Embedding model missing: `ollama pull nomic-embed-text`. Older messages are embedded in the background once it's there |
+| Phone can't connect | See troubleshooting in [docs/phone-access.md](docs/phone-access.md) |
 | `port 8000 is taken` | The Docker backend is running: `./ved stop` |
 | Image pulls fail with `x509` | Corporate TLS interception, see [infra/README.md](infra/README.md) |

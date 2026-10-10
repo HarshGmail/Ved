@@ -17,6 +17,7 @@ PHONE_WEB_PORT=443
 PHONE_API_PORT=8443
 TAILSCALE_APP_CLI="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
 DEFAULT_MODEL="qwen3.6:35b"
+EMBEDDING_MODEL="nomic-embed-text"
 
 say() { printf '\033[1m==> %s\033[0m\n' "$*"; }
 fail() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -227,9 +228,14 @@ cmd_setup() {
   say "installing web dependencies"
   (cd "$WEB" && npm install)
 
-  if ! ollama list 2>/dev/null | grep -q "${DEFAULT_MODEL%%:*}"; then
-    printf '\nOne more step, a 22GB download:\n  ollama pull %s\n' "$DEFAULT_MODEL"
-    printf 'Ollama must be running for that, so start ./ved model first.\n'
+  local missing=""
+  for model in "$DEFAULT_MODEL" "$EMBEDDING_MODEL"; do
+    ollama list 2>/dev/null | grep -q "^${model%%:*}" || missing="$missing $model"
+  done
+  if [ -n "$missing" ]; then
+    printf '\nOne more step. Start ./ved model, then in another terminal:\n'
+    for model in $missing; do printf '  ollama pull %s\n' "$model"; done
+    printf 'The chat model is a 22GB download; the embedding model is small.\n'
   fi
 
   printf '\nSetup done. Start Ved with ./ved db, then in three terminals:\n'
