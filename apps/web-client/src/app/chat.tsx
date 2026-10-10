@@ -8,6 +8,7 @@ import {
 } from "@/connector";
 import styles from "./chat.module.css";
 import { MarkdownReply } from "./markdown-reply";
+import type { TranscriptTurn } from "./transcript";
 
 type Turn =
   | { role: "user"; text: string }
@@ -47,18 +48,31 @@ async function requestReply(
   }
 }
 
-export function Chat() {
-  const [turns, setTurns] = useState<Turn[]>([]);
+interface ChatProps {
+  conversationId?: string;
+  initialTurns?: TranscriptTurn[];
+  onReply?: (conversationId: string) => void;
+  onNewConversation?: () => void;
+}
+
+export function Chat({
+  conversationId: initialConversationId,
+  initialTurns = [],
+  onReply,
+  onNewConversation,
+}: ChatProps) {
+  const [turns, setTurns] = useState<Turn[]>(initialTurns);
   const [prompt, setPrompt] = useState("");
   const [pending, setPending] = useState(false);
   const [streaming, setStreaming] = useState<StreamingReply | null>(null);
-  const [conversationId, setConversationId] = useState<string | undefined>();
+  const [conversationId, setConversationId] = useState(initialConversationId);
   const inputRef = useRef<HTMLInputElement>(null);
 
   function startNewConversation() {
     setConversationId(undefined);
     setTurns([]);
     inputRef.current?.focus();
+    onNewConversation?.();
   }
 
   async function onSubmit(event: FormEvent) {
@@ -77,6 +91,7 @@ export function Chat() {
       );
       setConversationId(reply.conversation_id);
       setTurns((current) => [...current, { role: "ved", reply }]);
+      onReply?.(reply.conversation_id);
     } catch (error: unknown) {
       setTurns((current) => [
         ...current,

@@ -1,5 +1,6 @@
+import { Suspense } from "react";
 import { BackendStatus } from "./backend-status";
-import { Chat } from "./chat";
+import { Conversations } from "./conversations";
 import { Notifications } from "./notifications";
 import styles from "./page.module.css";
 
@@ -11,7 +12,9 @@ export default function Home() {
       <p className={styles.phase}>Phase 2 — memory and reminders</p>
       <BackendStatus />
       <Notifications />
-      <Chat />
+      <Suspense>
+        <Conversations />
+      </Suspense>
     </main>
   );
 }
