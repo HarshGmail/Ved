@@ -3,22 +3,28 @@ import logging
 import uuid
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ved_db import Reminder
 
+from ved_backend.birthdays import schedule_birthday_reminders
 from ved_backend.push import Notification, PushService
 
 logger = logging.getLogger(__name__)
 
 NOTIFICATION_TITLE = "Ved"
 DEFAULT_GIVE_UP_AFTER = timedelta(hours=24)
+DEFAULT_BIRTHDAY_REMINDER_TIME = time(9, 0)
+REMINDER_TAG = "reminder"
+BIRTHDAY_TAG = "birthday"
 
 
 def describe(reminder: Reminder, zone: ZoneInfo) -> str:
+    if reminder.person_id is not None:
+        return reminder.text
     when = reminder.due_at.astimezone(zone).strftime("%-I:%M %p")
     return f"{reminder.text} — {when}"
 
@@ -28,6 +34,7 @@ class ClaimedReminder:
     id: uuid.UUID
     summary: str
     stale: bool
+    tag: str = REMINDER_TAG
 
 
 async def claim_due_reminders(
@@ -52,6 +59,7 @@ async def claim_due_reminders(
                 id=reminder.id,
                 summary=describe(reminder, zone),
                 stale=now - reminder.due_at > give_up_after,
+                tag=REMINDER_TAG if reminder.person_id is None else BIRTHDAY_TAG,
             )
         )
     await session.commit()
@@ -73,12 +81,14 @@ class ReminderScheduler:
         *,
         timezone: str,
         poll_seconds: float,
+        birthday_reminder_time: time = DEFAULT_BIRTHDAY_REMINDER_TIME,
         give_up_after: timedelta = DEFAULT_GIVE_UP_AFTER,
     ) -> None:
         self._session_factory = session_factory
         self._push = push
         self._zone = ZoneInfo(timezone)
         self._poll_seconds = poll_seconds
+        self._birthday_reminder_time = birthday_reminder_time
         self._give_up_after = give_up_after
         self._task: asyncio.Task | None = None
 
@@ -105,10 +115,21 @@ class ReminderScheduler:
             await asyncio.sleep(self._poll_seconds)
 
     async def tick(self) -> int:
+        now = datetime.now(self._zone)
+        async with self._session_factory() as session:
+            scheduled = await schedule_birthday_reminders(
+                session,
+                now=now,
+                zone=self._zone,
+                remind_at=self._birthday_reminder_time,
+            )
+        if scheduled:
+            logger.info("Scheduled %d birthday reminders", scheduled)
+
         async with self._session_factory() as session:
             due = await claim_due_reminders(
                 session,
-                now=datetime.now(self._zone),
+                now=now,
                 zone=self._zone,
                 give_up_after=self._give_up_after,
             )
@@ -124,7 +145,7 @@ class ReminderScheduler:
 
         report = await self._push.send(
             Notification(
-                title=NOTIFICATION_TITLE, body=reminder.summary, tag="reminder"
+                title=NOTIFICATION_TITLE, body=reminder.summary, tag=reminder.tag
             )
         )
         if report.reached_anyone:

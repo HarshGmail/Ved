@@ -63,6 +63,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         push,
         timezone=settings.timezone,
         poll_seconds=settings.scheduler_poll_seconds,
+        birthday_reminder_time=settings.birthday_reminder_time,
     )
     application.state.push = push
     application.state.scheduler = scheduler

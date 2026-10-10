@@ -8,6 +8,7 @@ INFRA="$ROOT/infra"
 BACKEND="$ROOT/apps/backend"
 WEB="$ROOT/apps/web-client"
 REMINDERS="$ROOT/mcp-servers/reminders"
+PEOPLE="$ROOT/mcp-servers/people"
 
 OLLAMA_PORT=11434
 BACKEND_PORT=8000
@@ -118,6 +119,7 @@ cmd_setup() {
 
   say "installing Python dependencies"
   (cd "$REMINDERS" && uv sync)
+  (cd "$PEOPLE" && uv sync)
   (cd "$BACKEND" && uv sync)
 
   if grep -q '^VED_VAPID_PRIVATE_KEY=.' "$BACKEND/.env"; then

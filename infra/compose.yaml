@@ -29,6 +29,7 @@ services:
       VED_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-ved}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ved}
       VED_CORS_ALLOW_ORIGINS: ${VED_CORS_ALLOW_ORIGINS:-["http://localhost:3000"]}
       VED_REMINDERS_SERVER_DIR: /app/mcp-servers/reminders
+      VED_PEOPLE_SERVER_DIR: /app/mcp-servers/people
       VED_TIMEZONE: ${VED_TIMEZONE:-Asia/Kolkata}
       VED_LLM_PROVIDER: ${VED_LLM_PROVIDER:-openai-compatible}
       VED_LLM_BASE_URL: ${VED_LLM_BASE_URL:-http://host.docker.internal:11434/v1}
@@ -38,6 +39,7 @@ services:
       VED_VAPID_PRIVATE_KEY: ${VED_VAPID_PRIVATE_KEY:-}
       VED_VAPID_SUBJECT: ${VED_VAPID_SUBJECT:-mailto:ved@example.com}
       VED_SCHEDULER_POLL_SECONDS: ${VED_SCHEDULER_POLL_SECONDS:-30}
+      VED_BIRTHDAY_REMINDER_TIME: ${VED_BIRTHDAY_REMINDER_TIME:-09:00}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

@@ -29,6 +29,7 @@ running.
 | Local LLM (Ollama) | `./ved model` | 11434 |
 | Backend (FastAPI) | `./ved api` | 8000 |
 | Reminders MCP server | started by the backend | — |
+| People MCP server | started by the backend | — |
 | Web client (Next.js PWA) | `./ved web` | 3000 |
 | DB browser (optional) | `./ved studio` (Docker) | 5050 |
 
@@ -144,6 +145,7 @@ export VED_TEST_DATABASE_URL=postgresql+psycopg://ved:PASSWORD@localhost:5432/ve
 
 cd apps/backend && uv run pytest && uv run ruff check .
 cd mcp-servers/reminders && uv run pytest
+cd mcp-servers/people && uv run pytest
 cd apps/web-client && npm run lint && npm run build
 ```
 

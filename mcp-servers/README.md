@@ -7,7 +7,8 @@ running.
 
 | Server | Status |
 | --- | --- |
-| [reminders/](reminders/) | Working — `create`, `list`, `complete` |
+| [reminders/](reminders/) | Working — `create`, `list`, `reschedule`, `complete` |
+| [people/](people/) | Working — `remember`, `list`, `forget`; birthdays remind themselves |
 
 Planned (from the master plan): calendar, notes, photos, files, email, finance,
 github, home, cameras, media.

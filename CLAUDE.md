@@ -29,10 +29,17 @@ complete → create on its own).
 and sends a Web Push notification — your phone buzzes with Ved closed. Verified
 end to end in a real browser: asked in the chat, notification arrived.
 
+**Structured memory: people and birthdays.** *"Mom's birthday is 25 October,
+remind me 15 days before"* saves her via the `people` MCP server; the scheduler
+then plans the early notice and the on-the-day reminder itself, every year, and
+they arrive through the same push path. Verified against qwen3.6:35b, including
+changing the notice and listing upcoming birthdays.
+
 Not yet: semantic search (pgvector is installed but unused), auth, streaming.
 
-Next up: finish Phase 2 — structured user memory, then embeddings for fuzzy
-recall. The plan is explicit that not everything should be an embedding.
+Next up: proactive birthday follow-ups ("Mom's birthday is in 10 days, any
+plans?"), then embeddings for fuzzy recall. The plan is explicit that not
+everything should be an embedding.
 
 ## Layout
 
@@ -48,20 +55,21 @@ apps/web-client/   Next.js 16 (App Router) + TS PWA
   scripts/         generate-icons.py — never hand-edit generated icons
 apps/backend/      FastAPI, uv-managed, Python 3.13
   src/ved_backend/ main.py (routes + lifespan), agent.py, memory.py,
-                   scheduler.py, push.py, config.py, database.py,
-                   models.py, schemas.py
+                   scheduler.py, birthdays.py, push.py, config.py,
+                   database.py, models.py, schemas.py
   scripts/         generate_vapid_keys.py — writes to gitignored .env files
     llm/           LLMProvider protocol, openai_compatible.py (any /v1
                    endpoint — Ollama today, GPU box later), stub.py (CI)
     tools/         MCP client — toolbox.py, servers.py (NOT named mcp/)
   migrations/      Alembic (URL comes from settings, not alembic.ini)
   Dockerfile       uv-based image; build context is the REPO ROOT;
-                   also installs mcp-servers/reminders so the container can run it
+                   also installs every mcp-servers/* so the container can run them
 packages/ved-db/   Shared SQLAlchemy schema — the ONLY place tables are defined
 infra/             compose.yaml (pgvector + backend + studio), db/init/
 .github/workflows/ CI — lint, tests, migration drift, web build
 mcp-servers/
   reminders/       MCP server (SDK v2), stdio, own uv project
+  people/          people + birthdays; same shape as reminders
 docs/              master-plan.md, README.md, pilot.md
 ```
 
@@ -120,6 +128,12 @@ memory needs no migration.
 - Push sends carry a socket timeout, an asyncio deadline and a 24h TTL. Without
   the first two a hanging endpoint stalls the scheduler for every later
   reminder; without the TTL a sleeping phone may never get the message.
+- **Birthday reminders are planned by the scheduler, never by the model.** The
+  people server only stores facts; `birthdays.py` writes reminder rows unique on
+  `(person_id, birthday_on, lead_days)` with `ON CONFLICT DO NOTHING`, so
+  replanning every tick is idempotent. Changing a birthday or its notice deletes
+  only the unsent rows. A new MCP server also needs a Dockerfile stage, a
+  `configured_servers` entry, a CI job and a line in `./ved setup`.
 - **Prefer `reminders.reschedule` over complete+create.** The old chain left
   reminders marked done that the user never did, and used the whole tool budget.
 - Push subscriptions answering 404/410 are **deleted, not retried** — browsers
@@ -155,6 +169,7 @@ VED_TEST_DATABASE_URL=postgresql+psycopg://ved:PW@localhost:5432/ved_test \
   uv run pytest                      # fixture refuses a db without "test" in it
 cd apps/backend && uv run ruff check .
 cd mcp-servers/reminders && uv run pytest
+cd mcp-servers/people && uv run pytest
 cd apps/web-client && npm run lint && npm run build
 cd apps/web-client && uv run --with pillow python scripts/generate-icons.py
 

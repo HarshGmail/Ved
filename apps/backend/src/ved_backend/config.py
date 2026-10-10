@@ -1,3 +1,4 @@
+from datetime import time
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -5,6 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 LOCAL_DATABASE_URL = "postgresql+psycopg://ved:ved@localhost:5432/ved"
 REPO_ROOT = Path(__file__).resolve().parents[4]
 REMINDERS_SERVER_DIR = REPO_ROOT / "mcp-servers" / "reminders"
+PEOPLE_SERVER_DIR = REPO_ROOT / "mcp-servers" / "people"
 
 
 class Settings(BaseSettings):
@@ -27,6 +29,7 @@ class Settings(BaseSettings):
     vapid_private_key: str | None = None
     vapid_subject: str = "mailto:ved@example.com"
     scheduler_poll_seconds: float = 30.0
+    birthday_reminder_time: time = time(9, 0)
 
     llm_base_url: str = "http://localhost:11434/v1"
     llm_model: str = "qwen3.6:35b"
@@ -37,6 +40,10 @@ class Settings(BaseSettings):
     reminders_server_command: str = "uv"
     reminders_server_args: list[str] = ["run", "ved-mcp-reminders"]
     reminders_server_dir: str = str(REMINDERS_SERVER_DIR)
+
+    people_server_command: str = "uv"
+    people_server_args: list[str] = ["run", "ved-mcp-people"]
+    people_server_dir: str = str(PEOPLE_SERVER_DIR)
 
 
 settings = Settings()

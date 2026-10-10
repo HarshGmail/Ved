@@ -38,7 +38,8 @@ packages/
   ved-db/        Shared SQLAlchemy schema, imported by backend and MCP servers
 infra/           Docker Compose — PostgreSQL (pgvector) + backend
 mcp-servers/
-  reminders/     First MCP server — create, list, complete
+  reminders/     First MCP server — create, list, reschedule, complete
+  people/        People and birthdays — remember, list, forget
 docs/            This documentation
 ```
 
@@ -58,8 +59,8 @@ after `./ved setup`:
 ./ved web      # terminal 3
 ```
 
-The backend launches the reminders MCP server itself as a subprocess, so there
-is nothing extra to start for it.
+The backend launches the reminders and people MCP servers itself as
+subprocesses, so there is nothing extra to start for them.
 
 ### Icons
 

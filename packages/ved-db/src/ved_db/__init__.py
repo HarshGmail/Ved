@@ -4,8 +4,10 @@ from ved_db.models import (
     Conversation,
     ConversationMessage,
     MessageRole,
+    Person,
     PushSubscription,
     Reminder,
+    birthday_in,
 )
 
 __all__ = [
@@ -13,8 +15,10 @@ __all__ = [
     "Conversation",
     "ConversationMessage",
     "MessageRole",
+    "Person",
     "PushSubscription",
     "Reminder",
+    "birthday_in",
     "create_engine",
     "create_session_factory",
 ]

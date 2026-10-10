@@ -89,6 +89,36 @@ jobs:
         working-directory: mcp-servers/reminders
         run: uv run pytest -q
 
+  people:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_USER: ved
+          POSTGRES_PASSWORD: ci-not-a-secret
+          POSTGRES_DB: ved_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ved -d ved_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Lint
+        working-directory: mcp-servers/people
+        run: uv run ruff check .
+
+      - name: Test
+        working-directory: mcp-servers/people
+        run: uv run pytest -q
+
   web:
     runs-on: ubuntu-latest
     steps:
