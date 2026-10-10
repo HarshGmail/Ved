@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ved_db import Reminder
 
 from ved_backend.birthdays import schedule_birthday_reminders
+from ved_backend.checkins import is_early_birthday_notice, open_check_in
 from ved_backend.indexing import MessageIndexer
 from ved_backend.push import Notification, PushService
 
@@ -21,6 +22,7 @@ DEFAULT_GIVE_UP_AFTER = timedelta(hours=24)
 DEFAULT_BIRTHDAY_REMINDER_TIME = time(9, 0)
 REMINDER_TAG = "reminder"
 BIRTHDAY_TAG = "birthday"
+HOME_URL = "/"
 
 
 def describe(reminder: Reminder, zone: ZoneInfo) -> str:
@@ -36,6 +38,7 @@ class ClaimedReminder:
     summary: str
     stale: bool
     tag: str = REMINDER_TAG
+    url: str = HOME_URL
 
 
 async def claim_due_reminders(
@@ -52,15 +55,22 @@ async def claim_due_reminders(
         .with_for_update(skip_locked=True)
     )
 
+    today = now.astimezone(zone).date()
     claimed = []
-    for reminder in rows:
+    for reminder in rows.all():
         reminder.notified_at = func.now()
+        summary, url = describe(reminder, zone), HOME_URL
+        if is_early_birthday_notice(reminder):
+            check_in = await open_check_in(session, reminder, today=today)
+            if check_in is not None:
+                summary, url = check_in.opening, check_in.url
         claimed.append(
             ClaimedReminder(
                 id=reminder.id,
-                summary=describe(reminder, zone),
+                summary=summary,
                 stale=now - reminder.due_at > give_up_after,
                 tag=REMINDER_TAG if reminder.person_id is None else BIRTHDAY_TAG,
+                url=url,
             )
         )
     await session.commit()
@@ -151,7 +161,10 @@ class ReminderScheduler:
 
         report = await self._push.send(
             Notification(
-                title=NOTIFICATION_TITLE, body=reminder.summary, tag=reminder.tag
+                title=NOTIFICATION_TITLE,
+                body=reminder.summary,
+                tag=reminder.tag,
+                url=reminder.url,
             )
         )
         if report.reached_anyone:

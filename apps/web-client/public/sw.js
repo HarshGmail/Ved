@@ -56,6 +56,16 @@ self.addEventListener("push", (event) => {
   );
 });
 
+async function showInWindow(client, target) {
+  const focused = await client.focus();
+  if (focused.url === target) return focused;
+  try {
+    return (await focused.navigate(target)) ?? self.clients.openWindow(target);
+  } catch {
+    return self.clients.openWindow(target);
+  }
+}
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const target = new URL(event.notification.data?.url ?? "/", self.location.origin).href;
@@ -63,7 +73,7 @@ self.addEventListener("notificationclick", (event) => {
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
       const open = windows.find((client) => client.url.startsWith(self.location.origin));
-      if (open) return open.focus();
+      if (open) return showInWindow(open, target);
       return self.clients.openWindow(target);
     }),
   );

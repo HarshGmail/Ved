@@ -121,6 +121,15 @@ class Reminder(Base):
     )
     birthday_on: Mapped[date | None] = mapped_column(Date, default=None)
     lead_days: Mapped[int | None] = mapped_column(SmallInteger, default=None)
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "conversations.id",
+            ondelete="SET NULL",
+            name="fk_reminders_conversation_id_conversations",
+        ),
+        default=None,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
