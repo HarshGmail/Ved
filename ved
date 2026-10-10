@@ -64,16 +64,25 @@ set_env_value() {
 }
 
 allow_cors_origin() {
-  local file="$1" origin="$2" line
-  line="$(grep '^VED_CORS_ALLOW_ORIGINS=' "$file" 2>/dev/null || true)"
-  if [ -z "$line" ]; then
-    set_env_value "$file" VED_CORS_ALLOW_ORIGINS "[\"http://localhost:3000\",\"$origin\"]"
-  elif ! printf '%s' "$line" | grep -qF "\"$origin\""; then
-    sed -i '' \
-      -e "/^VED_CORS_ALLOW_ORIGINS=\[\]\$/ s|\[\]\$|[\"$origin\"]|" \
-      -e "/^VED_CORS_ALLOW_ORIGINS=\[.\{1,\}\]\$/ s|\]\$|,\"$origin\"]|" \
-      "$file"
-  fi
+  local file="$1" origin="$2" current merged
+  current="$(sed -n 's/^VED_CORS_ALLOW_ORIGINS=//p' "$file" 2>/dev/null | head -n 1)"
+  merged="$(python3 - "$current" "$origin" "http://localhost:$WEB_PORT" <<'PY'
+import json
+import sys
+
+current, origin, local_origin = sys.argv[1].strip(), sys.argv[2], sys.argv[3]
+try:
+    origins = json.loads(current) if current else [local_origin]
+except json.JSONDecodeError:
+    sys.exit(f"VED_CORS_ALLOW_ORIGINS is not a JSON list: {current}")
+if not isinstance(origins, list):
+    sys.exit(f"VED_CORS_ALLOW_ORIGINS is not a JSON list: {current}")
+if origin not in origins:
+    origins.append(origin)
+print(json.dumps(origins, separators=(",", ":")))
+PY
+)" || fail "could not update CORS in $file"
+  set_env_value "$file" VED_CORS_ALLOW_ORIGINS "$merged"
 }
 
 cmd_phone() {
