@@ -10,7 +10,13 @@ replaces it with a local model on a GPU box.
 
 `complete(system, messages, tools)` returns an `AssistantMessage` that either
 carries `text` or one or more `tool_calls` — never a half-parsed string the
-caller has to interpret. Tool schemas arrive as `ToolSpec`, already translated
+caller has to interpret.
+
+`stream(system, messages, tools)` yields `TextDelta` chunks as text arrives,
+then ends with the same complete `AssistantMessage`. **A provider must implement
+both.** When streaming, tool calls arrive in fragments keyed by index — the id
+and name first, the arguments in pieces — so the provider reassembles them
+before emitting the final message. Tool schemas arrive as `ToolSpec`, already translated
 from MCP, so a provider only has to map them into its own wire format.
 
 The message types are deliberately provider-neutral. Anthropic, OpenAI and

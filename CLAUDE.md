@@ -45,8 +45,18 @@ made qwen3.6:35b call `memory.search` and answer from an earlier chat.
 `./ved phone` (Tailscale serve) but unverified end to end — Tailscale isn't
 installed yet.
 
-Not yet: auth, streaming, proactive birthday follow-ups ("Mom's birthday is in
-10 days, any plans?").
+**The chat streams and keeps history.** Replies stream token by token over
+SSE (`POST /agent/message/stream`); the old endpoint still works. Past
+conversations are listed and reopen where you left off, and the open one lives
+in the URL as `?c=<id>`, so a refresh keeps it.
+
+**Ved starts conversations.** An early birthday notice opens a thread with
+Ved's message ("Mom's birthday is in 15 days… any plans?"), and tapping the
+push opens it so you can reply. Verified with the stub model; real push
+delivery and the tap-to-open path are not yet verified.
+
+Not yet: web search (Phase 4), file/document memory (last Phase 2 item), auth.
+qwen3.6 thinks for 5–20s before its first token; that thinking isn't streamed.
 
 ## Layout
 
@@ -54,8 +64,10 @@ Not yet: auth, streaming, proactive birthday follow-ups ("Mom's birthday is in
 ved                Short commands — ./ved help (bash script, repo root)
 README.md          Clone-to-running setup
 apps/web-client/   Next.js 16 (App Router) + TS PWA
-  src/connector/   ONLY place that talks to the backend
-  src/app/         manifest.ts, layout, page, backend-status, chat
+  src/connector/   ONLY place that talks to the backend; sse.ts and
+                   reply-stream.ts carry streamed replies
+  src/app/         manifest.ts, layout, page, backend-status, chat,
+                   conversations + conversation-list (history, ?c= url)
                    favicon.ico / icon.png / apple-icon.png are Next file
                    conventions — they generate the <link> tags themselves
   assets/          ved-mark.png, the single source for every icon
@@ -63,7 +75,7 @@ apps/web-client/   Next.js 16 (App Router) + TS PWA
 apps/backend/      FastAPI, uv-managed, Python 3.13
   src/ved_backend/ main.py (routes + lifespan), agent.py, memory.py,
                    indexing.py (background embedding), scheduler.py,
-                   birthdays.py, push.py, config.py, database.py,
+                   birthdays.py, checkins.py, push.py, config.py, database.py,
                    models.py, schemas.py
   scripts/         generate_vapid_keys.py — writes to gitignored .env files
     llm/           LLMProvider protocol, openai_compatible.py (any /v1
@@ -162,6 +174,18 @@ memory needs no migration.
   :443 → 127.0.0.1:3000, backend on :8443 → 127.0.0.1:8000. `./ved phone`
   writes `VED_TAILNET_HOST` (feeds Next's `allowedDevOrigins`) and merges the
   CORS origin as JSON.
+- **A streamed turn is recorded only on its final answer.** Tool calls and the
+  recording run shielded from client disconnects, so leaving mid-stream never
+  half-applies a tool or leaves an empty thread. Both endpoints share one agent
+  loop (`Agent._events`), so their guarantees cannot drift apart.
+- **A new LLM provider implements both `complete()` and `stream()`.** Streamed
+  tool calls arrive in fragments keyed by index and must be reassembled.
+- **Check-ins come from a template, never the model** — the model may be slow
+  or down and the check-in must still arrive. It is created in the same
+  transaction that claims the reminder and linked via `reminders.conversation_id`,
+  so a push retry reuses the thread instead of opening a second one.
+- The open conversation is in the URL (`?c=`), written with `history.pushState`;
+  `useSearchParams` needs a `<Suspense>` boundary in the App Router.
 - The LLM never gets unrestricted system access; sensitive actions go through a
   permission layer.
 - Don't build ahead of the current phase.
@@ -191,8 +215,7 @@ cd apps/backend && uv run pytest     # DB tests skip without the URL below
 VED_TEST_DATABASE_URL=postgresql+psycopg://ved:PW@localhost:5432/ved_test \
   uv run pytest                      # fixture refuses a db without "test" in it
 cd apps/backend && uv run ruff check .
-cd mcp-servers/reminders && uv run pytest
-cd mcp-servers/people && uv run pytest
+cd mcp-servers/reminders && uv run pytest     # same for people/, memory/
 cd apps/web-client && npm run lint && npm run build
 cd apps/web-client && uv run --with pillow python scripts/generate-icons.py
 

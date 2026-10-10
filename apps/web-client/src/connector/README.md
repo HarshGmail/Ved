@@ -24,8 +24,10 @@ a package.json — not a rewrite.
 | --- | --- |
 | `config.ts` | Base URL, auth-token hook, timeout defaults |
 | `http.ts` | Typed request function: URL building, auth headers, timeouts, error mapping |
-| `stream.ts` | WebSocket wrapper — the seam for streaming chat/tool output |
-| `errors.ts` | `HttpError` / `TimeoutError` / `NetworkError` |
+| `sse.ts` | Server-Sent Events over `POST`, parsed from a `fetch` body stream |
+| `reply-stream.ts` | Streams an agent reply: tokens, tool events, final answer |
+| `stream.ts` | WebSocket wrapper, unused so far |
+| `errors.ts` | `HttpError` / `TimeoutError` / `NetworkError` / `StreamError` / `StreamUnavailableError` |
 | `types.ts` | Shared backend payload types |
 | `index.ts` | Composes the above into a `connector` instance |
 
@@ -49,5 +51,12 @@ declared endpoint and nothing serves it yet — it exists to prove the wiring on
 the FastAPI backend lands.
 
 Auth is a seam only: `getAuthToken` is unset, so no `Authorization` header is
-sent yet. Streaming is likewise unused — `openStream` is the placeholder for
-Phase 4.
+sent yet.
+
+Replies stream through `streamMessage`, which posts to
+`/agent/message/stream` and reads the event stream with `fetch` rather than
+`EventSource`, because `EventSource` can only `GET`. Events can be split across
+network chunks, so `sse.ts` buffers until each one is complete. The idle timeout
+resets on every chunk, so a long but live answer is never cut off. If the
+backend has no streaming route, `StreamUnavailableError` lets the caller fall
+back to `sendMessage`.
