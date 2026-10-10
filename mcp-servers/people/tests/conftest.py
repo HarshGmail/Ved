@@ -3,7 +3,7 @@ import os
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from ved_db import Base
+from ved_db.testing import drop_schema, guard_test_url, recreate_schema
 
 TEST_DATABASE_URL = os.environ.get("VED_TEST_DATABASE_URL")
 
@@ -15,16 +15,12 @@ requires_database = pytest.mark.skipif(
 
 @pytest_asyncio.fixture
 async def session():
-    engine = create_async_engine(TEST_DATABASE_URL)
-
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.drop_all)
-        await connection.run_sync(Base.metadata.create_all)
+    engine = create_async_engine(guard_test_url(TEST_DATABASE_URL))
+    await recreate_schema(engine)
 
     factory = async_sessionmaker(engine)
     async with factory() as active_session:
         yield active_session
 
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.drop_all)
+    await drop_schema(engine)
     await engine.dispose()
