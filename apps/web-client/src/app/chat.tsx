@@ -3,6 +3,7 @@
 import { type FormEvent, useRef, useState } from "react";
 import { type AgentReply, connector } from "@/connector";
 import styles from "./chat.module.css";
+import { MarkdownReply } from "./markdown-reply";
 
 type Turn =
   | { role: "user"; text: string }
@@ -85,7 +86,7 @@ export function Chat() {
             )}
             {turn.role === "ved" && (
               <div className={styles.bubble}>
-                <p className={styles.text}>{turn.reply.text}</p>
+                <MarkdownReply text={turn.reply.text} />
                 {toolLabel(turn.reply) && (
                   <p className={styles.tools}>{toolLabel(turn.reply)}</p>
                 )}
