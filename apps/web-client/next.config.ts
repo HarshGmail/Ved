@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
+const tailnetHost = process.env.VED_TAILNET_HOST;
+
 const nextConfig: NextConfig = {
+  allowedDevOrigins: tailnetHost ? [tailnetHost] : [],
   async headers() {
     return [
       {

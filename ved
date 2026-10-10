@@ -12,6 +12,10 @@ PEOPLE="$ROOT/mcp-servers/people"
 
 OLLAMA_PORT=11434
 BACKEND_PORT=8000
+WEB_PORT=3000
+PHONE_WEB_PORT=443
+PHONE_API_PORT=8443
+TAILSCALE_APP_CLI="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
 DEFAULT_MODEL="qwen3.6:35b"
 
 say() { printf '\033[1m==> %s\033[0m\n' "$*"; }
@@ -31,6 +35,83 @@ ensure_colima() {
 ensure_env_files() {
   [ -f "$INFRA/.env" ] || fail "infra/.env missing. Run ./ved setup first."
   [ -f "$BACKEND/.env" ] || fail "apps/backend/.env missing. Run ./ved setup first."
+}
+
+find_tailscale() {
+  if command -v tailscale >/dev/null 2>&1; then
+    command -v tailscale
+  elif [ -x "$TAILSCALE_APP_CLI" ]; then
+    printf '%s' "$TAILSCALE_APP_CLI"
+  fi
+  return 0
+}
+
+tailnet_hostname() {
+  "$1" status --json --peers=false 2>/dev/null |
+    sed -n 's/^ *"DNSName": *"\(.*\)\.",*$/\1/p' |
+    head -n 1 || true
+}
+
+set_env_value() {
+  local file="$1" key="$2" value="$3"
+  [ -f "$file" ] || touch "$file"
+  if grep -q "^$key=" "$file"; then
+    sed -i '' "s|^$key=.*|$key=$value|" "$file"
+  else
+    [ -z "$(tail -c 1 "$file")" ] || printf '\n' >>"$file"
+    printf '%s=%s\n' "$key" "$value" >>"$file"
+  fi
+}
+
+allow_cors_origin() {
+  local file="$1" origin="$2" line
+  line="$(grep '^VED_CORS_ALLOW_ORIGINS=' "$file" 2>/dev/null || true)"
+  if [ -z "$line" ]; then
+    set_env_value "$file" VED_CORS_ALLOW_ORIGINS "[\"http://localhost:3000\",\"$origin\"]"
+  elif ! printf '%s' "$line" | grep -qF "\"$origin\""; then
+    sed -i '' \
+      -e "/^VED_CORS_ALLOW_ORIGINS=\[\]\$/ s|\[\]\$|[\"$origin\"]|" \
+      -e "/^VED_CORS_ALLOW_ORIGINS=\[.\{1,\}\]\$/ s|\]\$|,\"$origin\"]|" \
+      "$file"
+  fi
+}
+
+cmd_phone() {
+  local tailscale host web_url api_url
+  tailscale="$(find_tailscale)"
+  [ -n "$tailscale" ] || fail "Tailscale is not installed. See docs/phone-access.md"
+
+  if [ "${1:-}" = "off" ]; then
+    say "removing the Tailscale serve config for Ved"
+    "$tailscale" serve --https="$PHONE_WEB_PORT" off || true
+    "$tailscale" serve --https="$PHONE_API_PORT" off || true
+    say "done. Env values are left as they are; local use still works"
+    return
+  fi
+  [ -z "${1:-}" ] || fail "unknown option: $1 (use ./ved phone or ./ved phone off)"
+
+  host="$(tailnet_hostname "$tailscale")"
+  [ -n "$host" ] || fail "Tailscale is not logged in or not running. Sign in, then retry."
+  web_url="https://$host"
+  api_url="https://$host:$PHONE_API_PORT"
+
+  say "serving Ved to your tailnet only (not the public internet)"
+  "$tailscale" serve --bg --https="$PHONE_WEB_PORT" "http://127.0.0.1:$WEB_PORT" ||
+    fail "tailscale serve failed. If it asks to enable HTTPS, see docs/phone-access.md"
+  "$tailscale" serve --bg --https="$PHONE_API_PORT" "http://127.0.0.1:$BACKEND_PORT" ||
+    fail "tailscale serve failed for the backend port"
+
+  say "writing env values"
+  set_env_value "$WEB/.env.local" NEXT_PUBLIC_VED_API_URL "$api_url"
+  set_env_value "$WEB/.env.local" VED_TAILNET_HOST "$host"
+  allow_cors_origin "$BACKEND/.env" "$web_url"
+
+  printf '\nOpen on your phone:  %s\n' "$web_url"
+  printf '\nRestart ./ved api and ./ved web so they pick up:\n'
+  printf '  apps/web-client/.env.local  NEXT_PUBLIC_VED_API_URL=%s\n' "$api_url"
+  printf '  apps/web-client/.env.local  VED_TAILNET_HOST=%s\n' "$host"
+  printf '  apps/backend/.env           VED_CORS_ALLOW_ORIGINS includes "%s"\n' "$web_url"
+  printf '\nThe Mac itself must stay awake and signed in to Tailscale.\n'
 }
 
 cmd_db() {
@@ -60,7 +141,7 @@ cmd_api() {
 }
 
 cmd_web() {
-  say "starting web client on :3000 (Ctrl+C to stop)"
+  say "starting web client on :$WEB_PORT (Ctrl+C to stop)"
   cd "$WEB"
   exec npm run dev
 }
@@ -164,6 +245,8 @@ Other
   status    Show which services are running
   migrate   Apply new database migrations
   studio    Start the DB browser on :5050
+  phone     Reach Ved from your phone over Tailscale (see docs/phone-access.md)
+  phone off Stop serving Ved to your phone
   stop      Stop the Docker backend, freeing :8000
   down      Stop all containers and Colima
 EOF
@@ -177,6 +260,7 @@ case "${1:-help}" in
   web) cmd_web ;;
   migrate) cmd_migrate ;;
   studio) cmd_studio ;;
+  phone) shift; cmd_phone "$@" ;;
   status) cmd_status ;;
   stop) cmd_stop ;;
   down) cmd_down ;;
