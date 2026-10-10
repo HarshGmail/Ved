@@ -192,3 +192,27 @@ async def test_a_long_undeliverable_reminder_is_given_up_on(session_factory):
     async with session_factory() as session:
         stored = await session.scalar(select(Reminder))
         assert stored.notified_at is not None, "should stop retrying forever"
+
+
+class CountingIndexer:
+    def __init__(self) -> None:
+        self.triggered = 0
+
+    def trigger(self) -> None:
+        self.triggered += 1
+
+
+async def test_every_tick_nudges_the_message_indexer(session_factory):
+    indexer = CountingIndexer()
+    scheduler = ReminderScheduler(
+        session_factory,
+        RecordingPush(),
+        timezone="Asia/Kolkata",
+        poll_seconds=30.0,
+        indexer=indexer,
+    )
+
+    await scheduler.tick()
+    await scheduler.tick()
+
+    assert indexer.triggered == 2

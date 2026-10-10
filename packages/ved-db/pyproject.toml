@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Shared SQLAlchemy models and engine helpers for Ved"
 requires-python = ">=3.13"
 dependencies = [
+    "pgvector>=0.4",
     "psycopg[binary,pool]>=3.2",
     "sqlalchemy[asyncio]>=2.0",
 ]

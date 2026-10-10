@@ -10,7 +10,8 @@ from sqlalchemy import text
 from ved_backend.agent import Agent
 from ved_backend.config import settings
 from ved_backend.database import engine, session_factory
-from ved_backend.llm import build_provider
+from ved_backend.indexing import MessageIndexer
+from ved_backend.llm import build_embedder, build_provider
 from ved_backend.llm.base import Message
 from ved_backend.llm.openai_compatible import LLMRequestError
 from ved_backend.memory import ConversationNotFoundError, ConversationStore
@@ -58,13 +59,17 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         private_key=settings.vapid_private_key,
         subject=settings.vapid_subject,
     )
+    embedder = build_embedder(settings)
+    indexer = None if embedder is None else MessageIndexer(session_factory, embedder)
     scheduler = ReminderScheduler(
         session_factory,
         push,
         timezone=settings.timezone,
         poll_seconds=settings.scheduler_poll_seconds,
         birthday_reminder_time=settings.birthday_reminder_time,
+        indexer=indexer,
     )
+    application.state.indexer = indexer
     application.state.push = push
     application.state.scheduler = scheduler
     application.state.agent = Agent(
@@ -81,6 +86,10 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         await scheduler.stop()
+        if indexer is not None:
+            await indexer.aclose()
+        if embedder is not None:
+            await embedder.aclose()
         closer = getattr(provider, "aclose", None)
         if closer is not None:
             await closer()
@@ -159,6 +168,9 @@ async def agent_message(request: AgentRequest) -> AgentReply:
         model=reply.model,
         tool_calls=reply.tool_calls,
     )
+    indexer: MessageIndexer | None = app.state.indexer
+    if indexer is not None:
+        indexer.trigger()
     return AgentReply(
         text=reply.text,
         model=reply.model,

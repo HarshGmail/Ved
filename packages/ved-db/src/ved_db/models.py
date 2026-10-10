@@ -3,6 +3,7 @@ import uuid
 from datetime import date, datetime
 from typing import Any, Literal
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
@@ -24,6 +25,10 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 MessageRole = Literal["user", "assistant"]
 
 CONVERSATION_MESSAGE_SEQUENCE = Sequence("conversation_messages_sequence_seq")
+
+EMBEDDING_DIMENSIONS = 768
+HNSW_GRAPH_DEGREE = 16
+HNSW_BUILD_CANDIDATES = 64
 
 LEAP_DAY = (2, 29)
 LEAP_DAY_FALLBACK = 28
@@ -163,6 +168,16 @@ class ConversationMessage(Base):
     __tablename__ = "conversation_messages"
     __table_args__ = (
         Index("ix_conversation_messages_thread", "conversation_id", "sequence"),
+        Index(
+            "ix_conversation_messages_embedding",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_with={
+                "m": HNSW_GRAPH_DEGREE,
+                "ef_construction": HNSW_BUILD_CANDIDATES,
+            },
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -182,6 +197,9 @@ class ConversationMessage(Base):
     text: Mapped[str] = mapped_column(Text)
     model: Mapped[str | None] = mapped_column(String(100), default=None)
     tool_calls: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(EMBEDDING_DIMENSIONS), default=None
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

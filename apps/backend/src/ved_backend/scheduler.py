@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ved_db import Reminder
 
 from ved_backend.birthdays import schedule_birthday_reminders
+from ved_backend.indexing import MessageIndexer
 from ved_backend.push import Notification, PushService
 
 logger = logging.getLogger(__name__)
@@ -83,6 +84,7 @@ class ReminderScheduler:
         poll_seconds: float,
         birthday_reminder_time: time = DEFAULT_BIRTHDAY_REMINDER_TIME,
         give_up_after: timedelta = DEFAULT_GIVE_UP_AFTER,
+        indexer: MessageIndexer | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._push = push
@@ -90,6 +92,7 @@ class ReminderScheduler:
         self._poll_seconds = poll_seconds
         self._birthday_reminder_time = birthday_reminder_time
         self._give_up_after = give_up_after
+        self._indexer = indexer
         self._task: asyncio.Task | None = None
 
     def start(self) -> None:
@@ -136,6 +139,9 @@ class ReminderScheduler:
 
         for reminder in due:
             await self._announce(reminder)
+
+        if self._indexer is not None:
+            self._indexer.trigger()
         return len(due)
 
     async def _announce(self, reminder: ClaimedReminder) -> None:

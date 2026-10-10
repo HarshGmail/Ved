@@ -62,6 +62,7 @@ def wired():
         app.state.agent = agent
         app.state.toolbox = FakeToolbox(tools)
         app.state.conversations = store or FakeStore()
+        app.state.indexer = None
         return agent, app.state.conversations
 
     yield _wire
@@ -99,6 +100,24 @@ def test_message_returns_the_agent_reply(wired):
     assert body["text"] == "Reminder set for 8 PM."
     assert body["model"] == "stub-rules-v1"
     assert body["tool_calls"][0]["name"] == "reminders.create"
+
+
+class RecordingIndexer:
+    def __init__(self) -> None:
+        self.triggered = 0
+
+    def trigger(self) -> None:
+        self.triggered += 1
+
+
+def test_a_recorded_turn_nudges_the_indexer(wired):
+    wired()
+    indexer = RecordingIndexer()
+    app.state.indexer = indexer
+
+    post("remind me at 8 PM")
+
+    assert indexer.triggered == 1
 
 
 def test_prompt_reaches_the_agent_unchanged(wired):

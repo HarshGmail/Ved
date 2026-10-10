@@ -1,5 +1,6 @@
 from ved_db.engine import create_engine, create_session_factory
 from ved_db.models import (
+    EMBEDDING_DIMENSIONS,
     Base,
     Conversation,
     ConversationMessage,
@@ -11,6 +12,7 @@ from ved_db.models import (
 )
 
 __all__ = [
+    "EMBEDDING_DIMENSIONS",
     "Base",
     "Conversation",
     "ConversationMessage",

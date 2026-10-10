@@ -7,6 +7,9 @@ LOCAL_DATABASE_URL = "postgresql+psycopg://ved:ved@localhost:5432/ved"
 REPO_ROOT = Path(__file__).resolve().parents[4]
 REMINDERS_SERVER_DIR = REPO_ROOT / "mcp-servers" / "reminders"
 PEOPLE_SERVER_DIR = REPO_ROOT / "mcp-servers" / "people"
+MEMORY_SERVER_DIR = REPO_ROOT / "mcp-servers" / "memory"
+NOMIC_DOCUMENT_PREFIX = "search_document: "
+NOMIC_QUERY_PREFIX = "search_query: "
 
 
 class Settings(BaseSettings):
@@ -37,6 +40,12 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 120.0
     llm_temperature: float | None = 0.0
 
+    embedding_model: str = "nomic-embed-text"
+    embedding_dimensions: int = 768
+    embedding_timeout_seconds: float = 60.0
+    embedding_document_prefix: str = NOMIC_DOCUMENT_PREFIX
+    embedding_query_prefix: str = NOMIC_QUERY_PREFIX
+
     reminders_server_command: str = "uv"
     reminders_server_args: list[str] = ["run", "ved-mcp-reminders"]
     reminders_server_dir: str = str(REMINDERS_SERVER_DIR)
@@ -44,6 +53,10 @@ class Settings(BaseSettings):
     people_server_command: str = "uv"
     people_server_args: list[str] = ["run", "ved-mcp-people"]
     people_server_dir: str = str(PEOPLE_SERVER_DIR)
+
+    memory_server_command: str = "uv"
+    memory_server_args: list[str] = ["run", "ved-mcp-memory"]
+    memory_server_dir: str = str(MEMORY_SERVER_DIR)
 
 
 settings = Settings()

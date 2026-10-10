@@ -30,11 +30,14 @@ services:
       VED_CORS_ALLOW_ORIGINS: ${VED_CORS_ALLOW_ORIGINS:-["http://localhost:3000"]}
       VED_REMINDERS_SERVER_DIR: /app/mcp-servers/reminders
       VED_PEOPLE_SERVER_DIR: /app/mcp-servers/people
+      VED_MEMORY_SERVER_DIR: /app/mcp-servers/memory
       VED_TIMEZONE: ${VED_TIMEZONE:-Asia/Kolkata}
       VED_LLM_PROVIDER: ${VED_LLM_PROVIDER:-openai-compatible}
       VED_LLM_BASE_URL: ${VED_LLM_BASE_URL:-http://host.docker.internal:11434/v1}
       VED_LLM_MODEL: ${VED_LLM_MODEL:-qwen3.6:35b}
       VED_LLM_TIMEOUT_SECONDS: ${VED_LLM_TIMEOUT_SECONDS:-120.0}
+      VED_EMBEDDING_MODEL: ${VED_EMBEDDING_MODEL:-nomic-embed-text}
+      VED_EMBEDDING_DIMENSIONS: ${VED_EMBEDDING_DIMENSIONS:-768}
       VED_VAPID_PUBLIC_KEY: ${VED_VAPID_PUBLIC_KEY:-}
       VED_VAPID_PRIVATE_KEY: ${VED_VAPID_PRIVATE_KEY:-}
       VED_VAPID_SUBJECT: ${VED_VAPID_SUBJECT:-mailto:ved@example.com}
