@@ -250,3 +250,181 @@ async def test_a_silent_exception_still_names_its_type():
 
     with pytest.raises(LLMRequestError, match="ConnectError"):
         await provider.complete(system="s", messages=[UserMessage(text="hi")], tools=[])
+
+
+def sse_body(*events: str) -> bytes:
+    return "".join(f"{event}\n\n" for event in events).encode()
+
+
+def delta_event(delta: dict) -> str:
+    return "data: " + json.dumps({"choices": [{"index": 0, "delta": delta}]})
+
+
+async def collect_stream(provider) -> tuple[list[str], AssistantMessage]:
+    chunks = [
+        chunk
+        async for chunk in provider.stream(
+            system="s", messages=[UserMessage(text="hi")], tools=[CREATE]
+        )
+    ]
+    *deltas, final = chunks
+    return [delta.text for delta in deltas], final
+
+
+async def test_stream_requests_streaming_and_yields_text_as_it_arrives():
+    seen: dict = {}
+
+    def handler(request):
+        seen.update(json.loads(request.content))
+        return httpx2.Response(
+            200,
+            content=sse_body(
+                delta_event({"role": "assistant", "content": ""}),
+                delta_event({"content": "Hel"}),
+                delta_event({"content": "lo"}),
+                "data: [DONE]",
+            ),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    texts, final = await collect_stream(build_provider(handler))
+
+    assert seen["stream"] is True
+    assert texts == ["Hel", "lo"]
+    assert final == AssistantMessage(text="Hello")
+
+
+async def test_stream_assembles_tool_calls_from_fragments():
+    def handler(request):
+        return httpx2.Response(
+            200,
+            content=sse_body(
+                delta_event(
+                    {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "call_a",
+                                "function": {
+                                    "name": "reminders.create",
+                                    "arguments": "",
+                                },
+                            }
+                        ]
+                    }
+                ),
+                delta_event(
+                    {
+                        "tool_calls": [
+                            {
+                                "index": 1,
+                                "id": "call_b",
+                                "function": {"name": "reminders.list"},
+                            }
+                        ]
+                    }
+                ),
+                delta_event(
+                    {"tool_calls": [{"index": 0, "function": {"arguments": '{"te'}}]}
+                ),
+                delta_event(
+                    {
+                        "tool_calls": [
+                            {"index": 0, "function": {"arguments": 'xt": "call Mom"}'}}
+                        ]
+                    }
+                ),
+                delta_event(
+                    {"tool_calls": [{"index": 1, "function": {"arguments": "{}"}}]}
+                ),
+                "data: [DONE]",
+            ),
+        )
+
+    texts, final = await collect_stream(build_provider(handler))
+
+    assert texts == []
+    assert final.tool_calls == [
+        ToolCall(id="call_a", name="reminders.create", arguments={"text": "call Mom"}),
+        ToolCall(id="call_b", name="reminders.list", arguments={}),
+    ]
+
+
+async def test_stream_joins_multi_line_data_and_skips_comments():
+    payload = json.dumps({"choices": [{"delta": {"content": "hi"}}]}, indent=1)
+    multi_line = "\n".join(f"data: {line}" for line in payload.splitlines())
+
+    def handler(request):
+        return httpx2.Response(
+            200, content=sse_body(": keep-alive", multi_line, "data: [DONE]")
+        )
+
+    texts, final = await collect_stream(build_provider(handler))
+
+    assert texts == ["hi"]
+    assert final.text == "hi"
+
+
+async def test_stream_without_done_sentinel_still_finishes():
+    def handler(request):
+        return httpx2.Response(200, content=delta_event({"content": "ok"}).encode())
+
+    texts, final = await collect_stream(build_provider(handler))
+
+    assert texts == ["ok"]
+    assert final.text == "ok"
+
+
+async def test_stream_error_status_raises_llm_request_error():
+    def handler(request):
+        return httpx2.Response(404, text="model not found")
+
+    with pytest.raises(LLMRequestError, match="404: model not found"):
+        await collect_stream(build_provider(handler))
+
+
+async def test_stream_unreachable_model_raises_llm_request_error():
+    def handler(request):
+        raise httpx2.ConnectError("connection refused")
+
+    with pytest.raises(LLMRequestError, match="Could not reach the model"):
+        await collect_stream(build_provider(handler))
+
+
+async def test_stream_malformed_event_raises_llm_request_error():
+    def handler(request):
+        return httpx2.Response(200, content=sse_body("data: {oops"))
+
+    with pytest.raises(LLMRequestError, match="malformed stream"):
+        await collect_stream(build_provider(handler))
+
+
+async def test_stream_error_payload_raises_llm_request_error():
+    def handler(request):
+        return httpx2.Response(
+            200, content=sse_body('data: {"error": {"message": "out of memory"}}')
+        )
+
+    with pytest.raises(LLMRequestError, match="out of memory"):
+        await collect_stream(build_provider(handler))
+
+
+async def test_stream_survives_events_split_across_network_reads():
+    body = sse_body(
+        delta_event({"content": "split "}),
+        delta_event({"content": "across reads"}),
+        "data: [DONE]",
+    )
+    read_size = 7
+
+    async def trickle():
+        for start in range(0, len(body), read_size):
+            yield body[start : start + read_size]
+
+    def handler(request):
+        return httpx2.Response(200, content=trickle())
+
+    texts, final = await collect_stream(build_provider(handler))
+
+    assert texts == ["split ", "across reads"]
+    assert final.text == "split across reads"

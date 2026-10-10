@@ -19,6 +19,22 @@ export interface AgentReply {
   tool_calls: ToolInvocation[];
 }
 
+export interface ToolStarted {
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface ToolFinished {
+  name: string;
+  failed: boolean;
+}
+
+export interface ReplyStreamHandlers {
+  onToken?: (text: string) => void;
+  onTool?: (tool: ToolStarted) => void;
+  onToolResult?: (tool: ToolFinished) => void;
+}
+
 export interface PushStatus {
   configured: boolean;
   public_key: string | null;

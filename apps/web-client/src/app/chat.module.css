@@ -208,6 +208,10 @@
   opacity: 0.55;
 }
 
+.tools:first-child {
+  margin-top: 0;
+}
+
 .form {
   display: flex;
   gap: 0.5rem;

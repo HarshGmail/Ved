@@ -13,7 +13,7 @@ export interface RequestOptions {
   timeoutMs?: number;
 }
 
-function buildUrl(
+export function buildUrl(
   baseUrl: string,
   path: string,
   query: RequestOptions["query"],
@@ -29,7 +29,7 @@ function ensureTrailingSlash(value: string): string {
   return value.endsWith("/") ? value : `${value}/`;
 }
 
-async function buildHeaders(
+export async function buildHeaders(
   config: ConnectorConfig,
   options: RequestOptions,
 ): Promise<Headers> {

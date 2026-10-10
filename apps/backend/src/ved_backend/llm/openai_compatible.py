@@ -1,13 +1,17 @@
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx2
 
 from ved_backend.llm.base import (
     AssistantMessage,
+    LLMRequestError,
     Message,
+    StreamChunk,
+    TextDelta,
     ToolCall,
     ToolOutcome,
     ToolResultMessage,
@@ -19,10 +23,9 @@ logger = logging.getLogger(__name__)
 
 CHAT_COMPLETIONS_PATH = "/chat/completions"
 PLACEHOLDER_API_KEY = "not-needed"
-
-
-class LLMRequestError(RuntimeError):
-    pass
+SSE_DATA_PREFIX = "data:"
+SSE_DONE_SENTINEL = "[DONE]"
+ERROR_BODY_PREVIEW_CHARS = 400
 
 
 def _describe(error: Exception) -> str:
@@ -116,6 +119,78 @@ def from_wire_message(payload: dict[str, Any]) -> AssistantMessage:
     return AssistantMessage(text=payload.get("content") or "", tool_calls=calls)
 
 
+async def iter_sse_data(lines: AsyncIterator[str]) -> AsyncIterator[str]:
+    pending: list[str] = []
+    async for line in lines:
+        if not line:
+            if pending:
+                yield "\n".join(pending)
+                pending = []
+            continue
+        if line.startswith(SSE_DATA_PREFIX):
+            pending.append(line.removeprefix(SSE_DATA_PREFIX).removeprefix(" "))
+    if pending:
+        yield "\n".join(pending)
+
+
+@dataclass
+class _ToolCallFragments:
+    id: str | None = None
+    name: str = ""
+    arguments: list[str] = field(default_factory=list)
+
+
+class StreamAssembler:
+    def __init__(self) -> None:
+        self._text: list[str] = []
+        self._calls: dict[int, _ToolCallFragments] = {}
+
+    def absorb(self, delta: dict[str, Any]) -> str:
+        for raw in delta.get("tool_calls") or []:
+            self._absorb_tool_call(raw)
+        content = delta.get("content") or ""
+        if content:
+            self._text.append(content)
+        return content
+
+    def _absorb_tool_call(self, raw: dict[str, Any]) -> None:
+        index = raw.get("index", len(self._calls))
+        fragments = self._calls.setdefault(index, _ToolCallFragments())
+        if raw.get("id"):
+            fragments.id = raw["id"]
+        function = raw.get("function") or {}
+        if function.get("name") and not fragments.name:
+            fragments.name = function["name"]
+        if function.get("arguments"):
+            fragments.arguments.append(function["arguments"])
+
+    def message(self) -> AssistantMessage:
+        return from_wire_message(
+            {
+                "content": "".join(self._text),
+                "tool_calls": [
+                    {
+                        "id": fragments.id,
+                        "function": {
+                            "name": fragments.name,
+                            "arguments": "".join(fragments.arguments),
+                        },
+                    }
+                    for _, fragments in sorted(self._calls.items())
+                ],
+            }
+        )
+
+
+def _first_delta(payload: dict[str, Any]) -> dict[str, Any]:
+    if payload.get("error"):
+        raise LLMRequestError(f"Model reported an error: {payload['error']}")
+    choices = payload.get("choices") or []
+    if not choices:
+        return {}
+    return choices[0].get("delta") or {}
+
+
 class OpenAICompatibleProvider:
     def __init__(
         self,
@@ -171,7 +246,8 @@ class OpenAICompatibleProvider:
 
         if response.status_code != httpx2.codes.OK:
             raise LLMRequestError(
-                f"Model returned {response.status_code}: {response.text[:400]}"
+                f"Model returned {response.status_code}: "
+                f"{response.text[:ERROR_BODY_PREVIEW_CHARS]}"
             )
 
         payload = response.json()
@@ -180,3 +256,35 @@ class OpenAICompatibleProvider:
             raise LLMRequestError(f"Model returned no choices: {payload}")
 
         return from_wire_message(choices[0].get("message") or {})
+
+    async def stream(
+        self,
+        *,
+        system: str,
+        messages: Sequence[Message],
+        tools: Sequence[ToolSpec],
+    ) -> AsyncIterator[StreamChunk]:
+        body = {**self._build_body(system, messages, tools), "stream": True}
+        assembler = StreamAssembler()
+        try:
+            async with self._client.stream(
+                "POST", CHAT_COMPLETIONS_PATH, json=body
+            ) as response:
+                if response.status_code != httpx2.codes.OK:
+                    detail = (await response.aread()).decode(errors="replace")
+                    raise LLMRequestError(
+                        f"Model returned {response.status_code}: "
+                        f"{detail[:ERROR_BODY_PREVIEW_CHARS]}"
+                    )
+                async for data in iter_sse_data(response.aiter_lines()):
+                    if data.strip() == SSE_DONE_SENTINEL:
+                        break
+                    text = assembler.absorb(_first_delta(json.loads(data)))
+                    if text:
+                        yield TextDelta(text=text)
+        except httpx2.HTTPError as error:
+            raise LLMRequestError(_describe(error)) from error
+        except json.JSONDecodeError as error:
+            raise LLMRequestError(f"Model sent a malformed stream: {error}") from error
+
+        yield assembler.message()

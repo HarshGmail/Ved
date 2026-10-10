@@ -1,12 +1,14 @@
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from ved_backend.llm.base import (
     AssistantMessage,
     Message,
+    StreamChunk,
+    TextDelta,
     ToolCall,
     ToolResultMessage,
     ToolSpec,
@@ -35,6 +37,9 @@ COMPLETE_WORDS = ("done", "completed", "finished", "mark")
 
 DEFAULT_HOUR = 9
 NOON = 12
+
+STREAM_WORDS_PER_CHUNK = 4
+WORD_BOUNDARY = re.compile(r"(?<=\s)(?=\S)")
 
 
 def _latest_user_text(messages: Sequence[Message]) -> str:
@@ -75,6 +80,16 @@ def resolve_due_at(text: str, now: datetime) -> datetime:
 def extract_subject(text: str) -> str:
     match = SUBJECT_PATTERN.search(text)
     return match["subject"].strip() if match else text.strip()
+
+
+def split_into_chunks(text: str, words_per_chunk: int) -> list[str]:
+    if not text:
+        return []
+    words = WORD_BOUNDARY.split(text)
+    return [
+        "".join(words[start : start + words_per_chunk])
+        for start in range(0, len(words), words_per_chunk)
+    ]
 
 
 def _contains_any(text: str, words: Sequence[str]) -> bool:
@@ -173,6 +188,18 @@ class StubProvider:
                 'Try "remind me at 8 PM to call Mom".'
             )
         )
+
+    async def stream(
+        self,
+        *,
+        system: str,
+        messages: Sequence[Message],
+        tools: Sequence[ToolSpec],
+    ) -> AsyncIterator[StreamChunk]:
+        reply = await self.complete(system=system, messages=messages, tools=tools)
+        for chunk in split_into_chunks(reply.text, STREAM_WORDS_PER_CHUNK):
+            yield TextDelta(text=chunk)
+        yield reply
 
     def _summarise(self, results: ToolResultMessage) -> AssistantMessage:
         failed = [outcome for outcome in results.outcomes if outcome.is_error]

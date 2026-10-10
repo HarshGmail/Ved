@@ -1,10 +1,14 @@
 import logging
 import uuid
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterable, AsyncIterator
+from contextlib import aclosing, asynccontextmanager
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException, status
+import anyio
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.sse import EventSourceResponse, ServerSentEvent
+from pydantic import BaseModel
 from sqlalchemy import text
 
 from ved_backend.agent import Agent
@@ -12,14 +16,14 @@ from ved_backend.config import settings
 from ved_backend.database import engine, session_factory
 from ved_backend.indexing import MessageIndexer
 from ved_backend.llm import build_embedder, build_provider
-from ved_backend.llm.base import Message
-from ved_backend.llm.openai_compatible import LLMRequestError
+from ved_backend.llm.base import LLMRequestError, Message
 from ved_backend.memory import ConversationNotFoundError, ConversationStore
 from ved_backend.push import Notification, PushNotConfiguredError, PushService
 from ved_backend.scheduler import ReminderScheduler
 from ved_backend.schemas import (
     AgentReply,
     AgentRequest,
+    AgentTurn,
     ConversationList,
     ConversationSummary,
     ConversationTranscript,
@@ -29,6 +33,10 @@ from ved_backend.schemas import (
     PushTestResult,
     PushUnsubscribeRequest,
     ServiceState,
+    StreamErrorEvent,
+    TokenEvent,
+    ToolFinishedEvent,
+    ToolStartedEvent,
 )
 from ved_backend.tools.servers import configured_servers
 from ved_backend.tools.toolbox import MCPToolbox
@@ -41,6 +49,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 NO_TOOLS_MESSAGE = "No MCP servers are connected, so Ved cannot act yet."
+UNEXPECTED_STREAM_FAILURE = "Ved hit an unexpected error while answering."
+
+DONE_EVENT = "done"
+ERROR_EVENT = "error"
+STREAM_EVENT_NAMES: dict[type[BaseModel], str] = {
+    TokenEvent: "token",
+    ToolStartedEvent: "tool",
+    ToolFinishedEvent: "tool_result",
+}
 
 
 @asynccontextmanager
@@ -128,8 +145,7 @@ async def health() -> HealthStatus:
     )
 
 
-@app.post("/agent/message")
-async def agent_message(request: AgentRequest) -> AgentReply:
+async def conversation_history(request: AgentRequest) -> list[Message]:
     toolbox: MCPToolbox = app.state.toolbox
     if not toolbox.tools:
         raise HTTPException(
@@ -137,22 +153,46 @@ async def agent_message(request: AgentRequest) -> AgentReply:
             detail=NO_TOOLS_MESSAGE,
         )
 
-    agent: Agent = app.state.agent
+    if request.conversation_id is None:
+        return []
     store: ConversationStore = app.state.conversations
-
     try:
-        history: list[Message] = (
-            []
-            if request.conversation_id is None
-            else await store.history(request.conversation_id)
-        )
+        return await store.history(request.conversation_id)
     except ConversationNotFoundError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
         ) from error
 
+
+History = Annotated[list[Message], Depends(conversation_history)]
+
+
+async def record_reply(request: AgentRequest, turn: AgentTurn) -> AgentReply:
+    store: ConversationStore = app.state.conversations
+    conversation_id = request.conversation_id or await store.start(request.prompt)
+    await store.record_turn(
+        conversation_id,
+        prompt=request.prompt,
+        answer=turn.text,
+        model=turn.model,
+        tool_calls=turn.tool_calls,
+    )
+    indexer: MessageIndexer | None = app.state.indexer
+    if indexer is not None:
+        indexer.trigger()
+    return AgentReply(
+        text=turn.text,
+        model=turn.model,
+        conversation_id=conversation_id,
+        tool_calls=turn.tool_calls,
+    )
+
+
+@app.post("/agent/message")
+async def agent_message(request: AgentRequest, history: History) -> AgentReply:
+    agent: Agent = app.state.agent
     try:
-        reply = await agent.run(request.prompt, history)
+        turn = await agent.run(request.prompt, history)
     except LLMRequestError as error:
         logger.warning("LLM unreachable: %s", error)
         raise HTTPException(
@@ -160,23 +200,35 @@ async def agent_message(request: AgentRequest) -> AgentReply:
             detail=str(error),
         ) from error
 
-    conversation_id = request.conversation_id or await store.start(request.prompt)
-    await store.record_turn(
-        conversation_id,
-        prompt=request.prompt,
-        answer=reply.text,
-        model=reply.model,
-        tool_calls=reply.tool_calls,
-    )
-    indexer: MessageIndexer | None = app.state.indexer
-    if indexer is not None:
-        indexer.trigger()
-    return AgentReply(
-        text=reply.text,
-        model=reply.model,
-        conversation_id=conversation_id,
-        tool_calls=reply.tool_calls,
-    )
+    return await record_reply(request, turn)
+
+
+@app.post("/agent/message/stream", response_class=EventSourceResponse)
+async def agent_message_stream(
+    request: AgentRequest, history: History
+) -> AsyncIterable[ServerSentEvent]:
+    agent: Agent = app.state.agent
+    try:
+        async with aclosing(agent.stream(request.prompt, history)) as events:
+            async for event in events:
+                if isinstance(event, AgentTurn):
+                    with anyio.CancelScope(shield=True):
+                        reply = await record_reply(request, event)
+                    yield ServerSentEvent(event=DONE_EVENT, data=reply)
+                else:
+                    yield ServerSentEvent(
+                        event=STREAM_EVENT_NAMES[type(event)], data=event
+                    )
+    except LLMRequestError as error:
+        logger.warning("LLM failed mid-stream: %s", error)
+        yield ServerSentEvent(
+            event=ERROR_EVENT, data=StreamErrorEvent(detail=str(error))
+        )
+    except Exception:
+        logger.exception("Streaming reply failed")
+        yield ServerSentEvent(
+            event=ERROR_EVENT, data=StreamErrorEvent(detail=UNEXPECTED_STREAM_FAILURE)
+        )
 
 
 @app.get("/push/status")

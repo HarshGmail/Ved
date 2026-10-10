@@ -1,17 +1,32 @@
 import logging
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
+from contextlib import aclosing
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import anyio
+
 from ved_backend.llm.base import (
+    AssistantMessage,
     LLMProvider,
+    LLMRequestError,
     Message,
+    StreamChunk,
+    TextDelta,
     ToolCall,
     ToolOutcome,
     ToolResultMessage,
+    ToolSpec,
     UserMessage,
 )
-from ved_backend.schemas import AgentTurn, ToolInvocation
+from ved_backend.schemas import (
+    AgentEvent,
+    AgentTurn,
+    TokenEvent,
+    ToolFinishedEvent,
+    ToolInvocation,
+    ToolStartedEvent,
+)
 from ved_backend.tools.toolbox import MCPToolbox, ToolNotAvailableError
 
 logger = logging.getLogger(__name__)
@@ -28,6 +43,9 @@ Resolve every relative time the user gives you against that, and send times as
 ISO 8601 strings carrying the user's UTC offset. Never guess today's date."""
 
 TOOL_LIMIT_MESSAGE = "I stopped after too many tool calls without reaching an answer."
+NO_REPLY_MESSAGE = "The model stream ended without a reply."
+
+ModelRound = Callable[..., AsyncIterator[StreamChunk]]
 
 
 class Agent:
@@ -52,49 +70,82 @@ class Agent:
         )
 
     async def run(self, prompt: str, history: Sequence[Message] = ()) -> AgentTurn:
+        async with aclosing(self._events(prompt, history, self._complete)) as events:
+            async for event in events:
+                if isinstance(event, AgentTurn):
+                    return event
+        raise LLMRequestError(NO_REPLY_MESSAGE)
+
+    def stream(
+        self, prompt: str, history: Sequence[Message] = ()
+    ) -> AsyncIterator[AgentEvent]:
+        return self._events(prompt, history, self._provider.stream)
+
+    async def _complete(
+        self,
+        *,
+        system: str,
+        messages: Sequence[Message],
+        tools: Sequence[ToolSpec],
+    ) -> AsyncIterator[StreamChunk]:
+        yield await self._provider.complete(
+            system=system, messages=messages, tools=tools
+        )
+
+    async def _events(
+        self, prompt: str, history: Sequence[Message], model_round: ModelRound
+    ) -> AsyncIterator[AgentEvent]:
         messages: list[Message] = [*history, UserMessage(text=prompt)]
         invocations: list[ToolInvocation] = []
 
         for _ in range(self._max_tool_rounds):
-            reply = await self._provider.complete(
-                system=self._system_prompt(),
-                messages=messages,
-                tools=self._toolbox.tools,
-            )
+            reply: AssistantMessage | None = None
+            async with aclosing(
+                model_round(
+                    system=self._system_prompt(),
+                    messages=messages,
+                    tools=self._toolbox.tools,
+                )
+            ) as chunks:
+                async for chunk in chunks:
+                    if isinstance(chunk, TextDelta):
+                        yield TokenEvent(text=chunk.text)
+                    else:
+                        reply = chunk
+            if reply is None:
+                raise LLMRequestError(NO_REPLY_MESSAGE)
             messages.append(reply)
 
             if not reply.tool_calls:
-                return AgentTurn(
+                yield AgentTurn(
                     text=reply.text,
                     model=self._provider.model,
                     tool_calls=invocations,
                 )
+                return
 
-            outcomes = await self._execute(reply.tool_calls, invocations)
+            outcomes: list[ToolOutcome] = []
+            for call in reply.tool_calls:
+                yield ToolStartedEvent(name=call.name, arguments=call.arguments)
+                with anyio.CancelScope(shield=True):
+                    content, is_error = await self._invoke(call)
+                outcomes.append(
+                    ToolOutcome(call_id=call.id, content=content, is_error=is_error)
+                )
+                invocations.append(
+                    ToolInvocation(
+                        name=call.name, arguments=call.arguments, failed=is_error
+                    )
+                )
+                yield ToolFinishedEvent(name=call.name, failed=is_error)
             messages.append(ToolResultMessage(outcomes=outcomes))
 
         logger.warning("Agent hit the tool round limit for prompt %r", prompt)
-        return AgentTurn(
+        yield AgentTurn(
             text=TOOL_LIMIT_MESSAGE,
             model=self._provider.model,
             tool_calls=invocations,
         )
-
-    async def _execute(
-        self, calls: Sequence[ToolCall], invocations: list[ToolInvocation]
-    ) -> list[ToolOutcome]:
-        outcomes: list[ToolOutcome] = []
-        for call in calls:
-            content, is_error = await self._invoke(call)
-            outcomes.append(
-                ToolOutcome(call_id=call.id, content=content, is_error=is_error)
-            )
-            invocations.append(
-                ToolInvocation(
-                    name=call.name, arguments=call.arguments, failed=is_error
-                )
-            )
-        return outcomes
 
     async def _invoke(self, call: ToolCall) -> tuple[str, bool]:
         try:

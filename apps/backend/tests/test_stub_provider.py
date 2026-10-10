@@ -9,6 +9,7 @@ from ved_backend.llm.stub import (
     extract_subject,
     phrase_outcome,
     resolve_due_at,
+    split_into_chunks,
 )
 
 ZONE = ZoneInfo("Asia/Kolkata")
@@ -177,3 +178,37 @@ def test_phrase_outcome_renders_an_empty_list():
 
 def test_phrase_outcome_passes_through_non_json():
     assert phrase_outcome("plain text", ZONE) == "plain text"
+
+
+async def test_stream_emits_the_reply_in_chunks_then_the_whole_message(provider):
+    chunks = [
+        chunk
+        async for chunk in provider.stream(
+            system="", messages=[UserMessage(text="hello there")], tools=TOOLS
+        )
+    ]
+    *deltas, final = chunks
+
+    assert len(deltas) > 1
+    assert "".join(delta.text for delta in deltas) == final.text
+
+
+async def test_stream_of_a_tool_call_carries_no_text(provider):
+    chunks = [
+        chunk
+        async for chunk in provider.stream(
+            system="",
+            messages=[UserMessage(text="remind me at 8 PM to call Mom")],
+            tools=TOOLS,
+        )
+    ]
+
+    assert len(chunks) == 1
+    assert chunks[0].tool_calls[0].name == "reminders.create"
+
+
+@pytest.mark.parametrize(
+    "text", ["", "one", "a b c d e f g h i", "line one\nline  two   three"]
+)
+def test_chunks_reassemble_to_the_original_text(text):
+    assert "".join(split_into_chunks(text, 2)) == text

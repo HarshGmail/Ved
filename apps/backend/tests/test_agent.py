@@ -1,14 +1,24 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import anyio
+import anyio.lowlevel
 import pytest
 
 from ved_backend.agent import TOOL_LIMIT_MESSAGE, Agent
 from ved_backend.llm.base import (
     AssistantMessage,
+    LLMRequestError,
     Message,
+    TextDelta,
     ToolCall,
     ToolSpec,
+)
+from ved_backend.schemas import (
+    AgentTurn,
+    TokenEvent,
+    ToolFinishedEvent,
+    ToolStartedEvent,
 )
 from ved_backend.tools.toolbox import ToolNotAvailableError
 
@@ -40,6 +50,21 @@ class ScriptedProvider:
         self.seen.append(list(messages))
         self.systems.append(system)
         return self._replies.pop(0)
+
+    async def stream(self, *, system, messages, tools):
+        await anyio.lowlevel.checkpoint()
+        reply = await self.complete(system=system, messages=messages, tools=tools)
+        for word in reply.text.split(" "):
+            yield TextDelta(text=word + " ")
+        yield reply
+
+
+class FailingMidStreamProvider:
+    model = "failing"
+
+    async def stream(self, *, system, messages, tools):
+        yield TextDelta(text="Partial ")
+        raise LLMRequestError("connection dropped")
 
 
 def create_call(**arguments):
@@ -142,3 +167,127 @@ async def test_system_prompt_tells_the_model_the_current_time(toolbox):
     assert now.strftime("%B") in prompt
     assert "Asia/Kolkata" in prompt
     assert "+0530" in prompt
+
+
+async def collect(agent, prompt):
+    return [event async for event in agent.stream(prompt)]
+
+
+async def test_stream_yields_tokens_in_order_then_the_turn(toolbox):
+    provider = ScriptedProvider([AssistantMessage(text="Good morning to you")])
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    events = await collect(agent, "hi")
+
+    *tokens, final = events
+    assert all(isinstance(token, TokenEvent) for token in tokens)
+    assert "".join(token.text for token in tokens).strip() == "Good morning to you"
+    assert final == AgentTurn(text="Good morning to you", model="scripted")
+
+
+async def test_stream_announces_each_tool_around_its_execution(toolbox):
+    provider = ScriptedProvider(
+        [create_call(text="call Mom"), AssistantMessage(text="Reminder set.")]
+    )
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    events = await collect(agent, "remind me to call Mom")
+
+    kinds = [type(event) for event in events]
+    started = kinds.index(ToolStartedEvent)
+    assert kinds[started + 1] is ToolFinishedEvent
+    assert all(kind is TokenEvent for kind in kinds[started + 2 : -1])
+    assert events[started] == ToolStartedEvent(
+        name="reminders.create", arguments={"text": "call Mom"}
+    )
+    assert events[-1].tool_calls[0].name == "reminders.create"
+
+
+async def test_stream_reports_a_failed_tool_and_feeds_the_error_back():
+    toolbox = FakeToolbox(
+        results={"reminders.create": ("due_at must include a UTC offset", True)}
+    )
+    provider = ScriptedProvider(
+        [create_call(due_at="8pm"), AssistantMessage(text="Let me fix that.")]
+    )
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    events = await collect(agent, "remind me at 8pm")
+
+    finished = next(e for e in events if isinstance(e, ToolFinishedEvent))
+    assert finished.failed is True
+    assert provider.seen[-1][-1].outcomes[0].is_error is True
+
+
+async def test_stream_stops_a_looping_model(toolbox):
+    provider = ScriptedProvider([create_call(text="again") for _ in range(3)])
+    agent = Agent(provider, toolbox, max_tool_rounds=3, timezone="Asia/Kolkata")
+
+    events = await collect(agent, "remind me")
+
+    assert events[-1].text == TOOL_LIMIT_MESSAGE
+    assert sum(isinstance(e, ToolStartedEvent) for e in events) == 3
+
+
+async def test_stream_raises_when_the_model_fails_mid_reply(toolbox):
+    agent = Agent(
+        FailingMidStreamProvider(),
+        toolbox,
+        max_tool_rounds=4,
+        timezone="Asia/Kolkata",
+    )
+    received = []
+
+    with pytest.raises(LLMRequestError, match="connection dropped"):
+        async for event in agent.stream("hi"):
+            received.append(event)
+
+    assert received == [TokenEvent(text="Partial ")]
+
+
+async def test_stream_sends_the_current_time_every_round(toolbox):
+    provider = ScriptedProvider(
+        [create_call(text="call Mom"), AssistantMessage(text="done")]
+    )
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    await collect(agent, "remind me")
+
+    assert len(provider.systems) == 2
+    assert all("Asia/Kolkata" in system for system in provider.systems)
+
+
+class SlowToolbox(FakeToolbox):
+    def __init__(self):
+        super().__init__()
+        self.started = anyio.Event()
+        self.release = anyio.Event()
+        self.finished = False
+
+    async def call(self, name, arguments):
+        self.started.set()
+        await self.release.wait()
+        self.finished = True
+        return await super().call(name, arguments)
+
+
+async def test_a_cancelled_stream_lets_a_running_tool_finish():
+    toolbox = SlowToolbox()
+    provider = ScriptedProvider(
+        [create_call(text="call Mom"), AssistantMessage(text="done")]
+    )
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+    received = []
+
+    async def consume():
+        async for event in agent.stream("remind me"):
+            received.append(event)
+
+    async with anyio.create_task_group() as group:
+        group.start_soon(consume)
+        await toolbox.started.wait()
+        group.cancel_scope.cancel()
+        toolbox.release.set()
+
+    assert toolbox.finished is True
+    assert not any(isinstance(event, AgentTurn) for event in received)

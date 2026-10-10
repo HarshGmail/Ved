@@ -40,3 +40,17 @@ export class NetworkError extends ConnectorError {
     this.cause = cause;
   }
 }
+
+export class StreamError extends ConnectorError {
+  constructor(detail: string) {
+    super(detail);
+    this.name = "StreamError";
+  }
+}
+
+export class StreamUnavailableError extends ConnectorError {
+  constructor(reason: string) {
+    super(`Streaming is not available: ${reason}`);
+    this.name = "StreamUnavailableError";
+  }
+}

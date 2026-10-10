@@ -1,7 +1,11 @@
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
+
+
+class LLMRequestError(RuntimeError):
+    pass
 
 
 class ToolSpec(BaseModel):
@@ -41,6 +45,13 @@ class ToolResultMessage(BaseModel):
 Message = UserMessage | AssistantMessage | ToolResultMessage
 
 
+class TextDelta(BaseModel):
+    text: str
+
+
+StreamChunk = TextDelta | AssistantMessage
+
+
 @runtime_checkable
 class LLMProvider(Protocol):
     @property
@@ -53,3 +64,11 @@ class LLMProvider(Protocol):
         messages: Sequence[Message],
         tools: Sequence[ToolSpec],
     ) -> AssistantMessage: ...
+
+    def stream(
+        self,
+        *,
+        system: str,
+        messages: Sequence[Message],
+        tools: Sequence[ToolSpec],
+    ) -> AsyncIterator[StreamChunk]: ...

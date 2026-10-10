@@ -39,6 +39,27 @@ class AgentReply(AgentTurn):
     conversation_id: uuid.UUID
 
 
+class TokenEvent(BaseModel):
+    text: str
+
+
+class ToolStartedEvent(BaseModel):
+    name: str
+    arguments: dict[str, Any]
+
+
+class ToolFinishedEvent(BaseModel):
+    name: str
+    failed: bool
+
+
+class StreamErrorEvent(BaseModel):
+    detail: str
+
+
+AgentEvent = TokenEvent | ToolStartedEvent | ToolFinishedEvent | AgentTurn
+
+
 class ConversationSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -1,5 +1,12 @@
-import { AGENT_TIMEOUT_MS, type ConnectorConfig, resolveConfig } from "./config";
+import {
+  AGENT_TIMEOUT_MS,
+  type ConnectorConfig,
+  resolveConfig,
+  STREAM_IDLE_TIMEOUT_MS,
+} from "./config";
 import { createHttpClient, type RequestOptions } from "./http";
+import { createReplyStream } from "./reply-stream";
+import { createEventStreamClient } from "./sse";
 import { createStreamClient } from "./stream";
 import type {
   AgentReply,
@@ -8,17 +15,21 @@ import type {
   HealthStatus,
   PushStatus,
   PushTestResult,
+  ReplyStreamHandlers,
 } from "./types";
 
 export function createConnector(overrides: Partial<ConnectorConfig> = {}) {
   const config = resolveConfig(overrides);
   const request = createHttpClient(config);
   const openStream = createStreamClient(config);
+  const postEventStream = createEventStreamClient(config);
+  const streamReply = createReplyStream(postEventStream);
 
   return {
     config,
     request,
     openStream,
+    postEventStream,
     health: (options: Pick<RequestOptions, "signal"> = {}) =>
       request<HealthStatus>({ path: "/health", ...options }),
     sendMessage: (
@@ -31,6 +42,19 @@ export function createConnector(overrides: Partial<ConnectorConfig> = {}) {
         path: "/agent/message",
         body: { prompt, conversation_id: conversationId ?? null },
         timeoutMs: AGENT_TIMEOUT_MS,
+        ...options,
+      }),
+    streamMessage: (
+      prompt: string,
+      conversationId: string | undefined,
+      handlers: ReplyStreamHandlers,
+      options: Pick<RequestOptions, "signal"> = {},
+    ) =>
+      streamReply({
+        prompt,
+        conversationId,
+        handlers,
+        idleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
         ...options,
       }),
     listConversations: (options: Pick<RequestOptions, "signal"> = {}) =>
@@ -81,9 +105,17 @@ export const connector = createConnector({
   baseUrl: process.env.NEXT_PUBLIC_VED_API_URL,
 });
 
-export { ConnectorError, HttpError, NetworkError, TimeoutError } from "./errors";
+export {
+  ConnectorError,
+  HttpError,
+  NetworkError,
+  StreamError,
+  StreamUnavailableError,
+  TimeoutError,
+} from "./errors";
 export type { ConnectorConfig } from "./config";
 export type { HttpClient, HttpMethod, RequestOptions } from "./http";
+export type { EventStreamClient, SseEvent } from "./sse";
 export type { StreamClient, StreamHandle, StreamHandlers } from "./stream";
 export type {
   AgentReply,
@@ -93,7 +125,10 @@ export type {
   HealthStatus,
   PushStatus,
   PushTestResult,
+  ReplyStreamHandlers,
   ServiceState,
+  ToolFinished,
   ToolInvocation,
+  ToolStarted,
   TranscriptMessage,
 } from "./types";

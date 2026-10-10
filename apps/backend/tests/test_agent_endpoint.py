@@ -1,13 +1,21 @@
+import json
 import uuid
 
 import pytest
 from fastapi.testclient import TestClient
 
-from ved_backend.llm.base import ToolSpec
-from ved_backend.llm.openai_compatible import LLMRequestError
-from ved_backend.main import app
+from ved_backend.llm.base import LLMRequestError, ToolSpec
+from ved_backend.main import agent_message_stream, app
 from ved_backend.memory import ConversationNotFoundError
-from ved_backend.schemas import AgentTurn, ToolInvocation
+from ved_backend.schemas import (
+    AgentReply,
+    AgentRequest,
+    AgentTurn,
+    TokenEvent,
+    ToolFinishedEvent,
+    ToolInvocation,
+    ToolStartedEvent,
+)
 
 CREATE = ToolSpec(name="reminders.create", description="", input_schema={})
 CONVERSATION_ID = uuid.uuid4()
@@ -25,6 +33,16 @@ class FakeAgent:
         self.prompts.append(prompt)
         self.histories.append(list(history))
         return self._turn
+
+    async def stream(self, prompt: str, history=()):
+        self.prompts.append(prompt)
+        self.histories.append(list(history))
+        for call in self._turn.tool_calls:
+            yield ToolStartedEvent(name=call.name, arguments=call.arguments)
+            yield ToolFinishedEvent(name=call.name, failed=call.failed)
+        for word in self._turn.text.split(" "):
+            yield TokenEvent(text=word + " ")
+        yield self._turn
 
 
 class FakeToolbox:
@@ -200,5 +218,139 @@ def test_a_failed_turn_leaves_no_empty_conversation(wired):
     response = post("remind me at 8 PM")
 
     assert response.status_code == 503
+    assert store.started == []
+    assert store.recorded == []
+
+
+def parse_sse(body: str) -> list[tuple[str, dict]]:
+    events = []
+    for block in body.strip().split("\n\n"):
+        lines = block.splitlines()
+        name = next(
+            line.removeprefix("event: ") for line in lines if line.startswith("event:")
+        )
+        data = "\n".join(
+            line.removeprefix("data: ") for line in lines if line.startswith("data:")
+        )
+        events.append((name, json.loads(data)))
+    return events
+
+
+def post_stream(prompt: str, conversation_id: uuid.UUID | None = None):
+    body: dict = {"prompt": prompt}
+    if conversation_id is not None:
+        body["conversation_id"] = str(conversation_id)
+    return client.post("/agent/message/stream", json=body)
+
+
+REMINDER_TURN = AgentTurn(
+    text="Reminder set for 8 PM.",
+    model="stub-rules-v1",
+    tool_calls=[
+        ToolInvocation(
+            name="reminders.create", arguments={"text": "call Mom"}, failed=False
+        )
+    ],
+)
+
+
+def test_stream_sends_tool_events_tokens_then_a_done_reply(wired):
+    wired(REMINDER_TURN)
+
+    response = post_stream("remind me at 8 PM")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    events = parse_sse(response.text)
+    names = [name for name, _ in events]
+    assert names[:2] == ["tool", "tool_result"]
+    assert set(names[2:-1]) == {"token"}
+    assert names[-1] == "done"
+    assert events[0][1] == {
+        "name": "reminders.create",
+        "arguments": {"text": "call Mom"},
+    }
+    assert events[1][1] == {"name": "reminders.create", "failed": False}
+    tokens = "".join(data["text"] for name, data in events if name == "token")
+    assert tokens.strip() == "Reminder set for 8 PM."
+
+
+def test_stream_done_payload_is_an_agent_reply(wired):
+    wired(REMINDER_TURN)
+
+    _, done = parse_sse(post_stream("remind me at 8 PM").text)[-1]
+
+    reply = AgentReply.model_validate(done)
+    assert reply.text == "Reminder set for 8 PM."
+    assert reply.conversation_id == CONVERSATION_ID
+    assert reply.tool_calls == REMINDER_TURN.tool_calls
+
+
+def test_stream_records_the_turn_once_and_nudges_the_indexer(wired):
+    _, store = wired(REMINDER_TURN)
+    indexer = RecordingIndexer()
+    app.state.indexer = indexer
+
+    post_stream("remind me at 8 PM")
+
+    assert store.started == ["remind me at 8 PM"]
+    assert len(store.recorded) == 1
+    assert store.recorded[0]["answer"] == "Reminder set for 8 PM."
+    assert indexer.triggered == 1
+
+
+def test_stream_follow_up_replays_history(wired):
+    from ved_backend.llm.base import AssistantMessage, UserMessage
+
+    history = [UserMessage(text="remind me at 8 PM"), AssistantMessage(text="Done.")]
+    agent, store = wired(store=FakeStore(known=[CONVERSATION_ID], history=history))
+
+    post_stream("actually make it 9", CONVERSATION_ID)
+
+    assert [m.text for m in agent.histories[0]] == ["remind me at 8 PM", "Done."]
+    assert store.started == []
+
+
+def test_stream_rejects_an_unknown_conversation_before_streaming(wired):
+    wired(store=FakeStore(known=[]))
+
+    response = post_stream("hello", uuid.uuid4())
+
+    assert response.status_code == 404
+    assert "No conversation" in response.json()["detail"]
+
+
+def test_stream_without_tools_is_service_unavailable(wired):
+    wired(tools=[])
+
+    assert post_stream("remind me").status_code == 503
+
+
+class FailingMidStreamAgent:
+    async def stream(self, prompt, history=()):
+        yield TokenEvent(text="Partial ")
+        raise LLMRequestError("model is down")
+
+
+def test_stream_failure_sends_an_error_event_and_records_nothing(wired):
+    _, store = wired()
+    app.state.agent = FailingMidStreamAgent()
+
+    events = parse_sse(post_stream("remind me at 8 PM").text)
+
+    assert events[-1] == ("error", {"detail": "model is down"})
+    assert "done" not in [name for name, _ in events]
+    assert store.started == []
+    assert store.recorded == []
+
+
+async def test_a_client_leaving_mid_stream_records_nothing(wired):
+    _, store = wired(REMINDER_TURN)
+    stream = agent_message_stream(AgentRequest(prompt="remind me at 8 PM"), [])
+
+    first = await anext(stream)
+    await stream.aclose()
+
+    assert first.event == "tool"
     assert store.started == []
     assert store.recorded == []

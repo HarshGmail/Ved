@@ -8,6 +8,7 @@ const DEFAULT_BASE_URL = "http://localhost:8000";
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 export const AGENT_TIMEOUT_MS = 180_000;
+export const STREAM_IDLE_TIMEOUT_MS = 60_000;
 
 export function resolveConfig(
   overrides: Partial<ConnectorConfig> = {},
