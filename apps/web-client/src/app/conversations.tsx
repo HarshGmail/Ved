@@ -6,6 +6,7 @@ import { Chat } from "./chat";
 import { ConversationList } from "./conversation-list";
 import { useConversationParam } from "./conversation-url";
 import styles from "./conversations.module.css";
+import { DocumentShelf, useDocuments } from "./documents";
 import { type TranscriptTurn, transcriptToTurns } from "./transcript";
 
 const UNUSABLE_ID_STATUSES = new Set([404, 422]);
@@ -49,6 +50,7 @@ export function Conversations() {
     error: null,
   });
   const [panelOpen, setPanelOpen] = useState(false);
+  const documents = useDocuments();
   const activeSessionKey = useRef(session.key);
 
   if (paramId !== seenParamId) {
@@ -165,6 +167,13 @@ export function Conversations() {
         />
       </aside>
 
+      <DocumentShelf
+        documents={documents.documents}
+        uploading={documents.uploading}
+        error={documents.error}
+        onRemove={documents.remove}
+      />
+
       {session.status === "ready" && session.conversationId === null && session.notice && (
         <p className={styles.notice}>{session.notice}</p>
       )}
@@ -183,6 +192,7 @@ export function Conversations() {
           initialTurns={session.status === "ready" ? session.turns : []}
           onReply={(conversationId) => onReply(session.key, conversationId)}
           onNewConversation={() => open(null)}
+          onDocuments={documents.upload}
         />
       )}
     </div>

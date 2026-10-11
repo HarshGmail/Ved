@@ -9,6 +9,9 @@ REMINDERS_SERVER_DIR = REPO_ROOT / "mcp-servers" / "reminders"
 PEOPLE_SERVER_DIR = REPO_ROOT / "mcp-servers" / "people"
 MEMORY_SERVER_DIR = REPO_ROOT / "mcp-servers" / "memory"
 WEB_SERVER_DIR = REPO_ROOT / "mcp-servers" / "web"
+DOCUMENTS_DIR = REPO_ROOT / "data" / "documents"
+MEBIBYTE = 1024 * 1024
+DEFAULT_MAX_UPLOAD_BYTES = 25 * MEBIBYTE
 LOCAL_SEARXNG_URL = "http://127.0.0.1:8888"
 NOMIC_DOCUMENT_PREFIX = "search_document: "
 NOMIC_QUERY_PREFIX = "search_query: "
@@ -47,6 +50,9 @@ class Settings(BaseSettings):
     embedding_timeout_seconds: float = 60.0
     embedding_document_prefix: str = NOMIC_DOCUMENT_PREFIX
     embedding_query_prefix: str = NOMIC_QUERY_PREFIX
+
+    documents_dir: Path = DOCUMENTS_DIR
+    documents_max_upload_bytes: int = DEFAULT_MAX_UPLOAD_BYTES
 
     reminders_server_command: str = "uv"
     reminders_server_args: list[str] = ["run", "ved-mcp-reminders"]

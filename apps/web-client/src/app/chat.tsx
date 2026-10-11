@@ -1,12 +1,13 @@
 "use client";
 
-import { type FormEvent, useRef, useState } from "react";
+import { type DragEvent, type FormEvent, useRef, useState } from "react";
 import {
   type AgentReply,
   connector,
   StreamUnavailableError,
 } from "@/connector";
 import styles from "./chat.module.css";
+import { DocumentPicker } from "./documents";
 import { MarkdownReply } from "./markdown-reply";
 import type { TranscriptTurn } from "./transcript";
 
@@ -30,6 +31,10 @@ const NOTHING_STREAMED: StreamingReply = {
   thinking: false,
   acknowledgement: null,
 };
+
+function carriesFiles(event: DragEvent): boolean {
+  return event.dataTransfer.types.includes("Files");
+}
 
 function hasSomethingToShow(reply: StreamingReply): boolean {
   return Boolean(
@@ -89,6 +94,7 @@ interface ChatProps {
   initialTurns?: TranscriptTurn[];
   onReply?: (conversationId: string) => void;
   onNewConversation?: () => void;
+  onDocuments?: (files: File[]) => void;
 }
 
 export function Chat({
@@ -96,13 +102,35 @@ export function Chat({
   initialTurns = [],
   onReply,
   onNewConversation,
+  onDocuments,
 }: ChatProps) {
   const [turns, setTurns] = useState<Turn[]>(initialTurns);
   const [prompt, setPrompt] = useState("");
   const [pending, setPending] = useState(false);
   const [streaming, setStreaming] = useState<StreamingReply | null>(null);
   const [conversationId, setConversationId] = useState(initialConversationId);
+  const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  function onDragOver(event: DragEvent) {
+    if (!onDocuments || !carriesFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setDragging(true);
+  }
+
+  function onDragLeave(event: DragEvent) {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setDragging(false);
+  }
+
+  function onDrop(event: DragEvent) {
+    if (!onDocuments || !carriesFiles(event)) return;
+    event.preventDefault();
+    setDragging(false);
+    const files = Array.from(event.dataTransfer.files);
+    if (files.length > 0) onDocuments(files);
+  }
 
   function startNewConversation() {
     setConversationId(undefined);
@@ -144,7 +172,13 @@ export function Chat({
   }
 
   return (
-    <section className={styles.chat}>
+    <section
+      className={styles.chat}
+      data-dragging={dragging || undefined}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       {turns.length > 0 && (
         <div className={styles.toolbar}>
           <span className={styles.thread}>
@@ -199,6 +233,9 @@ export function Chat({
       </ol>
 
       <form className={styles.form} onSubmit={onSubmit}>
+        {onDocuments && (
+          <DocumentPicker className={styles.attach} onFiles={onDocuments} />
+        )}
         <input
           ref={inputRef}
           className={styles.input}

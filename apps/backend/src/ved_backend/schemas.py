@@ -131,3 +131,20 @@ class ConversationTranscript(BaseModel):
     id: uuid.UUID
     title: str | None
     messages: list[TranscriptMessage]
+
+
+class DocumentSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    filename: str
+    media_type: str
+    size_bytes: int
+    page_count: int | None
+    status: str
+    error: str | None
+    created_at: datetime
+
+
+class DocumentList(BaseModel):
+    documents: list[DocumentSummary]

@@ -56,7 +56,8 @@ COPY apps/backend/ ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
 
-RUN useradd --create-home --uid 1000 ved && chown -R ved:ved /app
+RUN mkdir -p /app/data/documents \
+    && useradd --create-home --uid 1000 ved && chown -R ved:ved /app
 USER ved
 
 EXPOSE 8000

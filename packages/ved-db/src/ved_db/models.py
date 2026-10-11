@@ -7,6 +7,7 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    Integer,
     Date,
     DateTime,
     ForeignKey,
@@ -23,6 +24,9 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 MessageRole = Literal["user", "assistant"]
+DocumentStatus = Literal["pending", "indexed", "failed"]
+DOCUMENT_STATUSES: tuple[DocumentStatus, ...] = ("pending", "indexed", "failed")
+SHA256_HEX_LENGTH = 64
 
 CONVERSATION_MESSAGE_SEQUENCE = Sequence("conversation_messages_sequence_seq")
 
@@ -214,3 +218,76 @@ class ConversationMessage(Base):
     )
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
+
+
+class Document(Base):
+    __tablename__ = "documents"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'indexed', 'failed')",
+            name="ck_documents_status_known",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    filename: Mapped[str] = mapped_column(String(255))
+    media_type: Mapped[str] = mapped_column(String(100))
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    sha256: Mapped[str] = mapped_column(String(SHA256_HEX_LENGTH), unique=True)
+    page_count: Mapped[int | None] = mapped_column(Integer, default=None)
+    status: Mapped[DocumentStatus] = mapped_column(
+        String(16), default="pending", server_default="pending", index=True
+    )
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    chunks: Mapped[list["DocumentChunk"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="DocumentChunk.ordinal",
+    )
+
+
+class DocumentChunk(Base):
+    __tablename__ = "document_chunks"
+    __table_args__ = (
+        UniqueConstraint(
+            "document_id", "ordinal", name="uq_document_chunks_document_ordinal"
+        ),
+        Index(
+            "ix_document_chunks_embedding",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_with={
+                "m": HNSW_GRAPH_DEGREE,
+                "ef_construction": HNSW_BUILD_CANDIDATES,
+            },
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "documents.id",
+            ondelete="CASCADE",
+            name="fk_document_chunks_document_id_documents",
+        ),
+        nullable=False,
+    )
+    ordinal: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(Text)
+    page_number: Mapped[int | None] = mapped_column(Integer, default=None)
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(EMBEDDING_DIMENSIONS), default=None
+    )
+
+    document: Mapped[Document] = relationship(back_populates="chunks")

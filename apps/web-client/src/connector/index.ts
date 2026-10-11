@@ -3,6 +3,7 @@ import {
   type ConnectorConfig,
   resolveConfig,
   STREAM_IDLE_TIMEOUT_MS,
+  UPLOAD_TIMEOUT_MS,
 } from "./config";
 import { createHttpClient, type RequestOptions } from "./http";
 import { createReplyStream } from "./reply-stream";
@@ -12,11 +13,21 @@ import type {
   AgentReply,
   ConversationList,
   ConversationTranscript,
+  DocumentList,
+  DocumentSummary,
   HealthStatus,
   PushStatus,
   PushTestResult,
   ReplyStreamHandlers,
 } from "./types";
+
+const DOCUMENT_FIELD = "file";
+
+function documentForm(file: Blob, filename: string): FormData {
+  const form = new FormData();
+  form.append(DOCUMENT_FIELD, file, filename);
+  return form;
+}
 
 export function createConnector(overrides: Partial<ConnectorConfig> = {}) {
   const config = resolveConfig(overrides);
@@ -96,6 +107,29 @@ export function createConnector(overrides: Partial<ConnectorConfig> = {}) {
         path: `/conversations/${conversationId}`,
         ...options,
       }),
+    listDocuments: (options: Pick<RequestOptions, "signal"> = {}) =>
+      request<DocumentList>({ path: "/documents", ...options }),
+    uploadDocument: (
+      file: Blob,
+      filename: string,
+      options: Pick<RequestOptions, "signal"> = {},
+    ) =>
+      request<DocumentSummary>({
+        method: "POST",
+        path: "/documents",
+        body: documentForm(file, filename),
+        timeoutMs: UPLOAD_TIMEOUT_MS,
+        ...options,
+      }),
+    deleteDocument: (
+      documentId: string,
+      options: Pick<RequestOptions, "signal"> = {},
+    ) =>
+      request<null>({
+        method: "DELETE",
+        path: `/documents/${documentId}`,
+        ...options,
+      }),
   };
 }
 
@@ -123,6 +157,9 @@ export type {
   ConversationList,
   ConversationSummary,
   ConversationTranscript,
+  DocumentList,
+  DocumentStatus,
+  DocumentSummary,
   HealthStatus,
   PushStatus,
   PushTestResult,

@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     embedding_query_prefix: str = "search_query: "
     search_default_limit: int = 5
     search_max_limit: int = 20
+    documents_list_limit: int = 100
 
 
 settings = Settings()

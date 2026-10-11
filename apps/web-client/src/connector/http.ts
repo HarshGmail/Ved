@@ -29,12 +29,21 @@ function ensureTrailingSlash(value: string): string {
   return value.endsWith("/") ? value : `${value}/`;
 }
 
+function isFormData(body: unknown): body is FormData {
+  return typeof FormData !== "undefined" && body instanceof FormData;
+}
+
+function encodeBody(body: unknown): BodyInit | undefined {
+  if (body === undefined) return undefined;
+  return isFormData(body) ? body : JSON.stringify(body);
+}
+
 export async function buildHeaders(
   config: ConnectorConfig,
   options: RequestOptions,
 ): Promise<Headers> {
   const headers = new Headers({ Accept: "application/json" });
-  if (options.body !== undefined) {
+  if (options.body !== undefined && !isFormData(options.body)) {
     headers.set("Content-Type", "application/json");
   }
   const token = await config.getAuthToken?.();
@@ -90,7 +99,7 @@ export function createHttpClient(config: ConnectorConfig) {
       response = await fetch(buildUrl(config.baseUrl, options.path, options.query), {
         method: options.method ?? "GET",
         headers: await buildHeaders(config, options),
-        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        body: encodeBody(options.body),
         signal,
       });
     } catch (cause) {

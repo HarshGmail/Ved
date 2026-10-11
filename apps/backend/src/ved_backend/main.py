@@ -5,7 +5,7 @@ from contextlib import aclosing, asynccontextmanager
 from typing import Annotated
 
 import anyio
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from pydantic import BaseModel
@@ -14,7 +14,9 @@ from sqlalchemy import text
 from ved_backend.agent import Agent
 from ved_backend.config import settings
 from ved_backend.database import engine, session_factory
-from ved_backend.indexing import MessageIndexer
+from ved_backend.documents import DocumentLibrary, DocumentNotFoundError
+from ved_backend.extraction import UnsupportedDocumentError
+from ved_backend.indexing import DocumentIndexer, MessageIndexer
 from ved_backend.llm import build_embedder, build_provider
 from ved_backend.llm.base import LLMRequestError, Message
 from ved_backend.memory import ConversationNotFoundError, ConversationStore
@@ -28,6 +30,8 @@ from ved_backend.schemas import (
     ConversationList,
     ConversationSummary,
     ConversationTranscript,
+    DocumentList,
+    DocumentSummary,
     HealthStatus,
     PushStatus,
     PushSubscribeRequest,
@@ -42,6 +46,11 @@ from ved_backend.schemas import (
 )
 from ved_backend.tools.servers import configured_servers
 from ved_backend.tools.toolbox import MCPToolbox
+from ved_backend.uploads import (
+    MULTIPART_OVERHEAD_BYTES,
+    MalformedUploadError,
+    UploadTooLargeError,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -82,15 +91,28 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     )
     embedder = build_embedder(settings)
     indexer = None if embedder is None else MessageIndexer(session_factory, embedder)
+    document_indexer = DocumentIndexer(
+        session_factory, settings.documents_dir, embedder
+    )
     scheduler = ReminderScheduler(
         session_factory,
         push,
         timezone=settings.timezone,
         poll_seconds=settings.scheduler_poll_seconds,
         birthday_reminder_time=settings.birthday_reminder_time,
-        indexer=indexer,
+        indexers=[
+            background
+            for background in (indexer, document_indexer)
+            if background is not None
+        ],
     )
     application.state.indexer = indexer
+    application.state.document_indexer = document_indexer
+    application.state.documents = DocumentLibrary(
+        session_factory,
+        settings.documents_dir,
+        max_upload_bytes=settings.documents_max_upload_bytes,
+    )
     application.state.push = push
     application.state.scheduler = scheduler
     application.state.agent = Agent(
@@ -107,6 +129,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         await scheduler.stop()
+        await document_indexer.aclose()
         if indexer is not None:
             await indexer.aclose()
         if embedder is not None:
@@ -309,3 +332,80 @@ async def read_conversation(conversation_id: uuid.UUID) -> ConversationTranscrip
             status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
         ) from error
     return ConversationTranscript.model_validate(conversation)
+
+
+def declared_length(request: Request) -> int | None:
+    declared = request.headers.get("content-length", "")
+    return int(declared) if declared.isdigit() else None
+
+
+def reject_oversized_upload(request: Request, max_bytes: int) -> None:
+    declared = declared_length(request)
+    if declared is not None and declared > max_bytes + MULTIPART_OVERHEAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=str(UploadTooLargeError(max_bytes)),
+        )
+
+
+@app.post(
+    "/documents",
+    status_code=status.HTTP_201_CREATED,
+    responses={status.HTTP_200_OK: {"description": "Already uploaded"}},
+)
+async def upload_document(request: Request, response: Response) -> DocumentSummary:
+    library: DocumentLibrary = app.state.documents
+    reject_oversized_upload(request, settings.documents_max_upload_bytes)
+    try:
+        stored = await library.upload(
+            request.stream(), request.headers.get("content-type")
+        )
+    except UploadTooLargeError as error:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=str(error)
+        ) from error
+    except UnsupportedDocumentError as error:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=str(error)
+        ) from error
+    except MalformedUploadError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+        ) from error
+
+    if stored.created:
+        document_indexer: DocumentIndexer = app.state.document_indexer
+        document_indexer.trigger()
+    else:
+        response.status_code = status.HTTP_200_OK
+    return DocumentSummary.model_validate(stored.document)
+
+
+@app.get("/documents")
+async def list_documents() -> DocumentList:
+    library: DocumentLibrary = app.state.documents
+    rows = await library.list()
+    return DocumentList(documents=[DocumentSummary.model_validate(row) for row in rows])
+
+
+@app.get("/documents/{document_id}")
+async def read_document(document_id: uuid.UUID) -> DocumentSummary:
+    library: DocumentLibrary = app.state.documents
+    try:
+        document = await library.get(document_id)
+    except DocumentNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
+        ) from error
+    return DocumentSummary.model_validate(document)
+
+
+@app.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_document(document_id: uuid.UUID) -> None:
+    library: DocumentLibrary = app.state.documents
+    try:
+        await library.delete(document_id)
+    except DocumentNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
+        ) from error

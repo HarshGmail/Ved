@@ -77,3 +77,20 @@ export interface ConversationTranscript {
   title: string | null;
   messages: TranscriptMessage[];
 }
+
+export type DocumentStatus = "pending" | "indexed" | "failed";
+
+export interface DocumentSummary {
+  id: string;
+  filename: string;
+  media_type: string;
+  size_bytes: number;
+  page_count: number | null;
+  status: DocumentStatus;
+  error: string | null;
+  created_at: string;
+}
+
+export interface DocumentList {
+  documents: DocumentSummary[];
+}

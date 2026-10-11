@@ -202,17 +202,18 @@ class CountingIndexer:
         self.triggered += 1
 
 
-async def test_every_tick_nudges_the_message_indexer(session_factory):
-    indexer = CountingIndexer()
+async def test_every_tick_nudges_every_indexer(session_factory):
+    messages, documents = CountingIndexer(), CountingIndexer()
     scheduler = ReminderScheduler(
         session_factory,
         RecordingPush(),
         timezone="Asia/Kolkata",
         poll_seconds=30.0,
-        indexer=indexer,
+        indexers=(messages, documents),
     )
 
     await scheduler.tick()
     await scheduler.tick()
 
-    assert indexer.triggered == 2
+    assert messages.triggered == 2
+    assert documents.triggered == 2

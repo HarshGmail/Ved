@@ -63,6 +63,10 @@ services:
       VED_VAPID_SUBJECT: ${VED_VAPID_SUBJECT:-mailto:ved@example.com}
       VED_SCHEDULER_POLL_SECONDS: ${VED_SCHEDULER_POLL_SECONDS:-30}
       VED_BIRTHDAY_REMINDER_TIME: ${VED_BIRTHDAY_REMINDER_TIME:-09:00}
+      VED_DOCUMENTS_DIR: /app/data/documents
+      VED_DOCUMENTS_MAX_UPLOAD_BYTES: ${VED_DOCUMENTS_MAX_UPLOAD_BYTES:-26214400}
+    volumes:
+      - documents:/app/data/documents
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -92,3 +96,4 @@ services:
 volumes:
   db-data:
   search-cache:
+  documents:

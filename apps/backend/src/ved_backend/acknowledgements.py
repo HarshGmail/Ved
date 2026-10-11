@@ -7,6 +7,7 @@ ACKNOWLEDGEMENTS: dict[str, str] = {
     "people": "Noting that down…",
     "people.list": "Let me check…",
     "memory.search": "Let me look back…",
+    "documents": "Let me check your documents…",
     "web": "Let me check that…",
 }
 
