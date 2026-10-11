@@ -118,6 +118,7 @@ export type { HttpClient, HttpMethod, RequestOptions } from "./http";
 export type { EventStreamClient, SseEvent } from "./sse";
 export type { StreamClient, StreamHandle, StreamHandlers } from "./stream";
 export type {
+  Acknowledgement,
   AgentReply,
   ConversationList,
   ConversationSummary,

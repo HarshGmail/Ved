@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import aclosing
@@ -6,11 +7,13 @@ from zoneinfo import ZoneInfo
 
 import anyio
 
+from ved_backend.acknowledgements import acknowledgement_for
 from ved_backend.llm.base import (
     AssistantMessage,
     LLMProvider,
     LLMRequestError,
     Message,
+    ReasoningDelta,
     StreamChunk,
     TextDelta,
     ToolCall,
@@ -20,8 +23,10 @@ from ved_backend.llm.base import (
     UserMessage,
 )
 from ved_backend.schemas import (
+    AcknowledgementEvent,
     AgentEvent,
     AgentTurn,
+    ThinkingEvent,
     TokenEvent,
     ToolFinishedEvent,
     ToolInvocation,
@@ -46,6 +51,7 @@ TOOL_LIMIT_MESSAGE = "I stopped after too many tool calls without reaching an an
 NO_REPLY_MESSAGE = "The model stream ended without a reply."
 
 ModelRound = Callable[..., AsyncIterator[StreamChunk]]
+FinishedCall = tuple[int, str, bool]
 
 
 class Agent:
@@ -98,8 +104,10 @@ class Agent:
         messages: list[Message] = [*history, UserMessage(text=prompt)]
         invocations: list[ToolInvocation] = []
 
-        for _ in range(self._max_tool_rounds):
+        for round_number in range(self._max_tool_rounds):
             reply: AssistantMessage | None = None
+            answered_in_words = False
+            announced_thinking = False
             async with aclosing(
                 model_round(
                     system=self._system_prompt(),
@@ -109,7 +117,14 @@ class Agent:
             ) as chunks:
                 async for chunk in chunks:
                     if isinstance(chunk, TextDelta):
+                        answered_in_words = (
+                            answered_in_words or not chunk.text.isspace()
+                        )
                         yield TokenEvent(text=chunk.text)
+                    elif isinstance(chunk, ReasoningDelta):
+                        if not announced_thinking:
+                            announced_thinking = True
+                            yield ThinkingEvent()
                     else:
                         reply = chunk
             if reply is None:
@@ -124,11 +139,25 @@ class Agent:
                 )
                 return
 
-            outcomes: list[ToolOutcome] = []
-            for call in reply.tool_calls:
+            is_opening_round = round_number == 0
+            if is_opening_round and not answered_in_words:
+                yield AcknowledgementEvent(
+                    text=acknowledgement_for(reply.tool_calls[0].name)
+                )
+
+            calls = reply.tool_calls
+            for call in calls:
                 yield ToolStartedEvent(name=call.name, arguments=call.arguments)
-                with anyio.CancelScope(shield=True):
-                    content, is_error = await self._invoke(call)
+
+            results: dict[int, tuple[str, bool]] = {}
+            async with aclosing(self._invoke_concurrently(calls)) as finished:
+                async for index, content, is_error in finished:
+                    results[index] = (content, is_error)
+                    yield ToolFinishedEvent(name=calls[index].name, failed=is_error)
+
+            outcomes: list[ToolOutcome] = []
+            for index, call in enumerate(calls):
+                content, is_error = results[index]
                 outcomes.append(
                     ToolOutcome(call_id=call.id, content=content, is_error=is_error)
                 )
@@ -137,7 +166,6 @@ class Agent:
                         name=call.name, arguments=call.arguments, failed=is_error
                     )
                 )
-                yield ToolFinishedEvent(name=call.name, failed=is_error)
             messages.append(ToolResultMessage(outcomes=outcomes))
 
         logger.warning("Agent hit the tool round limit for prompt %r", prompt)
@@ -146,6 +174,25 @@ class Agent:
             model=self._provider.model,
             tool_calls=invocations,
         )
+
+    async def _invoke_concurrently(
+        self, calls: Sequence[ToolCall]
+    ) -> AsyncIterator[FinishedCall]:
+        running = {
+            asyncio.ensure_future(self._invoke_shielded(call)): index
+            for index, call in enumerate(calls)
+        }
+        try:
+            async for task in asyncio.as_completed(running):
+                content, is_error = task.result()
+                yield running[task], content, is_error
+        finally:
+            with anyio.CancelScope(shield=True):
+                await asyncio.gather(*running, return_exceptions=True)
+
+    async def _invoke_shielded(self, call: ToolCall) -> tuple[str, bool]:
+        with anyio.CancelScope(shield=True):
+            return await self._invoke(call)
 
     async def _invoke(self, call: ToolCall) -> tuple[str, bool]:
         try:

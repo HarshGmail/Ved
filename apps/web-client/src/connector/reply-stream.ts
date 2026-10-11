@@ -1,6 +1,7 @@
 import { StreamError } from "./errors";
 import type { EventStreamClient, SseEvent } from "./sse";
 import type {
+  Acknowledgement,
   AgentReply,
   ReplyStreamHandlers,
   ToolFinished,
@@ -43,6 +44,12 @@ export function createReplyStream(postEventStream: EventStreamClient) {
       switch (event) {
         case "token":
           handlers.onToken?.((payload as { text: string }).text);
+          break;
+        case "thinking":
+          handlers.onThinking?.();
+          break;
+        case "ack":
+          handlers.onAcknowledgement?.(payload as Acknowledgement);
           break;
         case "tool":
           handlers.onTool?.(payload as ToolStarted);

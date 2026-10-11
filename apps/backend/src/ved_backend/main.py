@@ -21,6 +21,7 @@ from ved_backend.memory import ConversationNotFoundError, ConversationStore
 from ved_backend.push import Notification, PushNotConfiguredError, PushService
 from ved_backend.scheduler import ReminderScheduler
 from ved_backend.schemas import (
+    AcknowledgementEvent,
     AgentReply,
     AgentRequest,
     AgentTurn,
@@ -34,6 +35,7 @@ from ved_backend.schemas import (
     PushUnsubscribeRequest,
     ServiceState,
     StreamErrorEvent,
+    ThinkingEvent,
     TokenEvent,
     ToolFinishedEvent,
     ToolStartedEvent,
@@ -55,6 +57,8 @@ DONE_EVENT = "done"
 ERROR_EVENT = "error"
 STREAM_EVENT_NAMES: dict[type[BaseModel], str] = {
     TokenEvent: "token",
+    ThinkingEvent: "thinking",
+    AcknowledgementEvent: "ack",
     ToolStartedEvent: "tool",
     ToolFinishedEvent: "tool_result",
 }

@@ -29,8 +29,14 @@ export interface ToolFinished {
   failed: boolean;
 }
 
+export interface Acknowledgement {
+  text: string;
+}
+
 export interface ReplyStreamHandlers {
   onToken?: (text: string) => void;
+  onThinking?: () => void;
+  onAcknowledgement?: (acknowledgement: Acknowledgement) => void;
   onTool?: (tool: ToolStarted) => void;
   onToolResult?: (tool: ToolFinished) => void;
 }

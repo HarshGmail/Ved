@@ -1,3 +1,4 @@
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -5,17 +6,22 @@ import anyio
 import anyio.lowlevel
 import pytest
 
+from ved_backend.acknowledgements import DEFAULT_ACKNOWLEDGEMENT, acknowledgement_for
 from ved_backend.agent import TOOL_LIMIT_MESSAGE, Agent
 from ved_backend.llm.base import (
     AssistantMessage,
     LLMRequestError,
     Message,
+    ReasoningDelta,
     TextDelta,
     ToolCall,
     ToolSpec,
 )
+from ved_backend.llm.stub import StubProvider
 from ved_backend.schemas import (
+    AcknowledgementEvent,
     AgentTurn,
+    ThinkingEvent,
     TokenEvent,
     ToolFinishedEvent,
     ToolStartedEvent,
@@ -23,6 +29,8 @@ from ved_backend.schemas import (
 from ved_backend.tools.toolbox import ToolNotAvailableError
 
 CREATE = ToolSpec(name="reminders.create", description="", input_schema={})
+LIST = ToolSpec(name="reminders.list", description="", input_schema={})
+SEARCH = ToolSpec(name="memory.search", description="", input_schema={})
 
 
 class FakeToolbox:
@@ -291,3 +299,317 @@ async def test_a_cancelled_stream_lets_a_running_tool_finish():
 
     assert toolbox.finished is True
     assert not any(isinstance(event, AgentTurn) for event in received)
+
+
+class ReasoningProvider(ScriptedProvider):
+    def __init__(self, replies, reasoning_chunks=3):
+        super().__init__(replies)
+        self._reasoning_chunks = reasoning_chunks
+
+    async def stream(self, *, system, messages, tools):
+        for _ in range(self._reasoning_chunks):
+            yield ReasoningDelta()
+        async for chunk in super().stream(
+            system=system, messages=messages, tools=tools
+        ):
+            yield chunk
+
+
+async def test_thinking_is_announced_once_before_the_first_token(toolbox):
+    provider = ReasoningProvider([AssistantMessage(text="Good morning")])
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    events = await collect(agent, "hi")
+
+    assert isinstance(events[0], ThinkingEvent)
+    assert sum(isinstance(event, ThinkingEvent) for event in events) == 1
+    assert isinstance(events[1], TokenEvent)
+    assert events[-1].text == "Good morning"
+
+
+async def test_thinking_is_announced_again_in_each_round_that_reasons(toolbox):
+    provider = ReasoningProvider(
+        [create_call(text="call Mom"), AssistantMessage(text="Reminder set.")]
+    )
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    events = await collect(agent, "remind me to call Mom")
+
+    kinds = [type(event) for event in events]
+    assert kinds.count(ThinkingEvent) == 2
+    assert kinds.index(ThinkingEvent, 1) > kinds.index(ToolFinishedEvent)
+
+
+async def test_run_ignores_thinking_and_returns_only_the_answer(toolbox):
+    provider = ReasoningProvider([AssistantMessage(text="hello")])
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    reply = await agent.run("hi")
+
+    assert reply.text == "hello"
+
+
+async def test_a_tool_call_first_round_is_acknowledged_from_its_domain(toolbox):
+    provider = ScriptedProvider(
+        [create_call(text="call Mom"), AssistantMessage(text="Reminder set.")]
+    )
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    events = await collect(agent, "remind me to call Mom")
+
+    kinds = [type(event) for event in events]
+    assert kinds.count(AcknowledgementEvent) == 1
+    assert kinds.index(AcknowledgementEvent) < kinds.index(ToolStartedEvent)
+    acknowledgement = events[kinds.index(AcknowledgementEvent)]
+    assert acknowledgement.text == acknowledgement_for("reminders.create")
+
+
+async def test_a_direct_answer_is_not_acknowledged(toolbox):
+    agent = Agent(
+        ScriptedProvider([AssistantMessage(text="hello there")]),
+        toolbox,
+        max_tool_rounds=4,
+        timezone="Asia/Kolkata",
+    )
+
+    events = await collect(agent, "hi")
+
+    assert not any(isinstance(event, AcknowledgementEvent) for event in events)
+
+
+async def test_only_the_opening_round_is_acknowledged(toolbox):
+    provider = ScriptedProvider(
+        [create_call(text="a"), create_call(text="b"), AssistantMessage(text="ok")]
+    )
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    events = await collect(agent, "remind me twice")
+
+    assert sum(isinstance(event, AcknowledgementEvent) for event in events) == 1
+
+
+async def test_a_tool_call_that_already_spoke_is_not_acknowledged(toolbox):
+    spoken_call = AssistantMessage(
+        text="Let me set that up.",
+        tool_calls=[ToolCall(id="c1", name="reminders.create", arguments={})],
+    )
+    provider = ScriptedProvider([spoken_call, AssistantMessage(text="Done.")])
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    events = await collect(agent, "remind me")
+
+    assert not any(isinstance(event, AcknowledgementEvent) for event in events)
+
+
+@pytest.mark.parametrize(
+    ("tool", "expected"),
+    [
+        ("reminders.create", "Setting that up…"),
+        ("reminders.reschedule", "Setting that up…"),
+        ("memory.search", "Let me look back…"),
+        ("web.search", "Let me check that…"),
+        ("web.fetch", "Let me check that…"),
+        ("weather.today", DEFAULT_ACKNOWLEDGEMENT),
+        ("undotted", DEFAULT_ACKNOWLEDGEMENT),
+    ],
+)
+def test_acknowledgement_is_chosen_by_tool_then_domain(tool, expected):
+    assert acknowledgement_for(tool) == expected
+
+
+class StaggeredToolbox(FakeToolbox):
+    def __init__(self, delays, failures=(), crashes=()):
+        super().__init__(tools=[CREATE, LIST, SEARCH])
+        self._delays = delays
+        self._failures = set(failures)
+        self._crashes = set(crashes)
+        self.finish_order: list[str] = []
+
+    async def call(self, name, arguments):
+        await anyio.sleep(self._delays[name])
+        self.finish_order.append(name)
+        if name in self._crashes:
+            raise RuntimeError("server went away")
+        if name in self._failures:
+            return f"{name} rejected its arguments", True
+        return f"{name} result", False
+
+
+def several_calls(*names):
+    return AssistantMessage(
+        tool_calls=[
+            ToolCall(id=f"c{index}", name=name, arguments={})
+            for index, name in enumerate(names)
+        ]
+    )
+
+
+SLOW_SECONDS = 0.3
+FAST_SECONDS = 0.05
+MIDDLE_SECONDS = 0.15
+
+
+async def test_calls_in_one_round_run_concurrently_and_keep_call_order():
+    toolbox = StaggeredToolbox(
+        {
+            "reminders.create": SLOW_SECONDS,
+            "reminders.list": FAST_SECONDS,
+            "memory.search": MIDDLE_SECONDS,
+        }
+    )
+    provider = ScriptedProvider(
+        [
+            several_calls("reminders.create", "reminders.list", "memory.search"),
+            AssistantMessage(text="done"),
+        ]
+    )
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    started_at = time.perf_counter()
+    events = await collect(agent, "do three things")
+    elapsed = time.perf_counter() - started_at
+
+    assert elapsed < SLOW_SECONDS + FAST_SECONDS + MIDDLE_SECONDS
+    assert toolbox.finish_order == [
+        "reminders.list",
+        "memory.search",
+        "reminders.create",
+    ]
+    outcomes = provider.seen[-1][-1].outcomes
+    assert [outcome.call_id for outcome in outcomes] == ["c0", "c1", "c2"]
+    assert [outcome.content for outcome in outcomes] == [
+        "reminders.create result",
+        "reminders.list result",
+        "memory.search result",
+    ]
+    assert [call.name for call in events[-1].tool_calls] == [
+        "reminders.create",
+        "reminders.list",
+        "memory.search",
+    ]
+
+
+async def test_every_call_is_started_before_any_finishes_and_finishes_as_it_completes():
+    toolbox = StaggeredToolbox(
+        {"reminders.create": SLOW_SECONDS, "reminders.list": FAST_SECONDS}
+    )
+    provider = ScriptedProvider(
+        [
+            several_calls("reminders.create", "reminders.list"),
+            AssistantMessage(text="done"),
+        ]
+    )
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    events = await collect(agent, "two things")
+
+    tool_events = [
+        event
+        for event in events
+        if isinstance(event, ToolStartedEvent | ToolFinishedEvent)
+    ]
+    assert tool_events == [
+        ToolStartedEvent(name="reminders.create", arguments={}),
+        ToolStartedEvent(name="reminders.list", arguments={}),
+        ToolFinishedEvent(name="reminders.list", failed=False),
+        ToolFinishedEvent(name="reminders.create", failed=False),
+    ]
+
+
+async def test_a_failing_call_does_not_affect_its_siblings():
+    toolbox = StaggeredToolbox(
+        {
+            "reminders.create": FAST_SECONDS,
+            "reminders.list": MIDDLE_SECONDS,
+            "memory.search": FAST_SECONDS,
+        },
+        failures={"reminders.create"},
+        crashes={"memory.search"},
+    )
+    provider = ScriptedProvider(
+        [
+            several_calls("reminders.create", "reminders.list", "memory.search"),
+            AssistantMessage(text="partly"),
+        ]
+    )
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    events = await collect(agent, "three things")
+
+    outcomes = provider.seen[-1][-1].outcomes
+    assert [outcome.is_error for outcome in outcomes] == [True, False, True]
+    assert outcomes[1].content == "reminders.list result"
+    assert outcomes[2].content == "memory.search failed unexpectedly"
+    finished = {
+        event.name: event.failed
+        for event in events
+        if isinstance(event, ToolFinishedEvent)
+    }
+    assert finished == {
+        "reminders.create": True,
+        "reminders.list": False,
+        "memory.search": True,
+    }
+    assert events[-1].text == "partly"
+
+
+class BlockingToolbox(FakeToolbox):
+    def __init__(self):
+        super().__init__(tools=[CREATE, LIST])
+        self.release = anyio.Event()
+        self.started: set[str] = set()
+        self.finished: set[str] = set()
+
+    async def call(self, name, arguments):
+        self.started.add(name)
+        await self.release.wait()
+        self.finished.add(name)
+        return "ok", False
+
+
+async def test_a_cancelled_stream_lets_every_running_call_finish():
+    toolbox = BlockingToolbox()
+    provider = ScriptedProvider(
+        [
+            several_calls("reminders.create", "reminders.list"),
+            AssistantMessage(text="done"),
+        ]
+    )
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    async def consume():
+        async for _ in agent.stream("two things"):
+            pass
+
+    async with anyio.create_task_group() as group:
+        group.start_soon(consume)
+        while len(toolbox.started) < 2:
+            await anyio.sleep(0)
+        group.cancel_scope.cancel()
+        toolbox.release.set()
+
+    assert toolbox.finished == {"reminders.create", "reminders.list"}
+
+
+async def test_the_stub_exercises_thinking_and_acknowledgement():
+    toolbox = FakeToolbox(
+        results={
+            "reminders.create": (
+                '{"id":"x","text":"call Mom",'
+                '"due_at":"2026-09-19T20:00:00+05:30","completed":false}',
+                False,
+            )
+        }
+    )
+    agent = Agent(
+        StubProvider(timezone="Asia/Kolkata"),
+        toolbox,
+        max_tool_rounds=4,
+        timezone="Asia/Kolkata",
+    )
+
+    events = await collect(agent, "remind me at 8 PM to call Mom")
+
+    kinds = [type(event) for event in events]
+    assert kinds[:3] == [ThinkingEvent, AcknowledgementEvent, ToolStartedEvent]
+    assert "Reminder set" in events[-1].text

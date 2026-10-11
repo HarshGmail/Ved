@@ -53,11 +53,26 @@ class ToolFinishedEvent(BaseModel):
     failed: bool
 
 
+class ThinkingEvent(BaseModel):
+    pass
+
+
+class AcknowledgementEvent(BaseModel):
+    text: str
+
+
 class StreamErrorEvent(BaseModel):
     detail: str
 
 
-AgentEvent = TokenEvent | ToolStartedEvent | ToolFinishedEvent | AgentTurn
+AgentEvent = (
+    TokenEvent
+    | ThinkingEvent
+    | AcknowledgementEvent
+    | ToolStartedEvent
+    | ToolFinishedEvent
+    | AgentTurn
+)
 
 
 class ConversationSummary(BaseModel):

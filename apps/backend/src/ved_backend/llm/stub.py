@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from ved_backend.llm.base import (
     AssistantMessage,
     Message,
+    ReasoningDelta,
     StreamChunk,
     TextDelta,
     ToolCall,
@@ -196,6 +197,7 @@ class StubProvider:
         messages: Sequence[Message],
         tools: Sequence[ToolSpec],
     ) -> AsyncIterator[StreamChunk]:
+        yield ReasoningDelta()
         reply = await self.complete(system=system, messages=messages, tools=tools)
         for chunk in split_into_chunks(reply.text, STREAM_WORDS_PER_CHUNK):
             yield TextDelta(text=chunk)

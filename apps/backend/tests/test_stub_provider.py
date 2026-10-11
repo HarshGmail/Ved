@@ -3,7 +3,14 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from ved_backend.llm.base import ToolOutcome, ToolResultMessage, ToolSpec, UserMessage
+from ved_backend.llm.base import (
+    ReasoningDelta,
+    TextDelta,
+    ToolOutcome,
+    ToolResultMessage,
+    ToolSpec,
+    UserMessage,
+)
 from ved_backend.llm.stub import (
     StubProvider,
     extract_subject,
@@ -187,9 +194,11 @@ async def test_stream_emits_the_reply_in_chunks_then_the_whole_message(provider)
             system="", messages=[UserMessage(text="hello there")], tools=TOOLS
         )
     ]
-    *deltas, final = chunks
+    thinking, *deltas, final = chunks
 
+    assert isinstance(thinking, ReasoningDelta)
     assert len(deltas) > 1
+    assert all(isinstance(delta, TextDelta) for delta in deltas)
     assert "".join(delta.text for delta in deltas) == final.text
 
 
@@ -203,8 +212,9 @@ async def test_stream_of_a_tool_call_carries_no_text(provider):
         )
     ]
 
-    assert len(chunks) == 1
-    assert chunks[0].tool_calls[0].name == "reminders.create"
+    thinking, final = chunks
+    assert isinstance(thinking, ReasoningDelta)
+    assert final.tool_calls[0].name == "reminders.create"
 
 
 @pytest.mark.parametrize(

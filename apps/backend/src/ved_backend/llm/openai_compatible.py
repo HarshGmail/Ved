@@ -10,6 +10,7 @@ from ved_backend.llm.base import (
     AssistantMessage,
     LLMRequestError,
     Message,
+    ReasoningDelta,
     StreamChunk,
     TextDelta,
     ToolCall,
@@ -26,6 +27,7 @@ PLACEHOLDER_API_KEY = "not-needed"
 SSE_DATA_PREFIX = "data:"
 SSE_DONE_SENTINEL = "[DONE]"
 ERROR_BODY_PREVIEW_CHARS = 400
+REASONING_FIELDS = ("reasoning", "reasoning_content")
 
 
 def _describe(error: Exception) -> str:
@@ -182,6 +184,10 @@ class StreamAssembler:
         )
 
 
+def carries_reasoning(delta: dict[str, Any]) -> bool:
+    return any(delta.get(field) for field in REASONING_FIELDS)
+
+
 def _first_delta(payload: dict[str, Any]) -> dict[str, Any]:
     if payload.get("error"):
         raise LLMRequestError(f"Model reported an error: {payload['error']}")
@@ -279,7 +285,10 @@ class OpenAICompatibleProvider:
                 async for data in iter_sse_data(response.aiter_lines()):
                     if data.strip() == SSE_DONE_SENTINEL:
                         break
-                    text = assembler.absorb(_first_delta(json.loads(data)))
+                    delta = _first_delta(json.loads(data))
+                    if carries_reasoning(delta):
+                        yield ReasoningDelta()
+                    text = assembler.absorb(delta)
                     if text:
                         yield TextDelta(text=text)
         except httpx2.HTTPError as error:

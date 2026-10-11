@@ -8,9 +8,11 @@ from ved_backend.llm.base import LLMRequestError, ToolSpec
 from ved_backend.main import agent_message_stream, app
 from ved_backend.memory import ConversationNotFoundError
 from ved_backend.schemas import (
+    AcknowledgementEvent,
     AgentReply,
     AgentRequest,
     AgentTurn,
+    ThinkingEvent,
     TokenEvent,
     ToolFinishedEvent,
     ToolInvocation,
@@ -354,3 +356,31 @@ async def test_a_client_leaving_mid_stream_records_nothing(wired):
     assert first.event == "tool"
     assert store.started == []
     assert store.recorded == []
+
+
+class ThinkingAgent:
+    async def stream(self, prompt, history=()):
+        yield ThinkingEvent()
+        yield AcknowledgementEvent(text="Setting that up…")
+        yield ToolStartedEvent(name="reminders.create", arguments={})
+        yield ToolFinishedEvent(name="reminders.create", failed=False)
+        yield TokenEvent(text="Done.")
+        yield AgentTurn(text="Done.", model="stub-rules-v1")
+
+
+def test_stream_names_thinking_and_acknowledgement_events(wired):
+    wired()
+    app.state.agent = ThinkingAgent()
+
+    events = parse_sse(post_stream("remind me").text)
+
+    assert [name for name, _ in events] == [
+        "thinking",
+        "ack",
+        "tool",
+        "tool_result",
+        "token",
+        "done",
+    ]
+    assert events[0][1] == {}
+    assert events[1][1] == {"text": "Setting that up…"}

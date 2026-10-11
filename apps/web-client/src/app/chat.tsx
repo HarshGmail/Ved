@@ -15,10 +15,27 @@ type Turn =
   | { role: "ved"; reply: AgentReply }
   | { role: "error"; text: string };
 
-type StreamingReply = { text: string; activeTool: string | null };
+type StreamingReply = {
+  text: string;
+  activeTool: string | null;
+  thinking: boolean;
+  acknowledgement: string | null;
+};
 
 const PLACEHOLDER = "Ved, remind me at 8 PM to call Mom";
-const NOTHING_STREAMED: StreamingReply = { text: "", activeTool: null };
+const THINKING_LABEL = "thinking…";
+const NOTHING_STREAMED: StreamingReply = {
+  text: "",
+  activeTool: null,
+  thinking: false,
+  acknowledgement: null,
+};
+
+function hasSomethingToShow(reply: StreamingReply): boolean {
+  return Boolean(
+    reply.text || reply.activeTool || reply.thinking || reply.acknowledgement,
+  );
+}
 
 function toolLabel(reply: AgentReply): string | null {
   if (reply.tool_calls.length === 0) return null;
@@ -35,8 +52,27 @@ async function requestReply(
   try {
     return await connector.streamMessage(prompt, conversationId, {
       onToken: (text) =>
-        onProgress((current) => ({ ...current, text: current.text + text })),
-      onTool: (tool) => onProgress(() => ({ text: "", activeTool: tool.name })),
+        onProgress((current) => ({
+          ...current,
+          text: current.text + text,
+          thinking: false,
+          acknowledgement: null,
+        })),
+      onThinking: () =>
+        onProgress((current) => ({ ...current, thinking: true })),
+      onAcknowledgement: ({ text }) =>
+        onProgress((current) => ({
+          ...current,
+          acknowledgement: text,
+          thinking: false,
+        })),
+      onTool: (tool) =>
+        onProgress((current) => ({
+          ...current,
+          text: "",
+          activeTool: tool.name,
+          thinking: false,
+        })),
       onToolResult: () =>
         onProgress((current) => ({ ...current, activeTool: null })),
     });
@@ -142,10 +178,18 @@ export function Chat({
             )}
           </li>
         ))}
-        {streaming && (streaming.text || streaming.activeTool) && (
+        {streaming && hasSomethingToShow(streaming) && (
           <li className={styles.turn} data-role="ved" aria-live="polite">
             <div className={styles.bubble}>
               {streaming.text && <MarkdownReply text={streaming.text} />}
+              {!streaming.text && streaming.acknowledgement && (
+                <p className={styles.status}>{streaming.acknowledgement}</p>
+              )}
+              {!streaming.text &&
+                !streaming.acknowledgement &&
+                streaming.thinking && (
+                  <p className={styles.status}>{THINKING_LABEL}</p>
+                )}
               {streaming.activeTool && (
                 <p className={styles.tools}>using {streaming.activeTool}…</p>
               )}

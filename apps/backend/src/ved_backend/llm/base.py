@@ -49,7 +49,11 @@ class TextDelta(BaseModel):
     text: str
 
 
-StreamChunk = TextDelta | AssistantMessage
+class ReasoningDelta(BaseModel):
+    pass
+
+
+StreamChunk = TextDelta | ReasoningDelta | AssistantMessage
 
 
 @runtime_checkable

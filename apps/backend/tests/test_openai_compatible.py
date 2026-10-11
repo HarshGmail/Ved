@@ -5,6 +5,8 @@ import pytest
 
 from ved_backend.llm.base import (
     AssistantMessage,
+    ReasoningDelta,
+    TextDelta,
     ToolCall,
     ToolOutcome,
     ToolResultMessage,
@@ -260,15 +262,18 @@ def delta_event(delta: dict) -> str:
     return "data: " + json.dumps({"choices": [{"index": 0, "delta": delta}]})
 
 
-async def collect_stream(provider) -> tuple[list[str], AssistantMessage]:
-    chunks = [
+async def collect_chunks(provider) -> list:
+    return [
         chunk
         async for chunk in provider.stream(
             system="s", messages=[UserMessage(text="hi")], tools=[CREATE]
         )
     ]
-    *deltas, final = chunks
-    return [delta.text for delta in deltas], final
+
+
+async def collect_stream(provider) -> tuple[list[str], AssistantMessage]:
+    *deltas, final = await collect_chunks(provider)
+    return [delta.text for delta in deltas if isinstance(delta, TextDelta)], final
 
 
 async def test_stream_requests_streaming_and_yields_text_as_it_arrives():
@@ -428,3 +433,62 @@ async def test_stream_survives_events_split_across_network_reads():
 
     assert texts == ["split ", "across reads"]
     assert final.text == "split across reads"
+
+
+@pytest.mark.parametrize("field", ["reasoning", "reasoning_content"])
+async def test_stream_marks_reasoning_without_leaking_it_into_the_reply(field):
+    secret = "the user probably wants"
+
+    def handler(request):
+        return httpx2.Response(
+            200,
+            content=sse_body(
+                delta_event({"role": "assistant", "content": "", field: "Here"}),
+                delta_event({"content": "", field: f" {secret}"}),
+                delta_event({"content": "391"}),
+                "data: [DONE]",
+            ),
+        )
+
+    chunks = await collect_chunks(build_provider(handler))
+
+    assert chunks[:2] == [ReasoningDelta(), ReasoningDelta()]
+    assert chunks[2:] == [TextDelta(text="391"), AssistantMessage(text="391")]
+    assert all(secret not in chunk.model_dump_json() for chunk in chunks)
+
+
+async def test_stream_reasoning_before_a_tool_call_stays_out_of_the_message():
+    def handler(request):
+        return httpx2.Response(
+            200,
+            content=sse_body(
+                delta_event({"reasoning": "I should call the tool"}),
+                delta_event(
+                    {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "call_a",
+                                "function": {
+                                    "name": "reminders.create",
+                                    "arguments": "{}",
+                                },
+                            }
+                        ]
+                    }
+                ),
+                "data: [DONE]",
+            ),
+        )
+
+    chunks = await collect_chunks(build_provider(handler))
+
+    assert chunks[0] == ReasoningDelta()
+    assert chunks[-1].text == ""
+    assert chunks[-1].tool_calls[0].name == "reminders.create"
+
+
+def test_reasoning_in_a_complete_reply_is_ignored():
+    reply = from_wire_message({"content": "391", "reasoning": "multiply"})
+
+    assert reply == AssistantMessage(text="391")
