@@ -12,6 +12,7 @@ WEB_SERVER_DIR = REPO_ROOT / "mcp-servers" / "web"
 DOCUMENTS_DIR = REPO_ROOT / "data" / "documents"
 MEBIBYTE = 1024 * 1024
 DEFAULT_MAX_UPLOAD_BYTES = 25 * MEBIBYTE
+DEFAULT_SEARCH_PROVIDER = "searxng"
 LOCAL_SEARXNG_URL = "http://127.0.0.1:8888"
 NOMIC_DOCUMENT_PREFIX = "search_document: "
 NOMIC_QUERY_PREFIX = "search_query: "
@@ -69,6 +70,7 @@ class Settings(BaseSettings):
     web_server_command: str = "uv"
     web_server_args: list[str] = ["run", "ved-mcp-web"]
     web_server_dir: str = str(WEB_SERVER_DIR)
+    search_provider: str = DEFAULT_SEARCH_PROVIDER
     searxng_url: str = LOCAL_SEARXNG_URL
 
 

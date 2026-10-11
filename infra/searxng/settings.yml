@@ -31,8 +31,9 @@ search:
 
 server:
   # Placeholder only. Compose passes SEARXNG_SECRET (written to infra/.env by
-  # ./ved setup), which overrides this. SearXNG refuses to start if the
-  # placeholder is ever used, so a missing secret fails loudly.
+  # ./ved db before it starts SearXNG), which overrides this. Without it compose
+  # passes this placeholder, and SearXNG refuses to start, so a missing secret
+  # fails loudly in `docker logs ved-search-1`.
   secret_key: "ultrasecretkey"
   # Single local user behind 127.0.0.1: the limiter and bot detection would
   # only block Ved's own bursts of queries, and they need valkey to work.

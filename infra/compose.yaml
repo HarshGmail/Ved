@@ -22,9 +22,10 @@ services:
 
   search:
     image: searxng/searxng:latest
+    profiles: ["search"]
     restart: unless-stopped
     environment:
-      SEARXNG_SECRET: ${SEARXNG_SECRET:?run ./ved setup to generate SEARXNG_SECRET in infra/.env}
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-ultrasecretkey}
     ports:
       - "127.0.0.1:${SEARXNG_PORT:-8888}:8080"
     volumes:
@@ -50,6 +51,7 @@ services:
       VED_PEOPLE_SERVER_DIR: /app/mcp-servers/people
       VED_MEMORY_SERVER_DIR: /app/mcp-servers/memory
       VED_WEB_SERVER_DIR: /app/mcp-servers/web
+      VED_SEARCH_PROVIDER: ${VED_SEARCH_PROVIDER:-searxng}
       VED_SEARXNG_URL: http://search:8080
       VED_TIMEZONE: ${VED_TIMEZONE:-Asia/Kolkata}
       VED_LLM_PROVIDER: ${VED_LLM_PROVIDER:-openai-compatible}

@@ -1,7 +1,8 @@
 # web — MCP server
 
-Gives Ved current information: search the web through a self-hosted SearXNG,
-and read a page so the model can answer from it.
+Gives Ved current information: search the web through a swappable search
+provider (self-hosted SearXNG by default), and read a page so the model can
+answer from it.
 
 ## Tools
 
@@ -22,9 +23,57 @@ uv run pytest
 uv run ruff check .
 ```
 
-`web.search` needs SearXNG, which `./ved db` starts on `127.0.0.1:8888`. If it's
-down, `web.search` returns an error saying so and `web.fetch` still works. The
-server never contacts SearXNG at startup, so the backend boots either way.
+With the default provider, `web.search` needs SearXNG, which `./ved db` starts
+on `127.0.0.1:8888` while `VED_SEARCH_PROVIDER` is `searxng`. If the provider is
+down, `web.search` returns an error naming it and how to fix it, and `web.fetch`
+still works. The server never contacts the provider at startup, so the backend
+boots either way. An unknown `VED_SEARCH_PROVIDER` does stop this server at
+startup, with the valid names in the error; the backend logs it and runs on
+without web tools.
+
+## Search providers
+
+`server.py` only knows the `SearchProvider` protocol in `search/base.py`:
+
+```python
+class SearchProvider(Protocol):
+    @property
+    def name(self) -> str: ...
+
+    async def search(self, query: str, *, limit: int) -> list[SearchHit]: ...
+
+    async def aclose(self) -> None: ...
+```
+
+`build_search_provider` in `search/__init__.py` picks one from the `PROVIDERS`
+table by `VED_SEARCH_PROVIDER`. The server dedupes, clips and limits hits and
+adds the untrusted markers itself, so a provider only maps its engine's answer
+to `SearchHit`s.
+
+| Name | Module | Settings |
+| --- | --- | --- |
+| `searxng` (default) | `search/providers/searxng.py` | `VED_SEARXNG_URL` |
+
+### Adding a provider
+
+1. `search/providers/<name>.py`: a class with `name` (used in error messages),
+   `search` and `aclose`; a `BaseSettings` with `env_prefix="VED_<NAME>_"` and
+   `extra="ignore"` for its own settings (`VED_BRAVE_API_KEY`), read only
+   inside its `build(settings)`; and `SearchUnavailableError(provider=...,
+   problem=..., remedy=...)` when it is unreachable or misconfigured, so the
+   model is told how to fix it.
+2. One entry in `PROVIDERS` in `search/__init__.py`.
+3. `tests/test_<name>.py` against a recorded response through
+   `httpx2.MockTransport`, as `tests/test_searxng.py` does.
+4. Pass its settings through the backend, which starts this server: a field in
+   `apps/backend/src/ved_backend/config.py` (its settings reject unknown
+   `VED_*` keys in `apps/backend/.env`), a line in `tools/servers.py`, a line
+   in `infra/compose.yaml`'s backend environment, and both `.env.example`
+   files.
+
+Then set `VED_SEARCH_PROVIDER=<name>`. `./ved db` stops starting SearXNG on its
+own. `tests/fakes.py` holds an in-memory provider the server tests use, so they
+never need SearXNG.
 
 ## Design notes
 
@@ -74,6 +123,7 @@ fail there on this network until that CA is added to the image.
 
 | Variable | Default |
 | --- | --- |
+| `VED_SEARCH_PROVIDER` | `searxng` |
 | `VED_SEARXNG_URL` | `http://127.0.0.1:8888` |
 | `VED_SEARCH_TIMEOUT_SECONDS` | `15.0` |
 | `VED_SEARCH_MAX_LIMIT` | `10` |

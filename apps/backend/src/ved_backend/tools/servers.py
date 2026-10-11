@@ -26,6 +26,7 @@ def configured_servers(settings: Settings) -> dict[str, StdioServerParameters]:
     }
     web_environment = {
         **get_default_environment(),
+        "VED_SEARCH_PROVIDER": settings.search_provider,
         "VED_SEARXNG_URL": settings.searxng_url,
     }
     return {

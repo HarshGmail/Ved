@@ -1,7 +1,7 @@
 [project]
 name = "ved-mcp-web"
 version = "0.1.0"
-description = "Ved MCP server — web search through SearXNG and page reading"
+description = "Ved MCP server — web search through a swappable provider and page reading"
 requires-python = ">=3.13"
 dependencies = [
     "httpcore2>=2.13.0",

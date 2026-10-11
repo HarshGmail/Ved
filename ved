@@ -18,6 +18,8 @@ OLLAMA_PORT=11434
 BACKEND_PORT=8000
 WEB_PORT=3000
 SEARCH_PORT=8888
+SEARXNG_PROVIDER="searxng"
+SEARCH_PROFILE="search"
 PHONE_WEB_PORT=443
 PHONE_API_PORT=8443
 TAILSCALE_APP_CLI="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
@@ -28,7 +30,6 @@ say() { printf '\033[1m==> %s\033[0m\n' "$*"; }
 fail() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 compose() {
-  [ ! -f "$INFRA/.env" ] || ensure_search_secret
   (cd "$INFRA" && docker compose "$@")
 }
 
@@ -104,8 +105,25 @@ ensure_search_secret() {
 copy_vm_certificates_for_search() {
   local name
   for name in $(colima ssh -- ls "$VM_CA_DIR" 2>/dev/null | grep '\.crt$' || true); do
-    colima ssh -- cat "$VM_CA_DIR/$name" >"$SEARCH_CA_DIR/$name"
+    colima ssh -- cat "$VM_CA_DIR/$name" >"$SEARCH_CA_DIR/$name" 2>/dev/null || true
   done
+}
+
+search_provider() {
+  local configured
+  configured="$(sed -n 's/^VED_SEARCH_PROVIDER=//p' "$BACKEND/.env" 2>/dev/null | tail -n 1)"
+  configured="$(printf '%s' "$configured" | tr -d "\"' " | tr '[:upper:]' '[:lower:]')"
+  printf '%s' "${configured:-$SEARXNG_PROVIDER}"
+}
+
+uses_searxng() { [ "$(search_provider)" = "$SEARXNG_PROVIDER" ]; }
+
+db_services() {
+  if uses_searxng; then
+    printf '%s\n' --profile "$SEARCH_PROFILE" up -d db search
+  else
+    printf '%s\n' up -d db
+  fi
 }
 
 cmd_phone() {
@@ -147,11 +165,18 @@ cmd_phone() {
 }
 
 cmd_db() {
+  local services=()
   ensure_env_files
+  while IFS= read -r word; do services+=("$word"); done < <(db_services)
   ensure_colima
-  copy_vm_certificates_for_search
-  say "starting Postgres and SearXNG"
-  compose up -d db search
+  if uses_searxng; then
+    ensure_search_secret
+    copy_vm_certificates_for_search
+    say "starting Postgres and SearXNG"
+  else
+    say "starting Postgres (web search uses $(search_provider), not SearXNG)"
+  fi
+  compose "${services[@]}"
 }
 
 cmd_model() {
@@ -212,7 +237,7 @@ cmd_stop() {
 
 cmd_down() {
   say "stopping all containers"
-  compose --profile tools stop
+  compose --profile tools --profile "$SEARCH_PROFILE" stop
   say "stopping Colima"
   colima stop
 }
@@ -222,8 +247,6 @@ cmd_setup() {
   [ -f "$INFRA/.env" ] || cp "$INFRA/.env.example" "$INFRA/.env"
   [ -f "$BACKEND/.env" ] || cp "$BACKEND/.env.example" "$BACKEND/.env"
   [ -f "$WEB/.env.local" ] || cp "$WEB/.env.example" "$WEB/.env.local"
-
-  ensure_search_secret
 
   if ! grep -q '^POSTGRES_PASSWORD=.' "$INFRA/.env"; then
     printf '\nSet a password first:\n'
@@ -274,11 +297,12 @@ cmd_help() {
 Usage: ./ved <command>
 
 First time
-  setup     Create env files, install dependencies, generate push keys
-            and the search secret, start Postgres and apply migrations
+  setup     Create env files, install dependencies, generate push keys,
+            start Postgres and apply migrations
 
 Every time
-  db        Start Colima, Postgres and SearXNG (runs in the background)
+  db        Start Colima and Postgres, plus SearXNG when it is the search
+            provider (runs in the background)
   model     Start Ollama, the local model        (keep this terminal open)
   api       Start the backend on :8000           (keep this terminal open)
   web       Start the web client on :3000        (keep this terminal open)

@@ -8,23 +8,26 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from ved_web.config import settings
 from ved_web.fetch import FetchedPage, FetchRefusedError, PageFetcher
-from ved_web.search import SearchResult, SearchUnavailableError, SearxngClient
+from ved_web.search import (
+    SearchProvider,
+    SearchResult,
+    SearchUnavailableError,
+    build_search_provider,
+    tidy_hits,
+)
 
 QUERY_MAX_CHARACTERS = 400
 
 
 @dataclass
 class ServerContext:
-    searxng: SearxngClient
+    search_provider: SearchProvider
     fetcher: PageFetcher
 
 
 @asynccontextmanager
 async def lifespan(_: MCPServer) -> AsyncIterator[ServerContext]:
-    searxng = SearxngClient(
-        base_url=settings.searxng_url,
-        timeout_seconds=settings.search_timeout_seconds,
-    )
+    search_provider = build_search_provider(settings)
     fetcher = PageFetcher(
         timeout_seconds=settings.fetch_timeout_seconds,
         max_bytes=settings.fetch_max_bytes,
@@ -33,10 +36,10 @@ async def lifespan(_: MCPServer) -> AsyncIterator[ServerContext]:
         user_agent=settings.user_agent,
     )
     try:
-        yield ServerContext(searxng=searxng, fetcher=fetcher)
+        yield ServerContext(search_provider=search_provider, fetcher=fetcher)
     finally:
         await fetcher.aclose()
-        await searxng.aclose()
+        await search_provider.aclose()
 
 
 mcp = MCPServer(
@@ -67,6 +70,14 @@ def parse_limit(value: int) -> int:
     return min(value, settings.search_max_limit)
 
 
+async def search_with(provider: SearchProvider, query: str, limit: int) -> SearchResult:
+    try:
+        hits = await provider.search(query, limit=limit)
+    except SearchUnavailableError as error:
+        raise ToolError(str(error)) from error
+    return SearchResult(query=query, hits=tidy_hits(hits, limit))
+
+
 @mcp.tool(name="web.search")
 async def search(
     query: str, ctx: Context, limit: int = settings.search_default_limit
@@ -85,10 +96,7 @@ async def search(
     parsed_limit = parse_limit(limit)
 
     context: ServerContext = ctx.request_context.lifespan_context
-    try:
-        return await context.searxng.search(parsed_query, limit=parsed_limit)
-    except SearchUnavailableError as error:
-        raise ToolError(str(error)) from error
+    return await search_with(context.search_provider, parsed_query, parsed_limit)
 
 
 @mcp.tool(name="web.fetch")
