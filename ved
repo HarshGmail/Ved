@@ -9,10 +9,14 @@ BACKEND="$ROOT/apps/backend"
 WEB="$ROOT/apps/web-client"
 REMINDERS="$ROOT/mcp-servers/reminders"
 PEOPLE="$ROOT/mcp-servers/people"
+WEB_TOOLS="$ROOT/mcp-servers/web"
+SEARCH_CA_DIR="$INFRA/searxng/ca-certificates"
+VM_CA_DIR="/usr/local/share/ca-certificates"
 
 OLLAMA_PORT=11434
 BACKEND_PORT=8000
 WEB_PORT=3000
+SEARCH_PORT=8888
 PHONE_WEB_PORT=443
 PHONE_API_PORT=8443
 TAILSCALE_APP_CLI="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
@@ -22,7 +26,10 @@ EMBEDDING_MODEL="nomic-embed-text"
 say() { printf '\033[1m==> %s\033[0m\n' "$*"; }
 fail() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
-compose() { (cd "$INFRA" && docker compose "$@"); }
+compose() {
+  [ ! -f "$INFRA/.env" ] || ensure_search_secret
+  (cd "$INFRA" && docker compose "$@")
+}
 
 port_in_use() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
 
@@ -86,6 +93,20 @@ PY
   set_env_value "$file" VED_CORS_ALLOW_ORIGINS "$merged"
 }
 
+ensure_search_secret() {
+  if ! grep -q '^SEARXNG_SECRET=.' "$INFRA/.env"; then
+    say "generating the SearXNG secret in infra/.env"
+    set_env_value "$INFRA/.env" SEARXNG_SECRET "$(openssl rand -hex 32)"
+  fi
+}
+
+copy_vm_certificates_for_search() {
+  local name
+  for name in $(colima ssh -- ls "$VM_CA_DIR" 2>/dev/null | grep '\.crt$' || true); do
+    colima ssh -- cat "$VM_CA_DIR/$name" >"$SEARCH_CA_DIR/$name"
+  done
+}
+
 cmd_phone() {
   local tailscale host web_url api_url
   tailscale="$(find_tailscale)"
@@ -127,8 +148,9 @@ cmd_phone() {
 cmd_db() {
   ensure_env_files
   ensure_colima
-  say "starting Postgres"
-  compose up -d db
+  copy_vm_certificates_for_search
+  say "starting Postgres and SearXNG"
+  compose up -d db search
 }
 
 cmd_model() {
@@ -170,7 +192,7 @@ cmd_studio() {
 
 cmd_status() {
   local name port
-  for entry in "Postgres:5432" "Ollama:$OLLAMA_PORT" "backend:$BACKEND_PORT" "web:3000" "DB browser:5050"; do
+  for entry in "Postgres:5432" "Ollama:$OLLAMA_PORT" "backend:$BACKEND_PORT" "web:3000" "SearXNG:$SEARCH_PORT" "DB browser:5050"; do
     name="${entry%%:*}"
     port="${entry##*:}"
     if port_in_use "$port"; then
@@ -200,6 +222,8 @@ cmd_setup() {
   [ -f "$BACKEND/.env" ] || cp "$BACKEND/.env.example" "$BACKEND/.env"
   [ -f "$WEB/.env.local" ] || cp "$WEB/.env.example" "$WEB/.env.local"
 
+  ensure_search_secret
+
   if ! grep -q '^POSTGRES_PASSWORD=.' "$INFRA/.env"; then
     printf '\nSet a password first:\n'
     printf '  1. infra/.env          POSTGRES_PASSWORD=<choose one>\n'
@@ -211,6 +235,7 @@ cmd_setup() {
   say "installing Python dependencies"
   (cd "$REMINDERS" && uv sync)
   (cd "$PEOPLE" && uv sync)
+  (cd "$WEB_TOOLS" && uv sync)
   (cd "$BACKEND" && uv sync)
 
   if grep -q '^VED_VAPID_PRIVATE_KEY=.' "$BACKEND/.env"; then
@@ -247,11 +272,11 @@ cmd_help() {
 Usage: ./ved <command>
 
 First time
-  setup     Create env files, install dependencies, generate push keys,
-            start Postgres and apply migrations
+  setup     Create env files, install dependencies, generate push keys
+            and the search secret, start Postgres and apply migrations
 
 Every time
-  db        Start Colima and Postgres (runs in the background)
+  db        Start Colima, Postgres and SearXNG (runs in the background)
   model     Start Ollama, the local model        (keep this terminal open)
   api       Start the backend on :8000           (keep this terminal open)
   web       Start the web client on :3000        (keep this terminal open)

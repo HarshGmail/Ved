@@ -6,6 +6,7 @@ from ved_backend.config import Settings
 REMINDERS = "reminders"
 PEOPLE = "people"
 MEMORY = "memory"
+WEB = "web"
 
 
 def configured_servers(settings: Settings) -> dict[str, StdioServerParameters]:
@@ -22,6 +23,10 @@ def configured_servers(settings: Settings) -> dict[str, StdioServerParameters]:
         "VED_EMBEDDING_TIMEOUT_SECONDS": str(settings.embedding_timeout_seconds),
         "VED_EMBEDDING_QUERY_PREFIX": settings.embedding_query_prefix,
         **({"VED_LLM_API_KEY": settings.llm_api_key} if settings.llm_api_key else {}),
+    }
+    web_environment = {
+        **get_default_environment(),
+        "VED_SEARXNG_URL": settings.searxng_url,
     }
     return {
         REMINDERS: StdioServerParameters(
@@ -41,5 +46,11 @@ def configured_servers(settings: Settings) -> dict[str, StdioServerParameters]:
             args=settings.memory_server_args,
             cwd=settings.memory_server_dir,
             env=memory_environment,
+        ),
+        WEB: StdioServerParameters(
+            command=settings.web_server_command,
+            args=settings.web_server_args,
+            cwd=settings.web_server_dir,
+            env=web_environment,
         ),
     }

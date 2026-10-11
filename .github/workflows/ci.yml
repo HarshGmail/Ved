@@ -149,6 +149,24 @@ jobs:
         working-directory: mcp-servers/memory
         run: uv run pytest -q
 
+  web-search:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Lint and format
+        working-directory: mcp-servers/web
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Test
+        working-directory: mcp-servers/web
+        run: uv run pytest -q
+
   web:
     runs-on: ubuntu-latest
     steps:

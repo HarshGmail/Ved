@@ -1,0 +1,51 @@
+# SearXNG for Ved: a private metasearch backend for the `web` MCP server.
+# Only overrides are listed; everything else comes from SearXNG's defaults.
+# Reference: https://docs.searxng.org/admin/settings/
+
+use_default_settings:
+  engines:
+    # A short, dependable list. Each extra engine adds latency to every query
+    # and another upstream that can rate-limit or captcha us.
+    keep_only:
+      - google
+      - duckduckgo
+      - brave
+      - wikipedia
+      - google news
+      - bing news
+      - duckduckgo news
+      - brave.news
+
+general:
+  instance_name: "Ved search"
+  enable_metrics: false
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  # JSON is off by default and requests for it answer 403. The web MCP server
+  # only speaks JSON; html stays so the UI is usable for debugging.
+  formats:
+    - html
+    - json
+
+server:
+  # Placeholder only. Compose passes SEARXNG_SECRET (written to infra/.env by
+  # ./ved setup), which overrides this. SearXNG refuses to start if the
+  # placeholder is ever used, so a missing secret fails loudly.
+  secret_key: "ultrasecretkey"
+  # Single local user behind 127.0.0.1: the limiter and bot detection would
+  # only block Ved's own bursts of queries, and they need valkey to work.
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  method: "GET"
+
+valkey:
+  url: false
+
+engines:
+  # Google is disabled upstream by default because public instances get
+  # captcha'd quickly; a single private user rarely hits that.
+  - name: google
+    disabled: false

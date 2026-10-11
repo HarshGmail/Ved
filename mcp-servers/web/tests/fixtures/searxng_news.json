@@ -1,0 +1,79 @@
+{
+  "query": "india",
+  "results": [
+    {
+      "title": "India's 'Cockroach' protest movement leaders freed from detention, vow to continue demonstrations",
+      "content": "Leaders of the Cockroach Janata Party, an Indian youth movement, were released Sunday after being detained ahead of protests against a voter list revision.",
+      "url": "https://apnews.com/article/india-cockroach-election-commission-protests-c849d7c5c53b7e21d343eb238fdea382",
+      "engine": "duckduckgo news",
+      "engines": [
+        "duckduckgo news"
+      ],
+      "publishedDate": "2026-10-11T09:14:00",
+      "category": "news",
+      "score": 1.0
+    },
+    {
+      "title": "What to Know About the Protests in India",
+      "content": "Protesters opposed to sweeping revisions to India's voter rolls are trying to rally in New Delhi. The police have come out in force.",
+      "url": "https://www.nytimes.com/2026/10/09/world/asia/what-to-know-about-the-delhi-protests.html",
+      "engine": "duckduckgo news",
+      "engines": [
+        "duckduckgo news"
+      ],
+      "publishedDate": "2026-10-09T12:23:00",
+      "category": "news",
+      "score": 0.5
+    },
+    {
+      "title": "India's 'cockroach' leaders defy crackdown to continue protests",
+      "content": "Leaders of a popular Indian youth movement vowed to continue protests Sunday after their release from police custody, following a crackdown",
+      "url": "https://www.dailysabah.com/world/asia-pacific/indias-cockroach-leaders-defy-crackdown-to-continue-protests",
+      "engine": "duckduckgo news",
+      "engines": [
+        "duckduckgo news"
+      ],
+      "publishedDate": "2026-10-11T00:39:00",
+      "category": "news",
+      "score": 0.3333333333333333
+    },
+    {
+      "title": "Protesters Seeking India Election Chief's Ouster Detained, as 'Cockroach' Leaders Released",
+      "content": "Commuters cross a checkpoint as police officers stand guard on the second day of a protest planned by the Cockroach Janta Party (CJP) seeking the resignation of India's Chief Election Commissioner, Gyanesh Kumar, in New Delhi, India, October 11, 2026. REUTERS/Priyanshu Singh",
+      "url": "https://www.usnews.com/news/world/articles/2026-10-11/indian-capital-braces-for-second-day-of-protests-against-poll-chief",
+      "engine": "duckduckgo news",
+      "engines": [
+        "duckduckgo news"
+      ],
+      "publishedDate": "2026-10-11T01:19:00",
+      "category": "news",
+      "score": 0.25
+    },
+    {
+      "title": "",
+      "content": "",
+      "url": "",
+      "engine": "brave.news",
+      "engines": [
+        "brave.news"
+      ],
+      "publishedDate": null,
+      "category": "news",
+      "score": 0.1
+    }
+  ],
+  "answers": [],
+  "corrections": [],
+  "infoboxes": [],
+  "suggestions": [],
+  "unresponsive_engines": [
+    [
+      "brave.news",
+      "Suspended: too many requests"
+    ],
+    [
+      "google news",
+      "access denied"
+    ]
+  ]
+}

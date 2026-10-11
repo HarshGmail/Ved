@@ -8,6 +8,8 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 REMINDERS_SERVER_DIR = REPO_ROOT / "mcp-servers" / "reminders"
 PEOPLE_SERVER_DIR = REPO_ROOT / "mcp-servers" / "people"
 MEMORY_SERVER_DIR = REPO_ROOT / "mcp-servers" / "memory"
+WEB_SERVER_DIR = REPO_ROOT / "mcp-servers" / "web"
+LOCAL_SEARXNG_URL = "http://127.0.0.1:8888"
 NOMIC_DOCUMENT_PREFIX = "search_document: "
 NOMIC_QUERY_PREFIX = "search_query: "
 
@@ -57,6 +59,11 @@ class Settings(BaseSettings):
     memory_server_command: str = "uv"
     memory_server_args: list[str] = ["run", "ved-mcp-memory"]
     memory_server_dir: str = str(MEMORY_SERVER_DIR)
+
+    web_server_command: str = "uv"
+    web_server_args: list[str] = ["run", "ved-mcp-web"]
+    web_server_dir: str = str(WEB_SERVER_DIR)
+    searxng_url: str = LOCAL_SEARXNG_URL
 
 
 settings = Settings()

@@ -42,6 +42,16 @@ COPY mcp-servers/memory /app/mcp-servers/memory
 RUN --mount=type=cache,target=/root/.cache/uv \
     cd /app/mcp-servers/memory && uv sync --locked --no-dev
 
+COPY mcp-servers/web/pyproject.toml mcp-servers/web/uv.lock \
+     /app/mcp-servers/web/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    cd /app/mcp-servers/web \
+    && uv sync --locked --no-install-project --no-dev
+
+COPY mcp-servers/web /app/mcp-servers/web
+RUN --mount=type=cache,target=/root/.cache/uv \
+    cd /app/mcp-servers/web && uv sync --locked --no-dev
+
 COPY apps/backend/ ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
