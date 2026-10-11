@@ -9,6 +9,8 @@ running.
 | --- | --- |
 | [reminders/](reminders/) | Working — `create`, `list`, `reschedule`, `complete` |
 | [people/](people/) | Working — `remember`, `list`, `forget`; birthdays remind themselves |
+| [memory/](memory/) | Working — `search` past conversations by meaning |
+| [web/](web/) | Working — `search` (SearXNG) and `fetch`; returns untrusted content |
 
 Planned (from the master plan): calendar, notes, photos, files, email, finance,
 github, home, cameras, media.

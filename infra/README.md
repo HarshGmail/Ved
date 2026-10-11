@@ -52,6 +52,24 @@ colima ssh -- sudo update-ca-certificates
 colima ssh -- sudo systemctl restart docker
 ```
 
+SearXNG makes its own outbound HTTPS requests to search engines, so it needs
+the same CA. `./ved db` copies every certificate from the VM's
+`/usr/local/share/ca-certificates` into `infra/searxng/ca-certificates/`
+(gitignored), which the container installs at startup. Verification stays on.
+
+## Web search
+
+`./ved db` starts SearXNG next to Postgres, on `127.0.0.1:8888` only. Ved's
+`web` MCP server queries its JSON API; nothing else in the stack depends on it,
+so if it's down only `web.search` fails, and it says so.
+
+It needs `SEARXNG_SECRET` in `infra/.env`. The `ved` script generates one before
+any `docker compose` call, because compose refuses to start any service,
+Postgres included, while a required variable is missing.
+
+google and brave often refuse automated queries; duckduckgo and wikipedia
+usually carry the results. The engine list is in `infra/searxng/settings.yml`.
+
 ## First run
 
 ```bash

@@ -9,6 +9,7 @@ BACKEND="$ROOT/apps/backend"
 WEB="$ROOT/apps/web-client"
 REMINDERS="$ROOT/mcp-servers/reminders"
 PEOPLE="$ROOT/mcp-servers/people"
+MEMORY="$ROOT/mcp-servers/memory"
 WEB_TOOLS="$ROOT/mcp-servers/web"
 SEARCH_CA_DIR="$INFRA/searxng/ca-certificates"
 VM_CA_DIR="/usr/local/share/ca-certificates"
@@ -235,6 +236,7 @@ cmd_setup() {
   say "installing Python dependencies"
   (cd "$REMINDERS" && uv sync)
   (cd "$PEOPLE" && uv sync)
+  (cd "$MEMORY" && uv sync)
   (cd "$WEB_TOOLS" && uv sync)
   (cd "$BACKEND" && uv sync)
 

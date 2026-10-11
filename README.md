@@ -26,11 +26,13 @@ running.
 | Piece | Command | Port |
 | --- | --- | --- |
 | PostgreSQL + pgvector | `./ved db` (Docker) | 5432 |
+| SearXNG (web search) | `./ved db` (Docker) | 8888 |
 | Local LLM (Ollama) | `./ved model` | 11434 |
 | Backend (FastAPI) | `./ved api` | 8000 |
 | Reminders MCP server | started by the backend | — |
 | People MCP server | started by the backend | — |
 | Memory MCP server | started by the backend | — |
+| Web MCP server | started by the backend | — |
 | Web client (Next.js PWA) | `./ved web` | 3000 |
 | DB browser (optional) | `./ved studio` (Docker) | 5050 |
 
@@ -106,6 +108,8 @@ Other things it understands:
   then on, you get a reminder 15 days ahead and another on the day.
 - *"What did I decide about the home server?"* It searches past conversations
   by meaning, so the wording doesn't have to match.
+- *"What's the latest Python release?"* It searches the web through your own
+  SearXNG instance, reads the relevant page and answers from it.
 
 The first message after a pause can take a minute or two while the model loads
 into memory. Later messages are much faster.

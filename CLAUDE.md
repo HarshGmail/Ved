@@ -55,8 +55,14 @@ Ved's message ("Mom's birthday is in 15 days… any plans?"), and tapping the
 push opens it so you can reply. Verified with the stub model; real push
 delivery and the tap-to-open path are not yet verified.
 
-Not yet: web search (Phase 4), file/document memory (last Phase 2 item), auth.
-qwen3.6 thinks for 5–20s before its first token; that thinking isn't streamed.
+**Phase 4 — Ved reaches the web and feels fast.** `web.search` (self-hosted
+SearXNG) and `web.fetch` (reads a page) give it current information: asked for
+the latest Python release, it searched, read python.org and answered correctly.
+The chat shows "thinking…" within about a second, an acknowledgement ("Let me
+check that…") the moment a tool starts, and tools in one round run in parallel.
+Phase 3 (photos) is skipped for now; it waits for the home server.
+
+Not yet: file/document memory (last Phase 2 item), auth, speech (Phase 5).
 
 ## Layout
 
@@ -75,7 +81,8 @@ apps/web-client/   Next.js 16 (App Router) + TS PWA
 apps/backend/      FastAPI, uv-managed, Python 3.13
   src/ved_backend/ main.py (routes + lifespan), agent.py, memory.py,
                    indexing.py (background embedding), scheduler.py,
-                   birthdays.py, checkins.py, push.py, config.py, database.py,
+                   birthdays.py, checkins.py, acknowledgements.py, push.py,
+                   config.py, database.py,
                    models.py, schemas.py
   scripts/         generate_vapid_keys.py — writes to gitignored .env files
     llm/           LLMProvider protocol, openai_compatible.py (any /v1
@@ -87,12 +94,14 @@ apps/backend/      FastAPI, uv-managed, Python 3.13
                    also installs every mcp-servers/* so the container can run them
 packages/ved-db/   Shared SQLAlchemy schema — the ONLY place tables are defined
                    testing.py: the one DB test fixture every suite uses
-infra/             compose.yaml (pgvector + backend + studio), db/init/
+infra/             compose.yaml (pgvector + search + backend + studio),
+                   db/init/, searxng/ (settings.yml; CA certs, gitignored)
 .github/workflows/ CI — lint, tests, migration drift, web build
 mcp-servers/
   reminders/       MCP server (SDK v2), stdio, own uv project
   people/          people + birthdays; same shape as reminders
   memory/          memory.search over embedded messages
+  web/             web.search (SearXNG) + web.fetch; untrusted content
 docs/              master-plan.md, README.md, pilot.md, phone-access.md
 ```
 
@@ -186,6 +195,19 @@ memory needs no migration.
   so a push retry reuses the thread instead of opening a second one.
 - The open conversation is in the URL (`?c=`), written with `history.pushState`;
   `useSearchParams` needs a `<Suspense>` boundary in the App Router.
+- **Web content is untrusted data, never instructions.** `web.*` results carry
+  `untrusted: true` and the system prompt says not to act on instructions in
+  them. This is the first tool that brings outside text in; it is why the
+  permission layer must exist before Ved can do anything sensitive.
+- **`web.fetch` checks the address at connect time, not by reading the URL.**
+  It resolves the host, refuses any non-public address (loopback, private,
+  link-local, metadata, IPv4-in-IPv6), connects to the exact address checked,
+  and re-checks every redirect hop. Never route it around `PublicOnlyTransport`.
+  SearXNG stays bound to 127.0.0.1.
+- **Reasoning text is never forwarded or stored** — only the fact that the
+  model is thinking. Tool calls in one round run concurrently (one MCP session
+  is safe for concurrent calls); results go back in call order. A new tool
+  domain gets a phrase in `ACKNOWLEDGEMENTS`.
 - The LLM never gets unrestricted system access; sensitive actions go through a
   permission layer.
 - Don't build ahead of the current phase.
@@ -196,7 +218,7 @@ Day to day, use the `ved` script at the repo root (setup steps: `README.md`):
 
 ```bash
 ./ved setup      # one-time: env files, deps, push keys, db, migrations
-./ved db         # Colima + Postgres in the background
+./ved db         # Colima + Postgres + SearXNG in the background
 ./ved model      # Ollama        (own terminal)
 ./ved api        # backend :8000 (own terminal, --reload)
 ./ved web        # web :3000     (own terminal)
@@ -215,7 +237,7 @@ cd apps/backend && uv run pytest     # DB tests skip without the URL below
 VED_TEST_DATABASE_URL=postgresql+psycopg://ved:PW@localhost:5432/ved_test \
   uv run pytest                      # fixture refuses a db without "test" in it
 cd apps/backend && uv run ruff check .
-cd mcp-servers/reminders && uv run pytest     # same for people/, memory/
+cd mcp-servers/reminders && uv run pytest     # same for people/, memory/, web/
 cd apps/web-client && npm run lint && npm run build
 cd apps/web-client && uv run --with pillow python scripts/generate-icons.py
 
@@ -237,6 +259,11 @@ Gotchas already solved, don't rediscover them:
 - On the corporate network, TLS is intercepted — the Colima VM needs the FactSet
   CA installed or image pulls fail. Steps in `infra/README.md`.
 - Postgres 18 wants the volume at `/var/lib/postgresql`, not `.../data`.
+- SearXNG's own outbound TLS hits the same corporate interception: `./ved db`
+  copies the Colima VM's CA certs into `infra/searxng/ca-certificates/`
+  (gitignored), which the container trusts at startup. google and brave often
+  refuse it upstream; duckduckgo and wikipedia carry results. The host-side
+  `web.fetch` trusts the macOS keychain via truststore, so it works as is.
 - New SQLAlchemy models must be imported in `models.py` or Alembic autogenerate
   silently produces an empty migration.
 - The backend's MCP package is `tools/`, not `mcp/` — that would shadow the
