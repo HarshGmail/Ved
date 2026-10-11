@@ -1,284 +1,77 @@
 # Ved
 
-Personal AI operating layer (private JARVIS-style assistant), built in phases.
-Full architecture and phase list: `docs/master-plan.md` — read it only when the
-task needs long-term context, it is long.
+Private, self-hosted personal AI assistant (JARVIS-style), built in phases.
+A Next.js PWA talks to a FastAPI backend that runs an agent loop over a local
+model (Ollama) and MCP tool servers, with Postgres + pgvector for memory.
+
+## Finding things — read this before searching
+
+1. **`docs/index.json`** maps topics to the exact files, symbols, settings and
+   rules for them. Look the topic up first, e.g.
+   `jq '.topics.push' docs/index.json`, or `jq '.topics | keys' docs/index.json`
+   for the list. One lookup usually replaces several searches.
+2. **Each area has its own `CLAUDE.md`** with its rules. Claude Code loads it
+   automatically when you work on files there, so area rules are not repeated
+   here: `apps/backend/`, `apps/web-client/`, `mcp-servers/`, `packages/ved-db/`,
+   `infra/`.
+3. **`docs/master-plan.md`** is the long-term architecture and phase list. It is
+   1,300 lines; read the relevant section only when the task needs it.
 
 ## Status
 
-**Phase 1 complete — the first milestone works.** *"Ved, remind me at 8 PM to
-call Mom"* typed into the PWA creates a real reminder. The full chain is live:
-PWA → connector → `POST /agent/message` → agent loop → MCP stdio →
-`reminders.create` → Postgres → phrased answer. Verified in a real browser and
-in the container.
+Phases 1, 2 and 4 are done; 3 (photos) waits for the home server; 5 (voice) is
+next. Ved chats with streaming replies and history, sets and fires reminders by
+Web Push, remembers people and plans birthday reminders and check-ins, searches
+past conversations and uploaded documents by meaning, and searches and reads
+the web. Everything runs locally; nothing needs an API key.
 
-A **real local model** now drives it, via Ollama on the Mac — nothing leaves the
-machine and there is no API key. Verified end to end in the browser and in the
-container: relative times ("tomorrow at 7am") resolve correctly, and the model
-recovers from its own bad tool arguments by reading the `ToolError` and retrying.
-
-The `stub` provider stays as the CI fixture, so the agent-loop tests still run
-with no model and no network.
-
-**Phase 2 started — Ved remembers.** Conversations persist, and *"remind me at
-8 PM to call Mom"* → *"actually make it 9 PM"* reschedules the right reminder
-with no context restated (verified against qwen3.6:35b: it chained list →
-complete → create on its own).
-
-**Reminders now actually fire.** A background scheduler polls for due reminders
-and sends a Web Push notification — your phone buzzes with Ved closed. Verified
-end to end in a real browser: asked in the chat, notification arrived.
-
-**Structured memory: people and birthdays.** *"Mom's birthday is 25 October,
-remind me 15 days before"* saves her via the `people` MCP server; the scheduler
-then plans the early notice and the on-the-day reminder itself, every year, and
-they arrive through the same push path. Verified against qwen3.6:35b, including
-changing the notice and listing upcoming birthdays.
-
-**Semantic search over past conversations.** Every recorded message is
-embedded in the background (`nomic-embed-text` via Ollama) into a pgvector
-column; the `memory` MCP server's `memory.search` finds them by meaning.
-Verified: in a fresh conversation, *"what did I decide about the home server?"*
-made qwen3.6:35b call `memory.search` and answer from an earlier chat.
-
-**Replies render as markdown** in the chat. **Phone access** is wired through
-`./ved phone` (Tailscale serve) but unverified end to end — Tailscale isn't
-installed yet.
-
-**The chat streams and keeps history.** Replies stream token by token over
-SSE (`POST /agent/message/stream`); the old endpoint still works. Past
-conversations are listed and reopen where you left off, and the open one lives
-in the URL as `?c=<id>`, so a refresh keeps it.
-
-**Ved starts conversations.** An early birthday notice opens a thread with
-Ved's message ("Mom's birthday is in 15 days… any plans?"), and tapping the
-push opens it so you can reply. Verified with the stub model; real push
-delivery and the tap-to-open path are not yet verified.
-
-**Phase 4 — Ved reaches the web and feels fast.** `web.search` (self-hosted
-SearXNG) and `web.fetch` (reads a page) give it current information: asked for
-the latest Python release, it searched, read python.org and answered correctly.
-The chat shows "thinking…" within about a second, an acknowledgement ("Let me
-check that…") the moment a tool starts, and tools in one round run in parallel.
-Phase 3 (photos) is skipped for now; it waits for the home server.
-
-Not yet: file/document memory (last Phase 2 item), auth, speech (Phase 5).
+Not yet: auth, the permission layer, voice. Phone access (`./ved phone`) is
+wired but unverified until Tailscale is installed. Per-phase detail is in
+`docs/index.json` under `status`.
 
 ## Layout
 
 ```text
-ved                Short commands — ./ved help (bash script, repo root)
-README.md          Clone-to-running setup
-apps/web-client/   Next.js 16 (App Router) + TS PWA
-  src/connector/   ONLY place that talks to the backend; sse.ts and
-                   reply-stream.ts carry streamed replies
-  src/app/         manifest.ts, layout, page, backend-status, chat,
-                   conversations + conversation-list (history, ?c= url)
-                   favicon.ico / icon.png / apple-icon.png are Next file
-                   conventions — they generate the <link> tags themselves
-  assets/          ved-mark.png, the single source for every icon
-  scripts/         generate-icons.py — never hand-edit generated icons
-apps/backend/      FastAPI, uv-managed, Python 3.13
-  src/ved_backend/ main.py (routes + lifespan), agent.py, memory.py,
-                   indexing.py (background embedding), scheduler.py,
-                   birthdays.py, checkins.py, acknowledgements.py, push.py,
-                   config.py, database.py,
-                   models.py, schemas.py
-  scripts/         generate_vapid_keys.py — writes to gitignored .env files
-    llm/           LLMProvider protocol, openai_compatible.py (any /v1
-                   endpoint — Ollama today, GPU box later), embeddings.py,
-                   stub.py (CI)
-    tools/         MCP client — toolbox.py, servers.py (NOT named mcp/)
-  migrations/      Alembic (URL comes from settings, not alembic.ini)
-  Dockerfile       uv-based image; build context is the REPO ROOT;
-                   also installs every mcp-servers/* so the container can run them
-packages/ved-db/   Shared SQLAlchemy schema — the ONLY place tables are defined
-                   testing.py: the one DB test fixture every suite uses
-infra/             compose.yaml (pgvector + search + backend + studio),
-                   db/init/, searxng/ (settings.yml; CA certs, gitignored)
-.github/workflows/ CI — lint, tests, migration drift, web build
-mcp-servers/
-  reminders/       MCP server (SDK v2), stdio, own uv project
-  people/          people + birthdays; same shape as reminders
-  memory/          memory.search over embedded messages
-  web/             web.search (SearXNG) + web.fetch; untrusted content
-docs/              master-plan.md, README.md, pilot.md, phone-access.md
+ved                 short commands for everything — ./ved help
+apps/backend/       FastAPI: agent loop, scheduler, memory, documents, push
+apps/web-client/    Next.js 16 PWA; src/connector/ is its only backend client
+mcp-servers/        one MCP server per capability: reminders, people, memory, web
+packages/ved-db/    the only place database tables are defined
+infra/              Docker Compose: Postgres, SearXNG, backend, DB browser
+docs/               index.json, master-plan.md, phone-access.md, pilot.md
 ```
 
-Not created yet: `esphome/`.
+## Rules that apply everywhere
 
-Postgres uses the `pgvector/pgvector` image from the start so Phase 2 semantic
-memory needs no migration.
-
-## Rules
-
-- **No backend calls outside `src/connector/`.** It must stay free of React and
-  Next imports so it can be lifted into a shared package for a future native
-  wrapper. Rationale in `docs/pilot.md`.
-- **Tables are defined once, in `packages/ved-db`.** Never redeclare a model in a
-  service. Consumers depend on it via `[tool.uv.sources]` path + editable. Only
-  the backend runs migrations; MCP servers read and write rows, never DDL.
-- MCP tools are named `<domain>.<verb>` (`reminders.create`). MCP SDK is **v2** —
-  `MCPServer`, not `FastMCP`; `Context` must come from `mcp.server.mcpserver.context`
-  (bare, unsubscripted) or it leaks into the tool schema; lifespan state is at
-  `ctx.request_context.lifespan_context`. Return Pydantic models, not `dict`, or
-  there is no output schema. Raise `ToolError` for bad input — other exceptions
-  are redacted to a generic message the model cannot act on.
-- **No vendor SDK outside `src/ved_backend/llm/`.** Same rule as the connector —
-  the LLM must stay replaceable. Add a provider by implementing `LLMProvider`
-  and registering it in `build_provider`; the agent loop does not change. Never
-  build a client at import time or the app cannot start without credentials.
-- **Moving the model is a URL change, not a code change.** The provider targets
-  the OpenAI `/v1` *shape*, not a vendor, so Ollama, LM Studio, llama.cpp, a LAN
-  GPU box or a hosted gateway are all `VED_LLM_BASE_URL`. Only Anthropic needs
-  its own module; its wire format genuinely differs.
-- **The system prompt carries the current time and timezone.** A model has no
-  clock — without it, it invents dates (it produced a 2025 timestamp before this
-  was added). `agent.py` rebuilds the prompt per turn.
-- Local models need `tools` in `ollama show <model>` capabilities, and
-  `VED_LLM_TEMPERATURE=0.0` — sampling randomness corrupts tool arguments.
-- Tool failures go back to the model as results with `is_error`, never raised —
-  that is how it recovers from a bad argument. `VED_AGENT_MAX_TOOL_ROUNDS` caps
-  a looping model.
-- MCP servers start once in the FastAPI lifespan and stay open; a stdio server
-  per request would cost hundreds of ms. A server that fails to start is logged
-  and skipped, not fatal.
-- **History replays prompts and final answers only, never tool calls.** Tool
-  calls are stored for the transcript but not resent: the wire format requires
-  every assistant `tool_calls` to be followed by matching `tool` results, so a
-  trimmed window would be malformed. The answer already carries the fact.
-- The **server** mints `conversation_id`, and only after the model answers — so
-  a failed turn leaves no empty thread and a client typo cannot create one.
-- **Conversation order comes from `sequence`, never `created_at`.** Both
-  messages in a turn share one transaction timestamp, so sorting by time breaks
-  ties arbitrarily — with real table statistics it replayed answer-before-prompt
-  every time. Tiny test tables hide this.
-- **Reminders are claimed `FOR UPDATE SKIP LOCKED`** with `notified_at` stamped
-  in the same transaction, so one fires exactly once even with two pollers. If
-  nothing was reachable the stamp is cleared and it retries, until
-  `give_up_after`.
-- Push sends carry a socket timeout, an asyncio deadline and a 24h TTL. Without
-  the first two a hanging endpoint stalls the scheduler for every later
-  reminder; without the TTL a sleeping phone may never get the message.
-- **Birthday reminders are planned by the scheduler, never by the model.** The
-  people server only stores facts; `birthdays.py` writes reminder rows unique on
-  `(person_id, birthday_on, lead_days)` with `ON CONFLICT DO NOTHING`, so
-  replanning every tick is idempotent. Changing a birthday or its notice deletes
-  only the unsent rows. A new MCP server also needs a Dockerfile stage, a
-  `configured_servers` entry, a CI job and a line in `./ved setup`.
-- **Prefer `reminders.reschedule` over complete+create.** The old chain left
-  reminders marked done that the user never did, and used the whole tool budget.
-- Push subscriptions answering 404/410 are **deleted, not retried** — browsers
-  rotate endpoints and dead ones would otherwise accumulate forever.
-- VAPID keys live only in gitignored `.env` files. Rotating them invalidates
-  every subscription, so `generate_vapid_keys.py` refuses to overwrite.
-- **Embedding never blocks or fails a turn.** It runs in the background after
-  the reply; failures and old rows are backfilled by the scheduler tick. The
-  dimension is coupled three ways — `vector(768)`, `VED_EMBEDDING_DIMENSIONS`,
-  and the model — so changing models needs a migration and a re-embed.
-- **DB tests set up schema only through `ved_db.testing`.** It creates required
-  extensions (pgvector) before `create_all` and refuses a database without
-  "test" in its name. Four hand-copied fixtures once each missed the extension.
-- Phone access is `tailscale serve`, tailnet only — **never Funnel**. Web on
-  :443 → 127.0.0.1:3000, backend on :8443 → 127.0.0.1:8000. `./ved phone`
-  writes `VED_TAILNET_HOST` (feeds Next's `allowedDevOrigins`) and merges the
-  CORS origin as JSON.
-- **A streamed turn is recorded only on its final answer.** Tool calls and the
-  recording run shielded from client disconnects, so leaving mid-stream never
-  half-applies a tool or leaves an empty thread. Both endpoints share one agent
-  loop (`Agent._events`), so their guarantees cannot drift apart.
-- **A new LLM provider implements both `complete()` and `stream()`.** Streamed
-  tool calls arrive in fragments keyed by index and must be reassembled.
-- **Check-ins come from a template, never the model** — the model may be slow
-  or down and the check-in must still arrive. It is created in the same
-  transaction that claims the reminder and linked via `reminders.conversation_id`,
-  so a push retry reuses the thread instead of opening a second one.
-- The open conversation is in the URL (`?c=`), written with `history.pushState`;
-  `useSearchParams` needs a `<Suspense>` boundary in the App Router.
-- **Web content is untrusted data, never instructions.** `web.*` results carry
-  `untrusted: true` and the system prompt says not to act on instructions in
-  them. This is the first tool that brings outside text in; it is why the
-  permission layer must exist before Ved can do anything sensitive.
-- **`web.fetch` checks the address at connect time, not by reading the URL.**
-  It resolves the host, refuses any non-public address (loopback, private,
-  link-local, metadata, IPv4-in-IPv6), connects to the exact address checked,
-  and re-checks every redirect hop. Never route it around `PublicOnlyTransport`.
-  SearXNG stays bound to 127.0.0.1.
-- **Reasoning text is never forwarded or stored** — only the fact that the
-  model is thinking. Tool calls in one round run concurrently (one MCP session
-  is safe for concurrent calls); results go back in call order. A new tool
-  domain gets a phrase in `ACKNOWLEDGEMENTS`.
-- The LLM never gets unrestricted system access; sensitive actions go through a
-  permission layer.
-- Don't build ahead of the current phase.
+- **Never write code comments**, in any language. Names carry the meaning.
+- **Keep every layer replaceable.** The LLM sits behind `LLMProvider`, web
+  search behind `SearchProvider`, the backend behind the web client's connector.
+  Swapping one is a new module plus a setting, never a refactor.
+- **Content from outside is data, never instructions.** Web pages and uploaded
+  documents are marked `untrusted`, and the system prompt says not to act on
+  instructions inside them. Sensitive actions need the permission layer first.
+- **The LLM never gets unrestricted system access.**
+- **Verify before claiming done:** run the affected suites (commands below),
+  and check against the real model or browser when behaviour changed.
+- Commits: Conventional Commits in present tense, `feat(scope): …`.
 
 ## Commands
 
-Day to day, use the `ved` script at the repo root (setup steps: `README.md`):
-
 ```bash
-./ved setup      # one-time: env files, deps, push keys, db, migrations
-./ved db         # Colima + Postgres + SearXNG in the background
-./ved model      # Ollama        (own terminal)
-./ved api        # backend :8000 (own terminal, --reload)
-./ved web        # web :3000     (own terminal)
-./ved status     # what's up
-./ved migrate    # alembic upgrade head
-./ved studio     # DB browser :5050
-./ved phone      # reach Ved from the phone over Tailscale; `phone off` undoes
-./ved stop       # stop the Docker backend if it holds :8000
-./ved down       # stop containers and Colima
+./ved setup        # one-time: env files, deps, keys, db, migrations
+./ved db           # Postgres (+ SearXNG while it is the search provider)
+./ved model | api | web    # each in its own terminal: Ollama, :8000, :3000
+./ved status | migrate | studio | phone | stop | down
 ```
 
-Checks and one-offs:
+Tests — every Python suite is `uv run ruff check . && uv run pytest` inside its
+folder (`apps/backend`, `mcp-servers/*`). Database tests need
+`VED_TEST_DATABASE_URL` pointing at a database with `test` in its name, or they
+skip. Web: `npm run lint && npm run build` in `apps/web-client`.
 
-```bash
-cd apps/backend && uv run pytest     # DB tests skip without the URL below
-VED_TEST_DATABASE_URL=postgresql+psycopg://ved:PW@localhost:5432/ved_test \
-  uv run pytest                      # fixture refuses a db without "test" in it
-cd apps/backend && uv run ruff check .
-cd mcp-servers/reminders && uv run pytest     # same for people/, memory/, web/
-cd apps/web-client && npm run lint && npm run build
-cd apps/web-client && uv run --with pillow python scripts/generate-icons.py
+## Keeping context current
 
-curl -X POST localhost:8000/agent/message \
-  -H 'Content-Type: application/json' \
-  -d '{"prompt": "Ved, remind me at 8 PM to call Mom"}'
-```
-
-`./ved api` reads `apps/backend/.env` (gitignored): database URL, CORS, model,
-VAPID keys. The Docker backend reads `infra/.env` instead; run one or the other,
-never both, because both want port 8000.
-
-Backend uses **uv** — `uv run` handles the venv, never `pip` or manual activate.
-
-Gotchas already solved, don't rediscover them:
-
-- Docker runs via **Colima**, not Desktop. Compose/buildx need symlinks into
-  `~/.docker/cli-plugins/`; buildx is required for the Dockerfile's cache mounts.
-- On the corporate network, TLS is intercepted — the Colima VM needs the FactSet
-  CA installed or image pulls fail. Steps in `infra/README.md`.
-- Postgres 18 wants the volume at `/var/lib/postgresql`, not `.../data`.
-- SearXNG's own outbound TLS hits the same corporate interception: `./ved db`
-  copies the Colima VM's CA certs into `infra/searxng/ca-certificates/`
-  (gitignored), which the container trusts at startup. google and brave often
-  refuse it upstream; duckduckgo and wikipedia carry results. The host-side
-  `web.fetch` trusts the macOS keychain via truststore, so it works as is.
-- New SQLAlchemy models must be imported in `models.py` or Alembic autogenerate
-  silently produces an empty migration.
-- The backend's MCP package is `tools/`, not `mcp/` — that would shadow the
-  installed `mcp` SDK.
-- `VED_TIMEZONE` (default `Asia/Kolkata`) is load-bearing: the reminders server
-  rejects timestamps with no UTC offset, so it is what turns "8 PM" into
-  `20:00+05:30`.
-
-Next.js 16 differs from older versions — `apps/web-client/AGENTS.md` says to
-check `node_modules/next/dist/docs/` before writing Next code. It is right.
-
-## Keeping this file current
-
-This file is loaded into every new chat, so it is the cheapest way to avoid
-re-exploring the repo. **When a phase or milestone completes, update Status
-(and Layout, if folders changed) in the same session that finished the work.**
-
-Keep it short — status, layout, rules, commands. Details belong in `docs/`.
+When a milestone lands, update **Status** here, the area `CLAUDE.md` it touched,
+and `docs/index.json` (add new files, symbols, settings and rules under the
+right topic). Keep this file short: it loads into every chat. Detail belongs in
+an area file or the index, which load only when needed.

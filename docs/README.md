@@ -14,19 +14,17 @@ complete phase breakdown.
 
 ## Where we are
 
-**Phase 2 in progress — memory and reminders.** Ved runs on a local model through
-Ollama, remembers each conversation, and pushes reminders to your devices when
-they come due, even with the app closed. *"Remind me at 8 PM to call Mom"*
-followed by *"actually make it 9 PM"* reschedules the right reminder without the
-context being restated.
+Phases 1, 2 and 4 are done. Ved chats with streaming replies, remembers every
+conversation, sets reminders that arrive as push notifications, plans birthday
+reminders and opens a check-in before the big ones, searches past conversations
+and your uploaded documents by meaning, and searches and reads the web. It runs
+on a local model, so nothing leaves your machine.
 
-It also remembers people and reminds you ahead of their birthdays every year,
-searches past conversations by meaning, renders replies as formatted text, and
-can be reached from your phone over Tailscale.
+Phase 3 (photos) waits for the home server. Phase 5 (voice) is next. Not built
+yet: auth and the permission layer.
 
-Not yet: auth, streaming replies, proactive check-ins.
-
-See [pilot.md](pilot.md) for how the first slice was built.
+For working on the code, start at the root `CLAUDE.md`; `index.json` here maps
+every topic to its files, settings and rules.
 
 ## Repo layout
 

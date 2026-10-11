@@ -297,9 +297,7 @@ guess.
 
 ## Current state
 
-Phase 2 in progress. Ved remembers across turns, and reminders now actually
-fire — a due reminder pushes a notification to subscribed devices with the app
-closed. No auth, no streaming, and no semantic search yet.
-
-When routes grow past a handful, split them out of `main.py` into an `api/`
-package with routers.
+Phases 1, 2 and 4 are done: streaming chat with history, reminders delivered by
+push, people and birthday check-ins, semantic search over conversations and
+uploaded documents, and web search through the `web` MCP server. Rules for
+working here are in `CLAUDE.md` next to this file.
