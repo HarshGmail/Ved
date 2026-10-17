@@ -6,46 +6,117 @@
     "phase_3_photos": "skipped for now; waits for the home server. Plan: Immich plus a photos MCP server, not a custom build",
     "phase_4_web_fast": "done: web search and fetch, streaming, thinking state, acknowledgements, parallel tools",
     "phase_5_voice": "next",
-    "not_yet": ["auth", "permission layer", "voice", "phone access verified end to end (needs Tailscale)"]
+    "not_yet": [
+      "auth",
+      "permission layer",
+      "voice",
+      "phone access verified end to end (needs Tailscale)"
+    ],
+    "home_server": "Ubuntu desktop being set up; ved script supports Linux; deploy and backup automation not built yet"
   },
   "topics": {
     "agent-loop": {
       "summary": "One loop serves both chat endpoints: model round, tools, repeat until an answer or the round cap.",
-      "files": ["apps/backend/src/ved_backend/agent.py", "apps/backend/src/ved_backend/main.py", "apps/backend/src/ved_backend/schemas.py"],
-      "symbols": ["Agent", "Agent._events", "Agent._invoke_concurrently", "SYSTEM_PROMPT_TEMPLATE", "TOOL_LIMIT_MESSAGE"],
-      "settings": ["VED_AGENT_MAX_TOOL_ROUNDS", "VED_TIMEZONE"],
+      "files": [
+        "apps/backend/src/ved_backend/agent.py",
+        "apps/backend/src/ved_backend/main.py",
+        "apps/backend/src/ved_backend/schemas.py"
+      ],
+      "symbols": [
+        "Agent",
+        "Agent._events",
+        "Agent._invoke_concurrently",
+        "SYSTEM_PROMPT_TEMPLATE",
+        "TOOL_LIMIT_MESSAGE"
+      ],
+      "settings": [
+        "VED_AGENT_MAX_TOOL_ROUNDS",
+        "VED_TIMEZONE"
+      ],
       "rules": [
         "Both endpoints go through Agent._events; never fork the loop.",
         "Tool failures return to the model as is_error, never raised.",
         "The system prompt carries the current time and timezone, rebuilt per turn.",
         "Tool calls in one round run concurrently; outcomes go back in call order."
       ],
-      "tests": ["apps/backend/tests/test_agent.py", "apps/backend/tests/test_agent_endpoint.py"]
+      "tests": [
+        "apps/backend/tests/test_agent.py",
+        "apps/backend/tests/test_agent_endpoint.py"
+      ]
     },
     "streaming": {
       "summary": "Replies stream over SSE: thinking, ack, token, tool, tool_result, then done or error.",
-      "files": ["apps/backend/src/ved_backend/main.py", "apps/backend/src/ved_backend/agent.py", "apps/web-client/src/connector/sse.ts", "apps/web-client/src/connector/reply-stream.ts", "apps/web-client/src/app/chat.tsx"],
-      "symbols": ["agent_message_stream", "TokenEvent", "ToolStartedEvent", "ToolFinishedEvent", "StreamErrorEvent", "createSseParser", "createReplyStream", "requestReply"],
-      "endpoints": ["POST /agent/message/stream", "POST /agent/message"],
+      "files": [
+        "apps/backend/src/ved_backend/main.py",
+        "apps/backend/src/ved_backend/agent.py",
+        "apps/web-client/src/connector/sse.ts",
+        "apps/web-client/src/connector/reply-stream.ts",
+        "apps/web-client/src/app/chat.tsx"
+      ],
+      "symbols": [
+        "agent_message_stream",
+        "TokenEvent",
+        "ToolStartedEvent",
+        "ToolFinishedEvent",
+        "StreamErrorEvent",
+        "createSseParser",
+        "createReplyStream",
+        "requestReply"
+      ],
+      "endpoints": [
+        "POST /agent/message/stream",
+        "POST /agent/message"
+      ],
       "rules": [
         "A streamed turn is recorded only on its final answer.",
         "Tool calls and recording are shielded from client disconnect.",
         "fetch, not EventSource, because EventSource cannot POST.",
         "Reasoning text is dropped in the provider; only a thinking event is sent."
       ],
-      "tests": ["apps/backend/tests/test_agent_endpoint.py", "apps/backend/tests/test_agent.py"]
+      "tests": [
+        "apps/backend/tests/test_agent_endpoint.py",
+        "apps/backend/tests/test_agent.py"
+      ]
     },
     "acknowledgements": {
       "summary": "Instant phrase shown when the first model round is a tool call.",
-      "files": ["apps/backend/src/ved_backend/acknowledgements.py"],
-      "symbols": ["ACKNOWLEDGEMENTS", "acknowledgement_for"],
-      "rules": ["A new tool domain gets a phrase here."]
+      "files": [
+        "apps/backend/src/ved_backend/acknowledgements.py"
+      ],
+      "symbols": [
+        "ACKNOWLEDGEMENTS",
+        "acknowledgement_for"
+      ],
+      "rules": [
+        "A new tool domain gets a phrase here."
+      ]
     },
     "llm-provider": {
       "summary": "The model sits behind LLMProvider; Ollama today via the OpenAI /v1 shape.",
-      "files": ["apps/backend/src/ved_backend/llm/base.py", "apps/backend/src/ved_backend/llm/openai_compatible.py", "apps/backend/src/ved_backend/llm/stub.py", "apps/backend/src/ved_backend/llm/__init__.py", "apps/backend/src/ved_backend/llm/README.md"],
-      "symbols": ["LLMProvider", "OpenAICompatibleProvider", "StubProvider", "build_provider", "TextDelta", "ReasoningDelta", "LLMRequestError"],
-      "settings": ["VED_LLM_PROVIDER", "VED_LLM_BASE_URL", "VED_LLM_MODEL", "VED_LLM_API_KEY", "VED_LLM_TIMEOUT_SECONDS", "VED_LLM_TEMPERATURE"],
+      "files": [
+        "apps/backend/src/ved_backend/llm/base.py",
+        "apps/backend/src/ved_backend/llm/openai_compatible.py",
+        "apps/backend/src/ved_backend/llm/stub.py",
+        "apps/backend/src/ved_backend/llm/__init__.py",
+        "apps/backend/src/ved_backend/llm/README.md"
+      ],
+      "symbols": [
+        "LLMProvider",
+        "OpenAICompatibleProvider",
+        "StubProvider",
+        "build_provider",
+        "TextDelta",
+        "ReasoningDelta",
+        "LLMRequestError"
+      ],
+      "settings": [
+        "VED_LLM_PROVIDER",
+        "VED_LLM_BASE_URL",
+        "VED_LLM_MODEL",
+        "VED_LLM_API_KEY",
+        "VED_LLM_TIMEOUT_SECONDS",
+        "VED_LLM_TEMPERATURE"
+      ],
       "rules": [
         "No vendor SDK outside llm/.",
         "A provider implements complete() and stream(); streamed tool calls arrive in fragments keyed by index.",
@@ -53,80 +124,215 @@
         "VED_LLM_TEMPERATURE=0.0; sampling corrupts tool arguments.",
         "The model needs 'tools' in `ollama show <model>` capabilities."
       ],
-      "tests": ["apps/backend/tests/test_openai_compatible.py", "apps/backend/tests/test_stub_provider.py"]
+      "tests": [
+        "apps/backend/tests/test_openai_compatible.py",
+        "apps/backend/tests/test_stub_provider.py"
+      ]
     },
     "conversations": {
       "summary": "Persisted threads; history replayed into each turn; listed and reopened in the UI.",
-      "files": ["apps/backend/src/ved_backend/memory.py", "packages/ved-db/src/ved_db/models.py", "apps/web-client/src/app/conversations.tsx", "apps/web-client/src/app/conversation-list.tsx", "apps/web-client/src/app/conversation-url.ts", "apps/web-client/src/app/transcript.ts"],
-      "symbols": ["ConversationStore", "Conversation", "ConversationMessage", "to_llm_messages", "summarise_title"],
-      "endpoints": ["GET /conversations", "GET /conversations/{conversation_id}"],
-      "settings": ["VED_CONVERSATION_HISTORY_LIMIT", "VED_CONVERSATION_LIST_LIMIT"],
+      "files": [
+        "apps/backend/src/ved_backend/memory.py",
+        "packages/ved-db/src/ved_db/models.py",
+        "apps/web-client/src/app/conversations.tsx",
+        "apps/web-client/src/app/conversation-list.tsx",
+        "apps/web-client/src/app/conversation-url.ts",
+        "apps/web-client/src/app/transcript.ts"
+      ],
+      "symbols": [
+        "ConversationStore",
+        "Conversation",
+        "ConversationMessage",
+        "to_llm_messages",
+        "summarise_title"
+      ],
+      "endpoints": [
+        "GET /conversations",
+        "GET /conversations/{conversation_id}"
+      ],
+      "settings": [
+        "VED_CONVERSATION_HISTORY_LIMIT",
+        "VED_CONVERSATION_LIST_LIMIT"
+      ],
       "rules": [
         "Order by sequence, never created_at.",
         "Replay prompts and final answers only, never tool calls.",
         "The server mints conversation_id, only after the model answers.",
         "The open conversation is ?c=<id> via history.pushState; useSearchParams needs Suspense."
       ],
-      "tests": ["apps/backend/tests/test_conversation_store.py", "apps/backend/tests/test_memory.py"]
+      "tests": [
+        "apps/backend/tests/test_conversation_store.py",
+        "apps/backend/tests/test_memory.py"
+      ]
     },
     "reminders": {
       "summary": "Create, list, reschedule and complete reminders; the scheduler fires them.",
-      "files": ["mcp-servers/reminders/src/ved_reminders/server.py", "mcp-servers/reminders/src/ved_reminders/storage.py", "apps/backend/src/ved_backend/scheduler.py"],
-      "symbols": ["reminders.create", "reminders.list", "reminders.reschedule", "reminders.complete", "claim_due_reminders", "ReminderScheduler", "release"],
-      "settings": ["VED_SCHEDULER_POLL_SECONDS"],
+      "files": [
+        "mcp-servers/reminders/src/ved_reminders/server.py",
+        "mcp-servers/reminders/src/ved_reminders/storage.py",
+        "apps/backend/src/ved_backend/scheduler.py"
+      ],
+      "symbols": [
+        "reminders.create",
+        "reminders.list",
+        "reminders.reschedule",
+        "reminders.complete",
+        "claim_due_reminders",
+        "ReminderScheduler",
+        "release"
+      ],
+      "settings": [
+        "VED_SCHEDULER_POLL_SECONDS"
+      ],
       "rules": [
         "Claimed FOR UPDATE SKIP LOCKED with notified_at in the same transaction.",
         "If nothing was reachable the stamp is cleared and it retries until give_up_after.",
         "Prefer reschedule over complete-then-create.",
         "due_at must carry a UTC offset."
       ],
-      "tests": ["mcp-servers/reminders/tests", "apps/backend/tests/test_scheduler.py"]
+      "tests": [
+        "mcp-servers/reminders/tests",
+        "apps/backend/tests/test_scheduler.py"
+      ]
     },
     "push": {
       "summary": "Web Push delivery of reminders and check-ins to subscribed browsers.",
-      "files": ["apps/backend/src/ved_backend/push.py", "apps/backend/scripts/generate_vapid_keys.py", "apps/web-client/public/sw.js", "apps/web-client/src/app/notifications.tsx"],
-      "symbols": ["PushService", "Notification", "DeliveryReport", "PushNotConfiguredError"],
-      "endpoints": ["GET /push/status", "POST /push/subscribe", "POST /push/unsubscribe", "POST /push/test"],
-      "settings": ["VED_VAPID_PUBLIC_KEY", "VED_VAPID_PRIVATE_KEY", "VED_VAPID_SUBJECT", "NEXT_PUBLIC_VAPID_PUBLIC_KEY"],
+      "files": [
+        "apps/backend/src/ved_backend/push.py",
+        "apps/backend/scripts/generate_vapid_keys.py",
+        "apps/web-client/public/sw.js",
+        "apps/web-client/src/app/notifications.tsx"
+      ],
+      "symbols": [
+        "PushService",
+        "Notification",
+        "DeliveryReport",
+        "PushNotConfiguredError"
+      ],
+      "endpoints": [
+        "GET /push/status",
+        "POST /push/subscribe",
+        "POST /push/unsubscribe",
+        "POST /push/test"
+      ],
+      "settings": [
+        "VED_VAPID_PUBLIC_KEY",
+        "VED_VAPID_PRIVATE_KEY",
+        "VED_VAPID_SUBJECT",
+        "NEXT_PUBLIC_VAPID_PUBLIC_KEY"
+      ],
       "rules": [
         "Sends carry a socket timeout, an asyncio deadline and a 24h TTL.",
         "404/410 subscriptions are deleted, not retried.",
         "VAPID keys live only in gitignored .env; the generator refuses to overwrite.",
         "Needs a secure context: localhost or real HTTPS."
       ],
-      "tests": ["apps/backend/tests/test_push.py"]
+      "tests": [
+        "apps/backend/tests/test_push.py"
+      ]
     },
     "people-birthdays": {
       "summary": "People with birthdays and notice; the scheduler plans yearly reminders and early check-ins.",
-      "files": ["mcp-servers/people/src/ved_people/server.py", "mcp-servers/people/src/ved_people/storage.py", "apps/backend/src/ved_backend/birthdays.py", "apps/backend/src/ved_backend/checkins.py"],
-      "symbols": ["people.remember", "people.list", "people.forget", "Person", "schedule_birthday_reminders", "plan_for", "open_check_in", "draft_check_in", "birthday_in"],
-      "settings": ["VED_BIRTHDAY_REMINDER_TIME"],
+      "files": [
+        "mcp-servers/people/src/ved_people/server.py",
+        "mcp-servers/people/src/ved_people/storage.py",
+        "apps/backend/src/ved_backend/birthdays.py",
+        "apps/backend/src/ved_backend/checkins.py"
+      ],
+      "symbols": [
+        "people.remember",
+        "people.list",
+        "people.forget",
+        "Person",
+        "schedule_birthday_reminders",
+        "plan_for",
+        "open_check_in",
+        "draft_check_in",
+        "birthday_in"
+      ],
+      "settings": [
+        "VED_BIRTHDAY_REMINDER_TIME"
+      ],
       "rules": [
         "Reminders are planned by the scheduler, never the model; unique on (person_id, birthday_on, lead_days).",
         "Check-ins come from a template, never the model.",
         "A check-in is created in the claim transaction and linked via reminders.conversation_id.",
         "Feb 29 falls on Feb 28 in non-leap years."
       ],
-      "tests": ["mcp-servers/people/tests", "apps/backend/tests/test_birthdays.py", "apps/backend/tests/test_checkins.py"]
+      "tests": [
+        "mcp-servers/people/tests",
+        "apps/backend/tests/test_birthdays.py",
+        "apps/backend/tests/test_checkins.py"
+      ]
     },
     "semantic-memory": {
       "summary": "Messages embedded in the background; memory.search finds past conversations by meaning.",
-      "files": ["apps/backend/src/ved_backend/indexing.py", "apps/backend/src/ved_backend/llm/embeddings.py", "mcp-servers/memory/src/ved_memory/server.py", "mcp-servers/memory/src/ved_memory/storage.py", "mcp-servers/memory/src/ved_memory/embedder.py"],
-      "symbols": ["memory.search", "BackgroundIndexer", "MessageIndexer", "OpenAICompatibleEmbedder", "build_embedder", "search_messages"],
-      "settings": ["VED_EMBEDDING_MODEL", "VED_EMBEDDING_DIMENSIONS", "VED_EMBEDDING_TIMEOUT_SECONDS", "VED_EMBEDDING_DOCUMENT_PREFIX", "VED_EMBEDDING_QUERY_PREFIX"],
+      "files": [
+        "apps/backend/src/ved_backend/indexing.py",
+        "apps/backend/src/ved_backend/llm/embeddings.py",
+        "mcp-servers/memory/src/ved_memory/server.py",
+        "mcp-servers/memory/src/ved_memory/storage.py",
+        "mcp-servers/memory/src/ved_memory/embedder.py"
+      ],
+      "symbols": [
+        "memory.search",
+        "BackgroundIndexer",
+        "MessageIndexer",
+        "OpenAICompatibleEmbedder",
+        "build_embedder",
+        "search_messages"
+      ],
+      "settings": [
+        "VED_EMBEDDING_MODEL",
+        "VED_EMBEDDING_DIMENSIONS",
+        "VED_EMBEDDING_TIMEOUT_SECONDS",
+        "VED_EMBEDDING_DOCUMENT_PREFIX",
+        "VED_EMBEDDING_QUERY_PREFIX"
+      ],
       "rules": [
         "Embedding never blocks or fails a turn; the scheduler tick backfills.",
         "Dimension is coupled to vector(768), VED_EMBEDDING_DIMENSIONS and the model.",
         "nomic-embed-text uses search_document: and search_query: prefixes."
       ],
-      "tests": ["apps/backend/tests/test_indexing.py", "apps/backend/tests/test_embeddings.py", "mcp-servers/memory/tests"]
+      "tests": [
+        "apps/backend/tests/test_indexing.py",
+        "apps/backend/tests/test_embeddings.py",
+        "mcp-servers/memory/tests"
+      ]
     },
     "documents": {
       "summary": "Upload PDF, text or markdown; chunked, embedded, searchable with documents.search.",
-      "files": ["apps/backend/src/ved_backend/documents.py", "apps/backend/src/ved_backend/uploads.py", "apps/backend/src/ved_backend/extraction.py", "apps/backend/src/ved_backend/chunking.py", "apps/backend/src/ved_backend/indexing.py", "mcp-servers/memory/src/ved_memory/documents.py", "apps/web-client/src/app/documents.tsx"],
-      "symbols": ["DocumentLibrary", "DocumentIndexer", "stored_path", "documents.search", "documents.list", "Document", "DocumentChunk", "useDocuments", "DocumentShelf", "DocumentPicker"],
-      "endpoints": ["POST /documents", "GET /documents", "GET /documents/{document_id}", "DELETE /documents/{document_id}"],
-      "settings": ["VED_DOCUMENTS_DIR", "VED_DOCUMENTS_MAX_UPLOAD_BYTES"],
+      "files": [
+        "apps/backend/src/ved_backend/documents.py",
+        "apps/backend/src/ved_backend/uploads.py",
+        "apps/backend/src/ved_backend/extraction.py",
+        "apps/backend/src/ved_backend/chunking.py",
+        "apps/backend/src/ved_backend/indexing.py",
+        "mcp-servers/memory/src/ved_memory/documents.py",
+        "apps/web-client/src/app/documents.tsx"
+      ],
+      "symbols": [
+        "DocumentLibrary",
+        "DocumentIndexer",
+        "stored_path",
+        "documents.search",
+        "documents.list",
+        "Document",
+        "DocumentChunk",
+        "useDocuments",
+        "DocumentShelf",
+        "DocumentPicker"
+      ],
+      "endpoints": [
+        "POST /documents",
+        "GET /documents",
+        "GET /documents/{document_id}",
+        "DELETE /documents/{document_id}"
+      ],
+      "settings": [
+        "VED_DOCUMENTS_DIR",
+        "VED_DOCUMENTS_MAX_UPLOAD_BYTES"
+      ],
       "rules": [
         "Originals are stored by SHA-256, never by the user's filename.",
         "Type is sniffed from the bytes, not the extension.",
@@ -135,13 +341,49 @@
         "Passages are untrusted content.",
         "Scanned PDFs fail: no OCR."
       ],
-      "tests": ["apps/backend/tests/test_documents.py", "apps/backend/tests/test_documents_endpoint.py", "apps/backend/tests/test_uploads.py", "apps/backend/tests/test_extraction.py", "apps/backend/tests/test_chunking.py", "mcp-servers/memory/tests/test_documents.py"]
+      "tests": [
+        "apps/backend/tests/test_documents.py",
+        "apps/backend/tests/test_documents_endpoint.py",
+        "apps/backend/tests/test_uploads.py",
+        "apps/backend/tests/test_extraction.py",
+        "apps/backend/tests/test_chunking.py",
+        "mcp-servers/memory/tests/test_documents.py"
+      ]
     },
     "web-search": {
       "summary": "web.search through a swappable provider (SearXNG default); web.fetch reads a page.",
-      "files": ["mcp-servers/web/src/ved_web/server.py", "mcp-servers/web/src/ved_web/search/base.py", "mcp-servers/web/src/ved_web/search/__init__.py", "mcp-servers/web/src/ved_web/search/providers/searxng.py", "mcp-servers/web/src/ved_web/fetch.py", "mcp-servers/web/src/ved_web/guard.py", "mcp-servers/web/src/ved_web/extract.py", "mcp-servers/web/README.md", "infra/searxng/settings.yml"],
-      "symbols": ["web.search", "web.fetch", "SearchProvider", "build_search_provider", "PROVIDERS", "SearchUnavailableError", "PublicOnlyTransport", "public_addresses"],
-      "settings": ["VED_SEARCH_PROVIDER", "VED_SEARXNG_URL", "VED_SEARCH_TIMEOUT_SECONDS", "VED_SEARCH_MAX_LIMIT", "VED_FETCH_TIMEOUT_SECONDS", "VED_FETCH_MAX_BYTES", "VED_FETCH_MAX_CHARACTERS", "VED_FETCH_MAX_REDIRECTS", "SEARXNG_SECRET"],
+      "files": [
+        "mcp-servers/web/src/ved_web/server.py",
+        "mcp-servers/web/src/ved_web/search/base.py",
+        "mcp-servers/web/src/ved_web/search/__init__.py",
+        "mcp-servers/web/src/ved_web/search/providers/searxng.py",
+        "mcp-servers/web/src/ved_web/fetch.py",
+        "mcp-servers/web/src/ved_web/guard.py",
+        "mcp-servers/web/src/ved_web/extract.py",
+        "mcp-servers/web/README.md",
+        "infra/searxng/settings.yml"
+      ],
+      "symbols": [
+        "web.search",
+        "web.fetch",
+        "SearchProvider",
+        "build_search_provider",
+        "PROVIDERS",
+        "SearchUnavailableError",
+        "PublicOnlyTransport",
+        "public_addresses"
+      ],
+      "settings": [
+        "VED_SEARCH_PROVIDER",
+        "VED_SEARXNG_URL",
+        "VED_SEARCH_TIMEOUT_SECONDS",
+        "VED_SEARCH_MAX_LIMIT",
+        "VED_FETCH_TIMEOUT_SECONDS",
+        "VED_FETCH_MAX_BYTES",
+        "VED_FETCH_MAX_CHARACTERS",
+        "VED_FETCH_MAX_REDIRECTS",
+        "SEARXNG_SECRET"
+      ],
       "rules": [
         "A provider lives only in search/providers/; server.py never names one.",
         "Adding a provider: one file, a PROVIDERS entry, tests, its settings (see mcp-servers/web/README.md).",
@@ -149,12 +391,21 @@
         "Results are untrusted.",
         "SearXNG stays on 127.0.0.1 and starts only while it is the provider."
       ],
-      "tests": ["mcp-servers/web/tests"]
+      "tests": [
+        "mcp-servers/web/tests"
+      ]
     },
     "mcp": {
       "summary": "How the backend runs MCP servers and how to write one.",
-      "files": ["apps/backend/src/ved_backend/tools/toolbox.py", "apps/backend/src/ved_backend/tools/servers.py", "mcp-servers/CLAUDE.md"],
-      "symbols": ["MCPToolbox", "configured_servers"],
+      "files": [
+        "apps/backend/src/ved_backend/tools/toolbox.py",
+        "apps/backend/src/ved_backend/tools/servers.py",
+        "mcp-servers/CLAUDE.md"
+      ],
+      "symbols": [
+        "MCPToolbox",
+        "configured_servers"
+      ],
       "rules": [
         "SDK v2: MCPServer; bare Context from mcp.server.mcpserver.context.",
         "Return Pydantic models; raise ToolError for bad input.",
@@ -164,9 +415,24 @@
     },
     "database": {
       "summary": "Tables, migrations and the test fixture.",
-      "files": ["packages/ved-db/src/ved_db/models.py", "packages/ved-db/src/ved_db/testing.py", "packages/ved-db/src/ved_db/__init__.py", "apps/backend/src/ved_backend/models.py", "apps/backend/migrations/"],
-      "symbols": ["Base", "recreate_schema", "guard_test_url", "CONVERSATION_MESSAGE_SEQUENCE", "EMBEDDING_DIMENSIONS"],
-      "settings": ["VED_DATABASE_URL", "VED_TEST_DATABASE_URL"],
+      "files": [
+        "packages/ved-db/src/ved_db/models.py",
+        "packages/ved-db/src/ved_db/testing.py",
+        "packages/ved-db/src/ved_db/__init__.py",
+        "apps/backend/src/ved_backend/models.py",
+        "apps/backend/migrations/"
+      ],
+      "symbols": [
+        "Base",
+        "recreate_schema",
+        "guard_test_url",
+        "CONVERSATION_MESSAGE_SEQUENCE",
+        "EMBEDDING_DIMENSIONS"
+      ],
+      "settings": [
+        "VED_DATABASE_URL",
+        "VED_TEST_DATABASE_URL"
+      ],
       "rules": [
         "Tables are defined only in packages/ved-db.",
         "A new model is re-exported in ved_db/__init__.py and backend models.py, or autogenerate is empty.",
@@ -176,33 +442,115 @@
     },
     "connector": {
       "summary": "The web client's only backend client; framework-free.",
-      "files": ["apps/web-client/src/connector/index.ts", "apps/web-client/src/connector/http.ts", "apps/web-client/src/connector/sse.ts", "apps/web-client/src/connector/reply-stream.ts", "apps/web-client/src/connector/errors.ts", "apps/web-client/src/connector/types.ts", "apps/web-client/src/connector/config.ts"],
-      "symbols": ["connector", "createConnector", "HttpError", "StreamUnavailableError"],
-      "settings": ["NEXT_PUBLIC_VED_API_URL"],
-      "rules": ["No React or Next imports.", "Components call connector.*, never fetch.", "HttpError surfaces the backend's detail message."]
+      "files": [
+        "apps/web-client/src/connector/index.ts",
+        "apps/web-client/src/connector/http.ts",
+        "apps/web-client/src/connector/sse.ts",
+        "apps/web-client/src/connector/reply-stream.ts",
+        "apps/web-client/src/connector/errors.ts",
+        "apps/web-client/src/connector/types.ts",
+        "apps/web-client/src/connector/config.ts"
+      ],
+      "symbols": [
+        "connector",
+        "createConnector",
+        "HttpError",
+        "StreamUnavailableError"
+      ],
+      "settings": [
+        "NEXT_PUBLIC_VED_API_URL"
+      ],
+      "rules": [
+        "No React or Next imports.",
+        "Components call connector.*, never fetch.",
+        "HttpError surfaces the backend's detail message."
+      ]
     },
     "web-ui": {
       "summary": "The PWA screens.",
-      "files": ["apps/web-client/src/app/page.tsx", "apps/web-client/src/app/chat.tsx", "apps/web-client/src/app/markdown-reply.tsx", "apps/web-client/src/app/notifications.tsx", "apps/web-client/src/app/backend-status.tsx", "apps/web-client/src/app/manifest.ts", "apps/web-client/scripts/generate-icons.py"],
-      "rules": ["Check node_modules/next/dist/docs/ before writing Next code.", "Markdown replies never render raw HTML.", "Icons are generated from assets/ved-mark.png."]
+      "files": [
+        "apps/web-client/src/app/page.tsx",
+        "apps/web-client/src/app/chat.tsx",
+        "apps/web-client/src/app/markdown-reply.tsx",
+        "apps/web-client/src/app/notifications.tsx",
+        "apps/web-client/src/app/backend-status.tsx",
+        "apps/web-client/src/app/manifest.ts",
+        "apps/web-client/scripts/generate-icons.py"
+      ],
+      "rules": [
+        "Check node_modules/next/dist/docs/ before writing Next code.",
+        "Markdown replies never render raw HTML.",
+        "Icons are generated from assets/ved-mark.png."
+      ]
     },
     "phone-access": {
       "summary": "Reach Ved from a phone privately over Tailscale serve.",
-      "files": ["ved", "docs/phone-access.md", "apps/web-client/next.config.ts"],
-      "symbols": ["cmd_phone", "allow_cors_origin"],
-      "settings": ["VED_TAILNET_HOST", "VED_CORS_ALLOW_ORIGINS"],
-      "rules": ["tailscale serve only, never Funnel.", "Web :443 -> 127.0.0.1:3000; backend :8443 -> 127.0.0.1:8000.", "Unverified until Tailscale is installed."]
+      "files": [
+        "ved",
+        "docs/phone-access.md",
+        "apps/web-client/next.config.ts"
+      ],
+      "symbols": [
+        "cmd_phone",
+        "allow_cors_origin"
+      ],
+      "settings": [
+        "VED_TAILNET_HOST",
+        "VED_CORS_ALLOW_ORIGINS"
+      ],
+      "rules": [
+        "tailscale serve only, never Funnel.",
+        "Web :443 -> 127.0.0.1:3000; backend :8443 -> 127.0.0.1:8000.",
+        "Unverified until Tailscale is installed."
+      ]
     },
     "infra": {
       "summary": "Docker Compose, the ved script, CI.",
-      "files": ["infra/compose.yaml", "infra/CLAUDE.md", "infra/README.md", "ved", "apps/backend/Dockerfile", ".github/workflows/ci.yml"],
-      "settings": ["POSTGRES_PASSWORD", "BACKEND_PORT", "SEARXNG_SECRET"],
+      "files": [
+        "infra/compose.yaml",
+        "infra/CLAUDE.md",
+        "infra/README.md",
+        "ved",
+        "apps/backend/Dockerfile",
+        ".github/workflows/ci.yml"
+      ],
+      "settings": [
+        "POSTGRES_PASSWORD",
+        "BACKEND_PORT",
+        "SEARXNG_SECRET"
+      ],
       "rules": [
         "Every port binds to 127.0.0.1.",
         "SearXNG is behind the 'search' compose profile.",
         "./ved api reads apps/backend/.env; the container reads infra/.env; never run both.",
         "Postgres 18 volume is /var/lib/postgresql.",
         "Corporate-network CA steps are no-ops on a personal machine."
+      ]
+    },
+    "server": {
+      "summary": "Running Ved on the home server: Ubuntu, i5, DDR3 (16 GB max), three hard disks, no GPU.",
+      "files": [
+        "docs/server.md",
+        "ved",
+        "infra/compose.yaml"
+      ],
+      "symbols": [
+        "is_macos",
+        "ensure_docker",
+        "port_in_use",
+        "replace_in_file",
+        "configured_model"
+      ],
+      "settings": [
+        "VED_LLM_MODEL",
+        "VED_LLM_BASE_URL"
+      ],
+      "rules": [
+        "The ved script runs on macOS (Colima) and Linux (native Docker); detect with is_macos, never assume.",
+        "On the server set VED_LLM_MODEL to a model that fits 16 GB (granite4.1:3b); qwen3.6:35b needs ~23 GB.",
+        "Corporate CA steps are macOS-only and no-ops on Linux.",
+        "Backups go on a different disk from Postgres's data.",
+        "Unattended running, auto-deploy and backups are not built yet."
       ]
     }
   }

@@ -33,13 +33,40 @@ compose() {
   (cd "$INFRA" && docker compose "$@")
 }
 
-port_in_use() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
+is_macos() { [ "$(uname -s)" = "Darwin" ]; }
 
-ensure_colima() {
-  if ! colima status >/dev/null 2>&1; then
-    say "starting Colima"
-    colima start
+port_in_use() {
+  if command -v ss >/dev/null 2>&1; then
+    ss -Htln "sport = :$1" 2>/dev/null | grep -q .
+  else
+    lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
   fi
+}
+
+ensure_docker() {
+  if is_macos; then
+    if ! colima status >/dev/null 2>&1; then
+      say "starting Colima"
+      colima start
+    fi
+  elif ! docker info >/dev/null 2>&1; then
+    fail "Docker is not running or not usable by $(id -un). See docs/server.md"
+  fi
+}
+
+replace_in_file() {
+  if is_macos; then
+    sed -i '' "$1" "$2"
+  else
+    sed -i "$1" "$2"
+  fi
+}
+
+configured_model() {
+  local configured
+  configured="$(sed -n 's/^VED_LLM_MODEL=//p' "$BACKEND/.env" 2>/dev/null | tail -n 1)"
+  configured="$(printf '%s' "$configured" | tr -d "\"' ")"
+  printf '%s' "${configured:-$DEFAULT_MODEL}"
 }
 
 ensure_env_files() {
@@ -66,7 +93,7 @@ set_env_value() {
   local file="$1" key="$2" value="$3"
   [ -f "$file" ] || touch "$file"
   if grep -q "^$key=" "$file"; then
-    sed -i '' "s|^$key=.*|$key=$value|" "$file"
+    replace_in_file "s|^$key=.*|$key=$value|" "$file"
   else
     [ -z "$(tail -c 1 "$file")" ] || printf '\n' >>"$file"
     printf '%s=%s\n' "$key" "$value" >>"$file"
@@ -104,6 +131,7 @@ ensure_search_secret() {
 
 copy_vm_certificates_for_search() {
   local name
+  is_macos || return 0
   for name in $(colima ssh -- ls "$VM_CA_DIR" 2>/dev/null | grep '\.crt$' || true); do
     colima ssh -- cat "$VM_CA_DIR/$name" >"$SEARCH_CA_DIR/$name" 2>/dev/null || true
   done
@@ -168,7 +196,7 @@ cmd_db() {
   local services=()
   ensure_env_files
   while IFS= read -r word; do services+=("$word"); done < <(db_services)
-  ensure_colima
+  ensure_docker
   if uses_searxng; then
     ensure_search_secret
     copy_vm_certificates_for_search
@@ -211,7 +239,7 @@ cmd_migrate() {
 }
 
 cmd_studio() {
-  ensure_colima
+  ensure_docker
   say "starting the DB browser on http://localhost:5050"
   compose --profile tools up -d studio
 }
@@ -238,8 +266,10 @@ cmd_stop() {
 cmd_down() {
   say "stopping all containers"
   compose --profile tools --profile "$SEARCH_PROFILE" stop
-  say "stopping Colima"
-  colima stop
+  if is_macos; then
+    say "stopping Colima"
+    colima stop
+  fi
 }
 
 cmd_setup() {
@@ -279,13 +309,13 @@ cmd_setup() {
   (cd "$WEB" && npm install)
 
   local missing=""
-  for model in "$DEFAULT_MODEL" "$EMBEDDING_MODEL"; do
+  for model in "$(configured_model)" "$EMBEDDING_MODEL"; do
     ollama list 2>/dev/null | grep -q "^${model%%:*}" || missing="$missing $model"
   done
   if [ -n "$missing" ]; then
     printf '\nOne more step. Start ./ved model, then in another terminal:\n'
     for model in $missing; do printf '  ollama pull %s\n' "$model"; done
-    printf 'The chat model is a 22GB download; the embedding model is small.\n'
+    printf 'The embedding model is small; the chat model size depends on VED_LLM_MODEL.\n'
   fi
 
   printf '\nSetup done. Start Ved with ./ved db, then in three terminals:\n'
@@ -301,8 +331,8 @@ First time
             start Postgres and apply migrations
 
 Every time
-  db        Start Colima and Postgres, plus SearXNG when it is the search
-            provider (runs in the background)
+  db        Start Postgres (and Colima on a Mac), plus SearXNG when it is
+            the search provider (runs in the background)
   model     Start Ollama, the local model        (keep this terminal open)
   api       Start the backend on :8000           (keep this terminal open)
   web       Start the web client on :3000        (keep this terminal open)
@@ -314,7 +344,7 @@ Other
   phone     Reach Ved from your phone over Tailscale (see docs/phone-access.md)
   phone off Stop serving Ved to your phone
   stop      Stop the Docker backend, freeing :8000
-  down      Stop all containers and Colima
+  down      Stop all containers (and Colima on a Mac)
 EOF
 }
 

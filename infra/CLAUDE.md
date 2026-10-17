@@ -14,6 +14,13 @@ Day to day, use `./ved` from the repo root rather than calling compose directly.
   `apps/backend/.env`. Run one or the other — both want port 8000.
 - **Postgres 18 wants its volume at `/var/lib/postgresql`**, not `.../data`.
 
+## The home server
+
+Ubuntu, native Docker (no Colima). `./ved` detects the platform with
+`is_macos`; keep both paths working and test Linux changes in an
+`ubuntu:24.04` container. The board takes 16 GB at most, so the server sets
+`VED_LLM_MODEL` to a small model. Setup steps: `docs/server.md`.
+
 ## Machine-specific: corporate networks
 
 These only matter on a network that intercepts TLS (the work laptop). On a

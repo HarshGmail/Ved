@@ -26,7 +26,9 @@ past conversations and uploaded documents by meaning, and searches and reads
 the web. Everything runs locally; nothing needs an API key.
 
 Not yet: auth, the permission layer, voice. Phone access (`./ved phone`) is
-wired but unverified until Tailscale is installed. Per-phase detail is in
+wired but unverified until Tailscale is installed. A home server (Ubuntu, DDR3,
+16 GB max) is being set up from `docs/server.md`; `./ved` runs on Linux, but
+unattended running, auto-deploy and backups aren't built yet. Per-phase detail is in
 `docs/index.json` under `status`.
 
 ## Layout
@@ -38,7 +40,7 @@ apps/web-client/    Next.js 16 PWA; src/connector/ is its only backend client
 mcp-servers/        one MCP server per capability: reminders, people, memory, web
 packages/ved-db/    the only place database tables are defined
 infra/              Docker Compose: Postgres, SearXNG, backend, DB browser
-docs/               index.json, master-plan.md, phone-access.md, pilot.md
+docs/               index.json, server.md, master-plan.md, phone-access.md
 ```
 
 ## Rules that apply everywhere
