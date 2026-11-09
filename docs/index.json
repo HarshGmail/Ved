@@ -474,13 +474,30 @@
         "apps/web-client/src/app/markdown-reply.tsx",
         "apps/web-client/src/app/notifications.tsx",
         "apps/web-client/src/app/backend-status.tsx",
-        "apps/web-client/src/app/manifest.ts",
+        "apps/web-client/src/app/app-manifest/route.ts",
+        "apps/web-client/src/app/install-prompt.ts",
+        "apps/web-client/src/app/install-banner.tsx",
+        "apps/web-client/src/app/install-banner.module.css",
         "apps/web-client/scripts/generate-icons.py"
       ],
       "rules": [
         "Check node_modules/next/dist/docs/ before writing Next code.",
         "Markdown replies never render raw HTML.",
-        "Icons are generated from assets/ved-mark.png."
+        "Icons are generated from assets/ved-mark.png.",
+        "The install banner is app-wide. It is hidden when standalone, after appinstalled, and for 14 days after ✕.",
+        "The manifest is served from /app-manifest with crossOrigin=use-credentials, not from a metadata manifest entry."
+      ],
+      "symbols": [
+        "InstallBanner",
+        "useInstallOffer",
+        "INSTALL_CAPTURE_SCRIPT",
+        "INSTALL_READY_EVENT",
+        "INSTALL_SNOOZE_KEY",
+        "isIosDevice",
+        "isStandalone",
+        "isSnoozed",
+        "snoozeInstallBanner",
+        "GET"
       ]
     },
     "phone-access": {
