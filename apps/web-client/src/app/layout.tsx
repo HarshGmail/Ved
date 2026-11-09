@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { INSTALL_CAPTURE_SCRIPT } from "./install-prompt";
+import { InstallBanner } from "./install-banner";
 import { ServiceWorkerRegistration } from "./service-worker-registration";
 
 const geistSans = Geist({
@@ -16,7 +18,6 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Ved",
   description: "Personal AI operating layer",
-  manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     title: "Ved",
@@ -34,7 +35,12 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
+      <head>
+        <link rel="manifest" href="/app-manifest" crossOrigin="use-credentials" />
+        <script dangerouslySetInnerHTML={{ __html: INSTALL_CAPTURE_SCRIPT }} />
+      </head>
       <body>
+        <InstallBanner />
         {children}
         <ServiceWorkerRegistration />
       </body>
