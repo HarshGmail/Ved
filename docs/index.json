@@ -7,7 +7,7 @@
     "phase_4_web_fast": "done: web search and fetch, streaming, thinking state, acknowledgements, parallel tools",
     "phase_5_voice": "next",
     "not_yet": [
-      "auth",
+      "auth for family members (admin-only Access check done)",
       "permission layer",
       "voice",
       "phone access verified end to end (needs Tailscale)"
@@ -575,6 +575,37 @@
         "Corporate CA steps are macOS-only and no-ops on Linux.",
         "Backups go on a different disk from Postgres's data.",
         "Unattended running, auto-deploy and backups are not built yet."
+      ]
+    },
+    "auth": {
+      "summary": "Cloudflare Access sign-in check: the backend verifies the JWT Access sends and admits only listed admin emails. Off on the Mac.",
+      "files": [
+        "apps/backend/src/ved_backend/access.py",
+        "apps/backend/src/ved_backend/main.py",
+        "apps/backend/src/ved_backend/config.py",
+        "apps/backend/tests/test_access.py"
+      ],
+      "symbols": [
+        "require_access",
+        "check_access",
+        "cloudflare_signing_key",
+        "jwks_client",
+        "AccessResult",
+        "PUBLIC_PATHS"
+      ],
+      "settings": [
+        "VED_AUTH",
+        "VED_ACCESS_TEAM_DOMAIN",
+        "VED_ACCESS_AUD",
+        "VED_ADMIN_EMAILS"
+      ],
+      "rules": [
+        "VED_AUTH defaults to off; with cloudflare-access every route except /health needs a valid Cf-Access-Jwt-Assertion token.",
+        "Only RS256 tokens from the team's certs endpoint are accepted; audience and issuer must match, and emails match case-insensitively.",
+        "Refusals are 401 JSON {detail: reason}; the reason names what to fix in settings."
+      ],
+      "tests": [
+        "apps/backend/tests/test_access.py"
       ]
     }
   }

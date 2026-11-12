@@ -1,5 +1,6 @@
 from datetime import time
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -23,6 +24,10 @@ class Settings(BaseSettings):
 
     version: str = "0.1.0"
     cors_allow_origins: list[str] = ["http://localhost:3000"]
+    auth: Literal["off", "cloudflare-access"] = "off"
+    access_team_domain: str = "floral-limit-f927.cloudflareaccess.com"
+    access_aud: str = ""
+    admin_emails: list[str] = []
     database_url: str = LOCAL_DATABASE_URL
     database_pool_size: int = 5
     database_pool_max_overflow: int = 5
