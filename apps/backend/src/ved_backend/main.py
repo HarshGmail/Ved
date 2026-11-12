@@ -11,6 +11,7 @@ from fastapi.sse import EventSourceResponse, ServerSentEvent
 from pydantic import BaseModel
 from sqlalchemy import text
 
+from ved_backend.access import require_access
 from ved_backend.agent import Agent
 from ved_backend.config import settings
 from ved_backend.database import engine, session_factory
@@ -141,7 +142,12 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         await engine.dispose()
 
 
-app = FastAPI(title="Ved backend", version=settings.version, lifespan=lifespan)
+app = FastAPI(
+    title="Ved backend",
+    version=settings.version,
+    lifespan=lifespan,
+    dependencies=[Depends(require_access)],
+)
 
 app.add_middleware(
     CORSMiddleware,

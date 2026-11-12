@@ -316,3 +316,19 @@ Phases 1, 2 and 4 are done: streaming chat with history, reminders delivered by
 push, people and birthday check-ins, semantic search over conversations and
 uploaded documents, and web search through the `web` MCP server. Rules for
 working here are in `CLAUDE.md` next to this file.
+
+## Access (Cloudflare Access)
+
+`VED_AUTH` defaults to `off`, which leaves the API open for local use. On the
+home server set `VED_AUTH=cloudflare-access` and every route except `/health`
+requires the `Cf-Access-Jwt-Assertion` token that Cloudflare Access sends. The
+backend verifies its RS256 signature, audience and issuer, then admits only the
+emails in `VED_ADMIN_EMAILS` (case-insensitive). Anything else gets `401` with
+a `detail` naming the cause.
+
+| Setting | Purpose |
+| --- | --- |
+| `VED_AUTH` | `off` or `cloudflare-access` |
+| `VED_ACCESS_TEAM_DOMAIN` | Team domain whose certs and issuer are used |
+| `VED_ACCESS_AUD` | The Access application's AUD tag (required when auth is on) |
+| `VED_ADMIN_EMAILS` | JSON list of admin emails, e.g. `["you@example.com"]` |

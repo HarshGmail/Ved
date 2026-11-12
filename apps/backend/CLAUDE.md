@@ -43,6 +43,9 @@ FastAPI, Python 3.13, managed by **uv** — `uv run` handles the venv; never
 - Push sends carry a socket timeout, an asyncio deadline and a 24h TTL.
   Subscriptions answering 404/410 are deleted, not retried. VAPID keys live only
   in gitignored `.env`; `generate_vapid_keys.py` refuses to overwrite them.
+- **Access is one app-level dependency** (`require_access`), so new routes are
+  guarded by default. `/health` is the only exempt path, and `VED_AUTH=off` is
+  the only way to skip the check.
 - MCP servers start once in the lifespan and stay open; one that fails to start
   is logged and skipped. The package is `tools/`, not `mcp/` (that would shadow
   the SDK).
