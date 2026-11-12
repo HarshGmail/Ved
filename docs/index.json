@@ -26,7 +26,7 @@
         "Agent",
         "Agent._events",
         "Agent._invoke_concurrently",
-        "SYSTEM_PROMPT_TEMPLATE",
+        "SYSTEM_PROMPT",
         "TOOL_LIMIT_MESSAGE"
       ],
       "settings": [
@@ -36,7 +36,7 @@
       "rules": [
         "Both endpoints go through Agent._events; never fork the loop.",
         "Tool failures return to the model as is_error, never raised.",
-        "The system prompt carries the current time and timezone, rebuilt per turn.",
+        "The system prompt is a constant; the current time and timezone ride on the latest user message, never in history.",
         "Tool calls in one round run concurrently; outcomes go back in call order."
       ],
       "tests": [
@@ -94,11 +94,14 @@
     "llm-provider": {
       "summary": "The model sits behind LLMProvider; Ollama today via the OpenAI /v1 shape.",
       "files": [
+        "apps/backend/scripts/model_eval.py",
+        "apps/backend/scripts/model_eval_cases.json",
+        "apps/backend/src/ved_backend/llm/README.md",
+        "apps/backend/src/ved_backend/llm/__init__.py",
         "apps/backend/src/ved_backend/llm/base.py",
         "apps/backend/src/ved_backend/llm/openai_compatible.py",
         "apps/backend/src/ved_backend/llm/stub.py",
-        "apps/backend/src/ved_backend/llm/__init__.py",
-        "apps/backend/src/ved_backend/llm/README.md"
+        "apps/backend/tests/test_model_eval.py"
       ],
       "symbols": [
         "LLMProvider",
@@ -524,24 +527,28 @@
     "infra": {
       "summary": "Docker Compose, the ved script, CI.",
       "files": [
-        "infra/compose.yaml",
+        ".github/workflows/ci.yml",
+        "apps/backend/Dockerfile",
         "infra/CLAUDE.md",
         "infra/README.md",
-        "ved",
-        "apps/backend/Dockerfile",
-        ".github/workflows/ci.yml"
+        "infra/compose.yaml",
+        "ved"
       ],
       "settings": [
         "POSTGRES_PASSWORD",
         "BACKEND_PORT",
-        "SEARXNG_SECRET"
+        "SEARXNG_SECRET",
+        "OLLAMA_KEEP_ALIVE",
+        "OLLAMA_NUM_PARALLEL",
+        "OLLAMA_KV_CACHE_TYPE"
       ],
       "rules": [
         "Every port binds to 127.0.0.1.",
         "SearXNG is behind the 'search' compose profile.",
         "./ved api reads apps/backend/.env; the container reads infra/.env; never run both.",
         "Postgres 18 volume is /var/lib/postgresql.",
-        "Corporate-network CA steps are no-ops on a personal machine."
+        "Corporate-network CA steps are no-ops on a personal machine.",
+        "The ollama service is behind the server compose profile, publishes no port and is capped at 4.5 GB."
       ]
     },
     "server": {

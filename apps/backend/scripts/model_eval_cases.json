@@ -1,0 +1,149 @@
+{
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "create_reminder",
+        "description": "Create a reminder for the user. Dates are YYYY-MM-DD; times are 24-hour HH:MM.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "kind": {"type": "string", "enum": ["reminder", "birthday", "check_in"]},
+            "title": {"type": "string"},
+            "date": {"type": "string", "description": "YYYY-MM-DD"},
+            "times": {"type": "array", "items": {"type": "string"}, "description": "HH:MM values"},
+            "repeat": {"type": "string", "enum": ["none", "daily", "weekly", "monthly", "yearly"]},
+            "endDate": {"type": "string", "description": "YYYY-MM-DD"},
+            "noticeDays": {"type": "integer"},
+            "forIds": {"type": "array", "items": {"type": "string"}},
+            "notes": {"type": "string"}
+          },
+          "required": ["kind", "title", "date"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "add_checklist_items",
+        "description": "Add items to one of the user's checklists, such as a shopping list.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "task": {"type": "string", "description": "Name of the checklist"},
+            "items": {"type": "array", "items": {"type": "string"}}
+          },
+          "required": ["task", "items"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "create_task",
+        "description": "Create a task in a project.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "projectId": {"type": "string"},
+            "title": {"type": "string"},
+            "dueDate": {"type": "string", "description": "YYYY-MM-DD"},
+            "dueTime": {"type": "string", "description": "HH:MM"},
+            "assigneeIds": {"type": "array", "items": {"type": "string"}}
+          },
+          "required": ["title"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "list_my_tasks",
+        "description": "List the user's open tasks.",
+        "parameters": {"type": "object", "properties": {}}
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "memory.search",
+        "description": "Search the user's past conversations by meaning.",
+        "parameters": {
+          "type": "object",
+          "properties": {"query": {"type": "string"}},
+          "required": ["query"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "web.search",
+        "description": "Search the web for current information.",
+        "parameters": {
+          "type": "object",
+          "properties": {"query": {"type": "string"}},
+          "required": ["query"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "tv.play_media",
+        "description": "Play a song, show or video on the living room TV.",
+        "parameters": {
+          "type": "object",
+          "properties": {"query": {"type": "string"}},
+          "required": ["query"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "tv.power",
+        "description": "Turn the living room TV on or off, or report whether it is on.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "action": {"type": "string", "enum": ["on", "off", "status"]}
+          },
+          "required": ["action"]
+        }
+      }
+    }
+  ],
+  "cases": [
+    {"prompt": "Remind me on 14 March to wish my sister a happy birthday", "expect_tool": "create_reminder", "expect_args": {"date": null, "title": null}},
+    {"prompt": "Set a reminder for my tablets at 8 pm and 9 pm every day for a week", "expect_tool": "create_reminder", "expect_args": {"times": null, "repeat": "daily"}},
+    {"prompt": "Remind me tomorrow at 6:30 pm to call the plumber", "expect_tool": "create_reminder", "expect_args": {"date": null, "times": null}},
+    {"prompt": "Remind me in 20 minutes to take the rice off the stove", "expect_tool": "create_reminder", "expect_args": {"title": null}},
+    {"prompt": "Remind me every Monday at 7 am to put the bins out", "expect_tool": "create_reminder", "expect_args": {"repeat": "weekly", "times": null}},
+    {"prompt": "Remind me to renew my passport on 1 December", "expect_tool": "create_reminder", "expect_args": {"date": null}},
+    {"prompt": "kal subah 9 baje Amma ko call karna yaad dilana", "expect_tool": "create_reminder", "expect_args": {"title": null, "date": null}},
+    {"prompt": "Mujhe shaam 8 baje medicine lene ka reminder set karo", "expect_tool": "create_reminder", "expect_args": {"times": null}},
+    {"prompt": "Add milk and eggs to the shopping list", "expect_tool": "add_checklist_items", "expect_args": {"items": null}},
+    {"prompt": "Put bread, butter and jam on my groceries list", "expect_tool": "add_checklist_items", "expect_args": {"items": null}},
+    {"prompt": "Shopping list mein atta aur chini add karo", "expect_tool": "add_checklist_items", "expect_args": {"items": null}},
+    {"prompt": "What's on my plate today?", "expect_tool": "list_my_tasks", "expect_args": {}},
+    {"prompt": "Mere aaj ke tasks kya hain?", "expect_tool": "list_my_tasks", "expect_args": {}},
+    {"prompt": "Create a task to send the invoice to Ravi by Friday", "expect_tool": "create_task", "expect_args": {"title": null, "dueDate": null}},
+    {"prompt": "Play Coldplay on the TV", "expect_tool": "tv.play_media", "expect_args": {"query": null}},
+    {"prompt": "Coldplay ka koi gana TV pe chalao", "expect_tool": "tv.play_media", "expect_args": {"query": null}},
+    {"prompt": "Turn off the TV", "expect_tool": "tv.power", "expect_args": {"action": "off"}},
+    {"prompt": "TV band kar do", "expect_tool": "tv.power", "expect_args": {"action": "off"}},
+    {"prompt": "Switch the telly on", "expect_tool": "tv.power", "expect_args": {"action": "on"}},
+    {"prompt": "Is the TV on right now?", "expect_tool": "tv.power", "expect_args": {"action": "status"}},
+    {"prompt": "What did we decide about the holiday in Goa?", "expect_tool": "memory.search", "expect_args": {"query": null}},
+    {"prompt": "Remind me what I told you about my dentist appointment last week", "expect_tool": "memory.search", "expect_args": {"query": null}},
+    {"prompt": "Pichle hafte humne Goa trip ke baare mein kya baat ki thi?", "expect_tool": "memory.search", "expect_args": {"query": null}},
+    {"prompt": "What's the latest forecast for the Indian monsoon?", "expect_tool": "web.search", "expect_args": {"query": null}},
+    {"prompt": "Search the web for the best rated air purifiers under 15000 rupees", "expect_tool": "web.search", "expect_args": {"query": null}},
+    {"prompt": "Hi, how are you?", "expect_tool": null, "expect_args": {}},
+    {"prompt": "Explain the difference between a Roth IRA and a traditional IRA in two sentences", "expect_tool": null, "expect_args": {}},
+    {"prompt": "Write a haiku about rain", "expect_tool": null, "expect_args": {}},
+    {"prompt": "What is 17 times 23?", "expect_tool": null, "expect_args": {}},
+    {"prompt": "Namaste, aap kaise ho?", "expect_tool": null, "expect_args": {}}
+  ]
+}
