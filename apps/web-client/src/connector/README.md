@@ -42,7 +42,8 @@ const status = await connector.health();
 ## Configuration
 
 Base URL comes from `NEXT_PUBLIC_VED_API_URL`, defaulting to
-`http://localhost:8000`. See `.env.example`.
+`http://localhost:8000`. It may be a path such as `/api`, resolved against the
+page origin. See `.env.example`.
 
 ## Current state
 

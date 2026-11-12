@@ -18,11 +18,15 @@ export function buildUrl(
   path: string,
   query: RequestOptions["query"],
 ): string {
-  const url = new URL(path.replace(/^\//, ""), ensureTrailingSlash(baseUrl));
+  const url = new URL(path.replace(/^\//, ""), ensureTrailingSlash(absoluteBase(baseUrl)));
   for (const [key, value] of Object.entries(query ?? {})) {
     if (value !== undefined) url.searchParams.set(key, String(value));
   }
   return url.toString();
+}
+
+function absoluteBase(baseUrl: string): string {
+  return new URL(baseUrl, globalThis.location?.href).href;
 }
 
 function ensureTrailingSlash(value: string): string {

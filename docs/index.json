@@ -12,7 +12,7 @@
       "voice",
       "phone access verified end to end (needs Tailscale)"
     ],
-    "home_server": "Ubuntu desktop being set up; ved script supports Linux; deploy and backup automation not built yet"
+    "home_server": "noddy: containerised setup via ./ved server written, not yet run there; Cloudflare tunnel hostname and streaming through it unconfirmed; auth, unattended running and backups not built yet"
   },
   "topics": {
     "agent-loop": {
@@ -481,14 +481,21 @@
         "apps/web-client/src/app/install-prompt.ts",
         "apps/web-client/src/app/install-banner.tsx",
         "apps/web-client/src/app/install-banner.module.css",
-        "apps/web-client/scripts/generate-icons.py"
+        "apps/web-client/scripts/generate-icons.py",
+        "apps/web-client/Dockerfile",
+        "apps/web-client/.dockerignore",
+        "apps/web-client/next.config.ts",
+        "apps/web-client/src/connector/http.ts"
       ],
       "rules": [
         "Check node_modules/next/dist/docs/ before writing Next code.",
         "Markdown replies never render raw HTML.",
         "Icons are generated from assets/ved-mark.png.",
         "The install banner is app-wide. It is hidden when standalone, after appinstalled, and for 14 days after ✕.",
-        "The manifest is served from /app-manifest with crossOrigin=use-credentials, not from a metadata manifest entry."
+        "The manifest is served from /app-manifest with crossOrigin=use-credentials, not from a metadata manifest entry.",
+        "The browser calls /api; next.config.ts rewrites /api/* to the backend, so the container serves one origin. Rewrite destinations are fixed at build time.",
+        "compress is off so the rewrite does not gzip the SSE reply stream. Streaming through the tunnel is not confirmed yet; check it on the server.",
+        "The connector accepts a relative base URL such as /api and resolves it against the page origin."
       ],
       "symbols": [
         "InstallBanner",
@@ -501,6 +508,11 @@
         "isSnoozed",
         "snoozeInstallBanner",
         "GET"
+      ],
+      "settings": [
+        "NEXT_PUBLIC_VED_API_URL",
+        "NEXT_PUBLIC_VAPID_PUBLIC_KEY",
+        "VED_BACKEND_INTERNAL_URL"
       ]
     },
     "phone-access": {
@@ -532,7 +544,10 @@
         "infra/CLAUDE.md",
         "infra/README.md",
         "infra/compose.yaml",
-        "ved"
+        "ved",
+        "infra/compose.server.yaml",
+        "apps/web-client/Dockerfile",
+        "apps/web-client/.dockerignore"
       ],
       "settings": [
         "POSTGRES_PASSWORD",
@@ -540,7 +555,14 @@
         "SEARXNG_SECRET",
         "OLLAMA_KEEP_ALIVE",
         "OLLAMA_NUM_PARALLEL",
-        "OLLAMA_KV_CACHE_TYPE"
+        "OLLAMA_KV_CACHE_TYPE",
+        "WEB_PORT",
+        "VED_LLM_BASE_URL",
+        "VED_VAPID_PRIVATE_KEY",
+        "VED_AUTH",
+        "VED_ACCESS_TEAM_DOMAIN",
+        "VED_ACCESS_AUD",
+        "VED_ADMIN_EMAILS"
       ],
       "rules": [
         "Every port binds to 127.0.0.1.",
@@ -548,7 +570,9 @@
         "./ved api reads apps/backend/.env; the container reads infra/.env; never run both.",
         "Postgres 18 volume is /var/lib/postgresql.",
         "Corporate-network CA steps are no-ops on a personal machine.",
-        "The ollama service is behind the server compose profile, publishes no port and is capped at 4.5 GB."
+        "The ollama service is behind the server compose profile, publishes no port and is capped at 4.5 GB.",
+        "compose.server.yaml is the only file that attaches services to the external 'home' network; ./ved server passes it, nothing else does.",
+        "The web and backend containers use container_name ved-web and ved-backend; the tunnel reaches ved-web:3000 on home."
       ]
     },
     "server": {
@@ -556,25 +580,41 @@
       "files": [
         "docs/server.md",
         "ved",
-        "infra/compose.yaml"
+        "infra/compose.yaml",
+        "infra/compose.server.yaml",
+        "infra/README.md",
+        "apps/web-client/Dockerfile"
       ],
       "symbols": [
         "is_macos",
         "ensure_docker",
         "port_in_use",
         "replace_in_file",
-        "configured_model"
+        "configured_model",
+        "cmd_server",
+        "cmd_server_eval",
+        "server_compose",
+        "ensure_server_env",
+        "ensure_push_keys",
+        "infra_env_value",
+        "wait_for_url"
       ],
       "settings": [
         "VED_LLM_MODEL",
-        "VED_LLM_BASE_URL"
+        "VED_LLM_BASE_URL",
+        "SERVER_MODEL",
+        "VED_EMBEDDING_MODEL",
+        "VED_ADMIN_EMAILS"
       ],
       "rules": [
         "The ved script runs on macOS (Colima) and Linux (native Docker); detect with is_macos, never assume.",
         "On the server set VED_LLM_MODEL to a model that fits 16 GB (granite4.1:3b); qwen3.6:35b needs ~23 GB.",
         "Corporate CA steps are macOS-only and no-ops on Linux.",
         "Backups go on a different disk from Postgres's data.",
-        "Unattended running, auto-deploy and backups are not built yet."
+        "Unattended running, auto-deploy and backups are not built yet.",
+        "The server is noddy: i7-10510U, 7.5 GB RAM, no GPU. ./ved server is the containerised path; the bare-metal steps are older notes.",
+        "./ved server refuses to run on macOS. Its default chat model is qwen3:4b-instruct-2507-q4_K_M because qwen3.6:35b does not fit.",
+        "Migrations run in the backend container with docker compose run --rm --no-deps backend alembic upgrade head."
       ]
     },
     "auth": {

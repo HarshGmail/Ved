@@ -13,6 +13,8 @@ Day to day, use `./ved` from the repo root rather than calling compose directly.
 - **The backend container reads `infra/.env`**; `./ved api` reads
   `apps/backend/.env`. Run one or the other — both want port 8000.
 - **Postgres 18 wants its volume at `/var/lib/postgresql`**, not `.../data`.
+- **`home` is attached only by `compose.server.yaml`**, used only by `./ved server`
+  on the Linux server. The Mac never names it, so `./ved db` and `./ved api` are unchanged.
 
 ## The home server
 

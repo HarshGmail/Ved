@@ -132,3 +132,27 @@ empty until the first real model lands.
 The `ollama` service sits behind the `server` profile, so the Mac never starts it:
 `docker compose --profile server up -d ollama`. It publishes no port and caps
 memory at 4.5 GB; models are pulled into the `ollama-models` volume.
+
+## On the home server
+
+The home server is `noddy` (i7-10510U, 7.5 GB RAM, no GPU). It runs the whole
+stack in containers, with the web client and backend on the `home` network that
+the family Cloudflare tunnel uses:
+
+```bash
+./ved server                              # build, start, pull models, migrate
+./ved server-eval granite4.1:3b           # score a model on Ved's tool calls
+cd infra && docker compose -f compose.yaml -f compose.server.yaml --profile server ps
+```
+
+`./ved server` creates `infra/.env` secrets it is missing (Postgres password,
+SearXNG secret, push keys), points the backend at the containerised Ollama, and
+waits until `127.0.0.1:8000/health` and `127.0.0.1:3000` answer.
+
+`compose.server.yaml` is the only file that attaches services to `home`. The web
+client serves the PWA and proxies `/api/*` to the backend, so the browser talks
+to one origin. Cloudflare hostname `ved` routes to `http://ved-web:3000` on the
+family tunnel. Keep Access in front of it and admin-only (`VED_ADMIN_EMAILS`).
+
+Ports stay bound to `127.0.0.1`; the tunnel reaches `ved-web` over the `home`
+network, not the host.

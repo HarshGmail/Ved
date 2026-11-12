@@ -43,6 +43,7 @@ services:
     build:
       context: ..
       dockerfile: apps/backend/Dockerfile
+    container_name: ved-backend
     restart: unless-stopped
     environment:
       VED_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-ved}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ved}
@@ -67,6 +68,10 @@ services:
       VED_BIRTHDAY_REMINDER_TIME: ${VED_BIRTHDAY_REMINDER_TIME:-09:00}
       VED_DOCUMENTS_DIR: /app/data/documents
       VED_DOCUMENTS_MAX_UPLOAD_BYTES: ${VED_DOCUMENTS_MAX_UPLOAD_BYTES:-26214400}
+      VED_AUTH: ${VED_AUTH:-off}
+      VED_ACCESS_TEAM_DOMAIN: ${VED_ACCESS_TEAM_DOMAIN:-floral-limit-f927.cloudflareaccess.com}
+      VED_ACCESS_AUD: ${VED_ACCESS_AUD:-}
+      VED_ADMIN_EMAILS: ${VED_ADMIN_EMAILS:-}
     volumes:
       - documents:/app/data/documents
     extra_hosts:
@@ -82,6 +87,29 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+
+  web:
+    build:
+      context: ../apps/web-client
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${VED_VAPID_PUBLIC_KEY:-}
+    container_name: ved-web
+    profiles: ["server"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256m
 
   studio:
     image: sosedoff/pgweb:latest
