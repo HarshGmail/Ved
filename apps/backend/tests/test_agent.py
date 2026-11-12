@@ -1,13 +1,13 @@
 import time
-from datetime import datetime
-from zoneinfo import ZoneInfo
+from datetime import UTC, datetime
 
 import anyio
 import anyio.lowlevel
 import pytest
 
+from ved_backend import agent as agent_module
 from ved_backend.acknowledgements import DEFAULT_ACKNOWLEDGEMENT, acknowledgement_for
-from ved_backend.agent import TOOL_LIMIT_MESSAGE, Agent
+from ved_backend.agent import SYSTEM_PROMPT, TOOL_LIMIT_MESSAGE, Agent
 from ved_backend.llm.base import (
     AssistantMessage,
     LLMRequestError,
@@ -16,6 +16,7 @@ from ved_backend.llm.base import (
     TextDelta,
     ToolCall,
     ToolSpec,
+    UserMessage,
 )
 from ved_backend.llm.stub import StubProvider
 from ved_backend.schemas import (
@@ -163,18 +164,61 @@ async def test_a_looping_model_is_cut_off(toolbox):
     assert len(toolbox.calls) == 4
 
 
-async def test_system_prompt_tells_the_model_the_current_time(toolbox):
+class FixedClock:
+    def __init__(self, moment: datetime) -> None:
+        self._moment = moment
+
+    def now(self, zone):
+        return self._moment.astimezone(zone)
+
+
+async def test_system_prompt_is_identical_across_turns_at_different_times(
+    toolbox, monkeypatch
+):
+    provider = ScriptedProvider(
+        [AssistantMessage(text="first"), AssistantMessage(text="second")]
+    )
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    monkeypatch.setattr(
+        agent_module, "datetime", FixedClock(datetime(2026, 1, 1, 8, 0, tzinfo=UTC))
+    )
+    await agent.run("hello")
+    monkeypatch.setattr(
+        agent_module, "datetime", FixedClock(datetime(2026, 6, 1, 20, 30, tzinfo=UTC))
+    )
+    await agent.run("hello again")
+
+    assert provider.systems == [SYSTEM_PROMPT, SYSTEM_PROMPT]
+
+
+async def test_latest_user_message_starts_with_the_current_time(toolbox, monkeypatch):
+    monkeypatch.setattr(
+        agent_module, "datetime", FixedClock(datetime(2026, 1, 1, 8, 0, tzinfo=UTC))
+    )
     provider = ScriptedProvider([AssistantMessage(text="hi")])
     agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
-    await agent.run("hello")
+    await agent.run("remind me at 8 PM")
 
-    prompt = provider.systems[0]
-    now = datetime.now(ZoneInfo("Asia/Kolkata"))
-    assert str(now.year) in prompt
-    assert now.strftime("%B") in prompt
-    assert "Asia/Kolkata" in prompt
-    assert "+0530" in prompt
+    last_message = provider.seen[0][-1]
+    assert last_message.text == (
+        "Current time: Thursday 01 January 2026, 13:30 +0530, timezone Asia/Kolkata."
+        "\n\nremind me at 8 PM"
+    )
+
+
+async def test_history_and_the_saved_turn_never_carry_the_time_line(toolbox):
+    history = [UserMessage(text="earlier question"), AssistantMessage(text="earlier")]
+    provider = ScriptedProvider([AssistantMessage(text="reply")])
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    reply = await agent.run("now", history)
+
+    assert provider.seen[0][:2] == history
+    assert "Current time:" not in reply.text
+    assert len(history) == 2
+    assert all("Current time:" not in message.text for message in history)
 
 
 async def collect(agent, prompt):
@@ -253,7 +297,7 @@ async def test_stream_raises_when_the_model_fails_mid_reply(toolbox):
     assert received == [TokenEvent(text="Partial ")]
 
 
-async def test_stream_sends_the_current_time_every_round(toolbox):
+async def test_stream_sends_the_same_system_prompt_every_round(toolbox):
     provider = ScriptedProvider(
         [create_call(text="call Mom"), AssistantMessage(text="done")]
     )
@@ -261,8 +305,7 @@ async def test_stream_sends_the_current_time_every_round(toolbox):
 
     await collect(agent, "remind me")
 
-    assert len(provider.systems) == 2
-    assert all("Asia/Kolkata" in system for system in provider.systems)
+    assert provider.systems == [SYSTEM_PROMPT, SYSTEM_PROMPT]
 
 
 class SlowToolbox(FakeToolbox):

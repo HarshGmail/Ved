@@ -126,3 +126,9 @@ shipping, and resource limits. This file is for local development on the Mac.
 The backend reads `VED_DATABASE_URL` and `/health` reports live database
 connectivity, but no application tables exist yet — `migrations/versions/` is
 empty until the first real model lands.
+
+## Ollama on the server
+
+The `ollama` service sits behind the `server` profile, so the Mac never starts it:
+`docker compose --profile server up -d ollama`. It publishes no port and caps
+memory at 4.5 GB; models are pulled into the `ollama-models` volume.

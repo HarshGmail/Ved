@@ -203,6 +203,21 @@ If the endpoint is down, `/agent/message` returns `503` naming the cause rather
 than a generic `500`. A local model that is not running is an expected state,
 not a crash.
 
+### Evaluating a model
+
+`scripts/model_eval.py` runs `scripts/model_eval_cases.json` (30 prompts with the
+expected tool and arguments) against one or more models and reports tool and
+argument accuracy, latency and time to first token. The image ships both files:
+
+```bash
+docker compose -f infra/compose.yaml exec backend python scripts/model_eval.py \
+  --base-url http://host.docker.internal:11434/v1 \
+  --model qwen3.6:35b --out /tmp/model_eval.json
+```
+
+On the server, use `--base-url http://ollama:11434/v1` with the `server` profile
+running. Copy the results out with `docker compose cp backend:/tmp/model_eval.json .`.
+
 ## Birthdays
 
 The people MCP server stores birthdays; it never creates reminders. On each tick,
