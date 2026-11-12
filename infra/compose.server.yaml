@@ -1,0 +1,15 @@
+networks:
+  home:
+    name: home
+    external: true
+
+services:
+  backend:
+    networks:
+      - default
+      - home
+
+  web:
+    networks:
+      - default
+      - home

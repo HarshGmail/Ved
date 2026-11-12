@@ -1,8 +1,11 @@
 # Running Ved on a home server
 
 From a fresh Ubuntu install to Ved running on the desktop, reachable from your
-laptop and phone, and backed up. Written for the current home server: an Intel
-i5, DDR3 RAM, three hard disks, no graphics card.
+laptop and phone, and backed up. The home server is `noddy`: an i7-10510U, 7.5 GB RAM, no graphics card. For the
+containerised setup, run `./ved server` on it; that is the path to use now. The
+steps below are the original bare-metal notes and still apply to the disks and
+the base system. Written for the earlier desktop with an Intel i5, DDR3 RAM,
+three hard disks.
 
 The corporate-network steps elsewhere in this repo (installing a company CA,
 Colima) do not apply here. This machine runs Docker natively.
