@@ -16,6 +16,10 @@ backend. Look topics up in `../docs/index.json` before searching.
 - **MCP SDK is v2**: `MCPServer`, not `FastMCP`. `Context` must be imported
   bare from `mcp.server.mcpserver.context`, or it leaks into the tool schema.
   Lifespan state is at `ctx.request_context.lifespan_context`.
+- **Per-user tools take `user_id: str` first and filter every query and insert
+  by it.** `people`, `memory` and `reminders` do; the backend's `MCPToolbox`
+  injects it on every stdio call whose schema declares `user_id` and hides it
+  from the model, so never mention it in a docstring. `web` has none.
 - **Return Pydantic models, not `dict`**, or the tool has no output schema.
 - **Raise `ToolError` for bad input.** Other exceptions reach the model as a
   generic message it cannot act on.

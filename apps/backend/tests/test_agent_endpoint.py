@@ -4,6 +4,7 @@ import uuid
 
 import pytest
 from fastapi.testclient import TestClient
+from ved_db import User
 
 from ved_backend.llm.base import LLMRequestError, ToolSpec
 from ved_backend.main import agent_message_stream, app, conversation_status
@@ -20,9 +21,11 @@ from ved_backend.schemas import (
     ToolStartedEvent,
 )
 from ved_backend.turns import TurnRegistry
+from ved_backend.users import current_user
 
 CREATE = ToolSpec(name="reminders.create", description="", input_schema={})
 CONVERSATION_ID = uuid.uuid4()
+USER = User(id=uuid.uuid4(), email="first@example.com", name=None)
 
 client = TestClient(app)
 
@@ -32,14 +35,17 @@ class FakeAgent:
         self._turn = turn
         self.prompts: list[str] = []
         self.histories: list[list] = []
+        self.user_ids: list[uuid.UUID] = []
 
-    async def run(self, prompt: str, history=()):
+    async def run(self, prompt: str, history=(), *, user_id):
         self.prompts.append(prompt)
+        self.user_ids.append(user_id)
         self.histories.append(list(history))
         return self._turn
 
-    async def stream(self, prompt: str, history=()):
+    async def stream(self, prompt: str, history=(), *, user_id):
         self.prompts.append(prompt)
+        self.user_ids.append(user_id)
         self.histories.append(list(history))
         for call in self._turn.tool_calls:
             yield ToolStartedEvent(name=call.name, arguments=call.arguments)
@@ -61,25 +67,30 @@ class FakeStore:
         self.started: list[str] = []
         self.recorded: list[dict] = []
 
-    async def start(self, prompt: str) -> uuid.UUID:
+    async def start(self, user_id: uuid.UUID, prompt: str) -> uuid.UUID:
         self.started.append(prompt)
         self._known.add(CONVERSATION_ID)
         return CONVERSATION_ID
 
-    async def history(self, conversation_id: uuid.UUID):
-        if conversation_id not in self._known:
+    async def require_owned(self, user_id: uuid.UUID, conversation_id: uuid.UUID):
+        if user_id != USER.id or conversation_id not in self._known:
             raise ConversationNotFoundError(conversation_id)
+
+    async def history(self, user_id: uuid.UUID, conversation_id: uuid.UUID):
+        await self.require_owned(user_id, conversation_id)
         return list(self._history)
 
-    async def record_turn(self, conversation_id, **kwargs):
-        if conversation_id not in self._known:
-            raise ConversationNotFoundError(conversation_id)
-        self.recorded.append({"conversation_id": conversation_id, **kwargs})
+    async def record_turn(self, user_id, conversation_id, **kwargs):
+        await self.require_owned(user_id, conversation_id)
+        self.recorded.append(
+            {"user_id": user_id, "conversation_id": conversation_id, **kwargs}
+        )
 
 
 @pytest.fixture
 def wired():
     def _wire(turn=None, tools=(CREATE,), store=None):
+        app.dependency_overrides[current_user] = lambda: USER
         agent = FakeAgent(turn or AgentTurn(text="ok", model="stub-rules-v1"))
         app.state.agent = agent
         app.state.toolbox = FakeToolbox(tools)
@@ -89,6 +100,7 @@ def wired():
         return agent, app.state.conversations
 
     yield _wire
+    app.dependency_overrides.pop(current_user, None)
     app.state.agent = None
     app.state.toolbox = None
     app.state.conversations = None
@@ -103,7 +115,7 @@ def post(prompt: str, conversation_id: uuid.UUID | None = None):
 
 
 def test_message_returns_the_agent_reply(wired):
-    wired(
+    agent, _ = wired(
         AgentTurn(
             text="Reminder set for 8 PM.",
             model="stub-rules-v1",
@@ -121,6 +133,7 @@ def test_message_returns_the_agent_reply(wired):
 
     assert response.status_code == 200
     body = response.json()
+    assert agent.user_ids == [USER.id]
     assert body["text"] == "Reminder set for 8 PM."
     assert body["model"] == "stub-rules-v1"
     assert body["tool_calls"][0]["name"] == "reminders.create"
@@ -192,6 +205,7 @@ def test_every_turn_is_recorded(wired):
 
     post("remind me at 8 PM")
 
+    assert store.recorded[0]["user_id"] == USER.id
     assert store.recorded[0]["prompt"] == "remind me at 8 PM"
     assert store.recorded[0]["answer"] == "Reminder set."
     assert store.recorded[0]["model"] == "stub-rules-v1"
@@ -215,7 +229,7 @@ def test_a_malformed_conversation_id_is_rejected(wired):
 
 def test_a_failed_turn_leaves_no_empty_conversation(wired):
     class FailingAgent:
-        async def run(self, prompt, history=()):
+        async def run(self, prompt, history=(), *, user_id):
             raise LLMRequestError("model is down")
 
     _, store = wired()
@@ -333,7 +347,7 @@ def test_stream_without_tools_is_service_unavailable(wired):
 
 
 class FailingMidStreamAgent:
-    async def stream(self, prompt, history=()):
+    async def stream(self, prompt, history=(), *, user_id):
         yield TokenEvent(text="Partial ")
         raise LLMRequestError("model is down")
 
@@ -356,12 +370,12 @@ async def drain(stream) -> list:
 
 async def wait_until_idle(turns: TurnRegistry, conversation_id: uuid.UUID) -> None:
     async with asyncio.timeout(2):
-        while turns.is_answering(conversation_id):
+        while turns.is_answering(USER.id, conversation_id):
             await asyncio.sleep(0.01)
 
 
 async def answering(conversation_id: uuid.UUID) -> bool:
-    return (await conversation_status(conversation_id)).answering
+    return (await conversation_status(conversation_id, USER)).answering
 
 
 class GatedAgent:
@@ -371,7 +385,7 @@ class GatedAgent:
         self.running = 0
         self.max_running = 0
 
-    async def stream(self, prompt, history=()):
+    async def stream(self, prompt, history=(), *, user_id):
         self.prompts.append(prompt)
         self.running += 1
         self.max_running = max(self.max_running, self.running)
@@ -387,6 +401,7 @@ async def test_a_reply_is_saved_when_the_client_stops_reading(wired):
     _, store = wired(REMINDER_TURN, store=FakeStore(known=[CONVERSATION_ID]))
     stream = agent_message_stream(
         AgentRequest(prompt="remind me at 8 PM", conversation_id=CONVERSATION_ID),
+        USER,
         None,
     )
 
@@ -404,7 +419,7 @@ async def test_status_is_answering_until_the_reply_is_saved(wired):
     agent = GatedAgent()
     app.state.agent = agent
     stream = agent_message_stream(
-        AgentRequest(prompt="remind me", conversation_id=CONVERSATION_ID), None
+        AgentRequest(prompt="remind me", conversation_id=CONVERSATION_ID), USER, None
     )
 
     await anext(stream)
@@ -416,12 +431,20 @@ async def test_status_is_answering_until_the_reply_is_saved(wired):
 
 
 def test_status_endpoint_reports_an_idle_conversation(wired):
+    wired(store=FakeStore(known=[CONVERSATION_ID]))
+
+    response = client.get(f"/conversations/{CONVERSATION_ID}/status")
+
+    assert response.status_code == 200
+    assert response.json() == {"answering": False}
+
+
+def test_status_of_a_conversation_the_user_does_not_own_is_a_404(wired):
     wired()
 
     response = client.get(f"/conversations/{uuid.uuid4()}/status")
 
-    assert response.status_code == 200
-    assert response.json() == {"answering": False}
+    assert response.status_code == 404
 
 
 async def test_turns_in_one_conversation_run_one_after_another(wired):
@@ -429,10 +452,10 @@ async def test_turns_in_one_conversation_run_one_after_another(wired):
     agent = GatedAgent()
     app.state.agent = agent
     first = agent_message_stream(
-        AgentRequest(prompt="first", conversation_id=CONVERSATION_ID), None
+        AgentRequest(prompt="first", conversation_id=CONVERSATION_ID), USER, None
     )
     second = agent_message_stream(
-        AgentRequest(prompt="second", conversation_id=CONVERSATION_ID), None
+        AgentRequest(prompt="second", conversation_id=CONVERSATION_ID), USER, None
     )
 
     await anext(first)
@@ -449,7 +472,7 @@ async def test_turns_in_one_conversation_run_one_after_another(wired):
 
 
 class ThinkingAgent:
-    async def stream(self, prompt, history=()):
+    async def stream(self, prompt, history=(), *, user_id):
         yield ThinkingEvent()
         yield AcknowledgementEvent(text="Setting that up…")
         yield ToolStartedEvent(name="reminders.create", arguments={})

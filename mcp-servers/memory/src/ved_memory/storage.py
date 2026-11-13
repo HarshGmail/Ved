@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 
 from pydantic import BaseModel, Field
@@ -25,13 +26,16 @@ class MemorySearchResult(BaseModel):
 
 
 async def search_messages(
-    session: AsyncSession, query_vector: list[float], *, limit: int
+    session: AsyncSession, user_id: uuid.UUID, query_vector: list[float], *, limit: int
 ) -> list[MemoryHit]:
     distance = ConversationMessage.embedding.cosine_distance(query_vector)
     rows = await session.execute(
         select(ConversationMessage, Conversation.title, distance)
         .join(Conversation, Conversation.id == ConversationMessage.conversation_id)
-        .where(ConversationMessage.embedding.is_not(None))
+        .where(
+            Conversation.user_id == user_id,
+            ConversationMessage.embedding.is_not(None),
+        )
         .order_by(distance)
         .limit(limit)
     )

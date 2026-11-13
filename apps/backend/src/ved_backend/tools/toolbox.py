@@ -1,5 +1,7 @@
+import copy
 import json
 import logging
+import uuid
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from typing import Any
@@ -17,6 +19,7 @@ logger = logging.getLogger(__name__)
 DOMAIN_SEPARATOR = "."
 DESTRUCTIVE_TOOL_PREFIX = "delete_"
 REMOTE_TIMEOUT_SECONDS = 30.0
+USER_ID_ARGUMENT = "user_id"
 
 
 class ToolNotAvailableError(LookupError):
@@ -42,6 +45,7 @@ ServerSpec = StdioServerParameters | RemoteServer
 class Route:
     server: str
     tool_name: str
+    user_scoped: bool = False
 
 
 def render_result(result: CallToolResult) -> str:
@@ -54,6 +58,23 @@ def render_result(result: CallToolResult) -> str:
 
 def is_destructive(tool_name: str) -> bool:
     return tool_name.startswith(DESTRUCTIVE_TOOL_PREFIX)
+
+
+def declares_user_id(input_schema: dict[str, Any]) -> bool:
+    return USER_ID_ARGUMENT in input_schema.get("properties", {})
+
+
+def without_user_id(input_schema: dict[str, Any]) -> dict[str, Any]:
+    visible = copy.deepcopy(input_schema)
+    visible.get("properties", {}).pop(USER_ID_ARGUMENT, None)
+    required = [
+        name for name in visible.get("required", []) if name != USER_ID_ARGUMENT
+    ]
+    if required:
+        visible["required"] = required
+    else:
+        visible.pop("required", None)
+    return visible
 
 
 class MCPToolbox:
@@ -91,12 +112,21 @@ class MCPToolbox:
                 if is_destructive(tool.name):
                     continue
                 exposed_name = self._exposed_name(name, spec, tool.name)
-                self._routes[exposed_name] = Route(server=name, tool_name=tool.name)
+                user_scoped = not isinstance(spec, RemoteServer) and declares_user_id(
+                    tool.input_schema
+                )
+                self._routes[exposed_name] = Route(
+                    server=name, tool_name=tool.name, user_scoped=user_scoped
+                )
                 self._tools.append(
                     ToolSpec(
                         name=exposed_name,
                         description=tool.description or "",
-                        input_schema=tool.input_schema,
+                        input_schema=(
+                            without_user_id(tool.input_schema)
+                            if user_scoped
+                            else tool.input_schema
+                        ),
                     )
                 )
                 exposed += 1
@@ -125,10 +155,14 @@ class MCPToolbox:
         self._routes.clear()
         self._tools.clear()
 
-    async def call(self, name: str, arguments: dict[str, Any]) -> tuple[str, bool]:
+    async def call(
+        self, name: str, arguments: dict[str, Any], *, user_id: uuid.UUID
+    ) -> tuple[str, bool]:
         route = self._routes.get(name)
         if route is None:
             raise ToolNotAvailableError(name)
 
+        if route.user_scoped:
+            arguments = {**arguments, USER_ID_ARGUMENT: str(user_id)}
         result = await self._clients[route.server].call_tool(route.tool_name, arguments)
         return render_result(result), bool(result.is_error)

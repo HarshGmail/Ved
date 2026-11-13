@@ -39,6 +39,13 @@ mcp = MCPServer(
 )
 
 
+def parse_user_id(value: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(value)
+    except ValueError as error:
+        raise ToolError(f"user_id must be a UUID, got {value!r}") from error
+
+
 def parse_reminder_id(value: str) -> uuid.UUID:
     try:
         return uuid.UUID(value)
@@ -63,7 +70,7 @@ def parse_due_at(value: str) -> datetime:
 
 
 @mcp.tool(name="reminders.create")
-async def create(text: str, due_at: str, ctx: Context) -> ReminderRecord:
+async def create(user_id: str, text: str, due_at: str, ctx: Context) -> ReminderRecord:
     """Create a reminder.
 
     Args:
@@ -76,12 +83,13 @@ async def create(text: str, due_at: str, ctx: Context) -> ReminderRecord:
     context: ServerContext = ctx.request_context.lifespan_context
     async with context.session_factory() as session:
         return await storage.create_reminder(
-            session, text.strip(), parse_due_at(due_at)
+            session, parse_user_id(user_id), text.strip(), parse_due_at(due_at)
         )
 
 
 @mcp.tool(name="reminders.list")
 async def list_all(
+    user_id: str,
     ctx: Context,
     include_completed: bool = False,
     limit: int = 20,
@@ -97,13 +105,18 @@ async def list_all(
     context: ServerContext = ctx.request_context.lifespan_context
     async with context.session_factory() as session:
         records = await storage.list_reminders(
-            session, include_completed=include_completed, limit=capped
+            session,
+            parse_user_id(user_id),
+            include_completed=include_completed,
+            limit=capped,
         )
     return ReminderList(reminders=records)
 
 
 @mcp.tool(name="reminders.reschedule")
-async def reschedule(reminder_id: str, due_at: str, ctx: Context) -> ReminderRecord:
+async def reschedule(
+    user_id: str, reminder_id: str, due_at: str, ctx: Context
+) -> ReminderRecord:
     """Move an existing reminder to a new time.
 
     Prefer this over completing one and creating another: it keeps the same
@@ -119,14 +132,14 @@ async def reschedule(reminder_id: str, due_at: str, ctx: Context) -> ReminderRec
     async with context.session_factory() as session:
         try:
             return await storage.reschedule_reminder(
-                session, parsed_id, parse_due_at(due_at)
+                session, parse_user_id(user_id), parsed_id, parse_due_at(due_at)
             )
         except storage.ReminderNotFoundError as error:
             raise ToolError(str(error)) from error
 
 
 @mcp.tool(name="reminders.complete")
-async def complete(reminder_id: str, ctx: Context) -> ReminderRecord:
+async def complete(user_id: str, reminder_id: str, ctx: Context) -> ReminderRecord:
     """Mark a reminder as completed.
 
     Args:
@@ -137,7 +150,9 @@ async def complete(reminder_id: str, ctx: Context) -> ReminderRecord:
     context: ServerContext = ctx.request_context.lifespan_context
     async with context.session_factory() as session:
         try:
-            return await storage.complete_reminder(session, parsed_id)
+            return await storage.complete_reminder(
+                session, parse_user_id(user_id), parsed_id
+            )
         except storage.ReminderNotFoundError as error:
             raise ToolError(str(error)) from error
 

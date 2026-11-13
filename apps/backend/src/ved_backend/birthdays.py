@@ -79,6 +79,7 @@ async def schedule_birthday_reminders(
         .values(
             [
                 {
+                    "user_id": reminder.person.user_id,
                     "text": reminder.text,
                     "due_at": reminder.due_at,
                     "person_id": reminder.person.id,

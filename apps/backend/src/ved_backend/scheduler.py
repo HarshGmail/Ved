@@ -40,6 +40,7 @@ def describe(reminder: Reminder, zone: ZoneInfo) -> str:
 @dataclass(frozen=True)
 class ClaimedReminder:
     id: uuid.UUID
+    user_id: uuid.UUID
     summary: str
     stale: bool
     tag: str = REMINDER_TAG
@@ -72,6 +73,7 @@ async def claim_due_reminders(
         claimed.append(
             ClaimedReminder(
                 id=reminder.id,
+                user_id=reminder.user_id,
                 summary=summary,
                 stale=now - reminder.due_at > give_up_after,
                 tag=REMINDER_TAG if reminder.person_id is None else BIRTHDAY_TAG,
@@ -165,12 +167,13 @@ class ReminderScheduler:
             return
 
         report = await self._push.send(
+            reminder.user_id,
             Notification(
                 title=NOTIFICATION_TITLE,
                 body=reminder.summary,
                 tag=reminder.tag,
                 url=reminder.url,
-            )
+            ),
         )
         if report.reached_anyone:
             return

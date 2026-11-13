@@ -7,6 +7,7 @@ from ved_db import (
     Person,
     PushSubscription,
     Reminder,
+    User,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "Person",
     "PushSubscription",
     "Reminder",
+    "User",
 ]

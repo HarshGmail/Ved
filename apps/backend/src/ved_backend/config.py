@@ -20,6 +20,7 @@ LOCAL_SEARXNG_URL = "http://127.0.0.1:8888"
 NOMIC_DOCUMENT_PREFIX = "search_document: "
 NOMIC_QUERY_PREFIX = "search_query: "
 DEFAULT_PLAN_MCP_URL = "http://family-planner:3456/api/mcp"
+DEFAULT_OWNER_EMAIL = "owner@ved.local"
 
 
 class Settings(BaseSettings):
@@ -31,6 +32,7 @@ class Settings(BaseSettings):
     access_team_domain: str = "floral-limit-f927.cloudflareaccess.com"
     access_aud: str = ""
     admin_emails: Annotated[list[str], NoDecode] = []
+    owner_email: str = DEFAULT_OWNER_EMAIL
     database_url: str = LOCAL_DATABASE_URL
     database_pool_size: int = 5
     database_pool_max_overflow: int = 5
@@ -87,6 +89,11 @@ class Settings(BaseSettings):
     @property
     def plan_configured(self) -> bool:
         return bool(self.plan_mcp_token)
+
+    @field_validator("owner_email")
+    @classmethod
+    def normalise_owner_email(cls, value: str) -> str:
+        return value.strip().lower() or DEFAULT_OWNER_EMAIL
 
     @field_validator("admin_emails", mode="before")
     @classmethod

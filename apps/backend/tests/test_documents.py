@@ -52,9 +52,9 @@ def indexer_for(library, session_factory, embedder):
     return DocumentIndexer(session_factory, library.directory, embedder)
 
 
-async def upload(library, content: bytes, filename: str = "notes.txt"):
+async def upload(library, user, content: bytes, filename: str = "notes.txt"):
     return await library.upload(
-        CountingBody(multipart_body(content, filename=filename)), CONTENT_TYPE
+        user.id, CountingBody(multipart_body(content, filename=filename)), CONTENT_TYPE
     )
 
 
@@ -70,10 +70,10 @@ async def chunk_rows(session_factory) -> list[DocumentChunk]:
         return list(rows)
 
 
-async def test_an_upload_is_stored_by_content_hash_and_starts_pending(library):
+async def test_an_upload_is_stored_by_content_hash_and_starts_pending(library, user):
     content = b"the deposit is fifty thousand"
 
-    stored = await upload(library, content, filename="../../lease.txt")
+    stored = await upload(library, user, content, filename="../../lease.txt")
 
     assert stored.created
     assert stored.document.status == "pending"
@@ -81,34 +81,34 @@ async def test_an_upload_is_stored_by_content_hash_and_starts_pending(library):
     assert stored_files(library) == [hashlib.sha256(content).hexdigest()]
 
 
-async def test_the_user_filename_never_reaches_the_disk(library):
-    await upload(library, b"notes", filename="../escape.txt")
+async def test_the_user_filename_never_reaches_the_disk(library, user):
+    await upload(library, user, b"notes", filename="../escape.txt")
 
     assert not (library.directory.parent / "escape.txt").exists()
     assert "escape.txt" not in stored_files(library)
 
 
-async def test_uploading_the_same_bytes_again_returns_the_same_document(library):
-    first = await upload(library, b"same bytes", filename="a.txt")
-    second = await upload(library, b"same bytes", filename="b.txt")
+async def test_uploading_the_same_bytes_again_returns_the_same_document(library, user):
+    first = await upload(library, user, b"same bytes", filename="a.txt")
+    second = await upload(library, user, b"same bytes", filename="b.txt")
 
     assert not second.created
     assert second.document.id == first.document.id
-    assert len(await library.list()) == 1
+    assert len(await library.list(user.id)) == 1
     assert len(stored_files(library)) == 1
 
 
-async def test_a_rejected_type_leaves_nothing_behind(library):
+async def test_a_rejected_type_leaves_nothing_behind(library, user):
     with pytest.raises(UnsupportedDocumentError):
-        await upload(library, b"\x89PNG\r\n\x1a\n\x00\x00\x00\x00", "a.txt")
+        await upload(library, user, b"\x89PNG\r\n\x1a\n\x00\x00\x00\x00", "a.txt")
 
     assert stored_files(library) == []
-    assert await library.list() == []
+    assert await library.list(user.id) == []
 
 
-async def test_an_oversized_upload_leaves_nothing_behind(library):
+async def test_an_oversized_upload_leaves_nothing_behind(library, user):
     with pytest.raises(UploadTooLargeError):
-        await upload(library, b"x" * (MAX_UPLOAD_BYTES + 1))
+        await upload(library, user, b"x" * (MAX_UPLOAD_BYTES + 1))
 
     assert stored_files(library) == []
     assert not any(
@@ -116,34 +116,36 @@ async def test_an_oversized_upload_leaves_nothing_behind(library):
     )
 
 
-async def test_delete_removes_the_rows_and_the_file(library, session_factory, make_pdf):
-    stored = await upload(library, make_pdf(LEASE_PAGES), "lease.pdf")
+async def test_delete_removes_the_rows_and_the_file(
+    library, user, session_factory, make_pdf
+):
+    stored = await upload(library, user, make_pdf(LEASE_PAGES), "lease.pdf")
     await indexer_for(library, session_factory, RecordingEmbedder()).embed_pending()
 
-    await library.delete(stored.document.id)
+    await library.delete(user.id, stored.document.id)
 
     assert stored_files(library) == []
-    assert await library.list() == []
+    assert await library.list(user.id) == []
     assert await chunk_rows(session_factory) == []
 
 
-async def test_deleting_an_unknown_document_says_so(library):
-    stored = await upload(library, b"notes")
-    await library.delete(stored.document.id)
+async def test_deleting_an_unknown_document_says_so(library, user):
+    stored = await upload(library, user, b"notes")
+    await library.delete(user.id, stored.document.id)
 
     with pytest.raises(DocumentNotFoundError):
-        await library.delete(stored.document.id)
+        await library.delete(user.id, stored.document.id)
 
 
 async def test_a_pdf_is_chunked_per_page_and_embedded(
-    library, session_factory, make_pdf
+    library, user, session_factory, make_pdf
 ):
-    stored = await upload(library, make_pdf(LEASE_PAGES), "lease.pdf")
+    stored = await upload(library, user, make_pdf(LEASE_PAGES), "lease.pdf")
     embedder = RecordingEmbedder()
 
     await indexer_for(library, session_factory, embedder).embed_pending()
 
-    document = await library.get(stored.document.id)
+    document = await library.get(user.id, stored.document.id)
     chunks = await chunk_rows(session_factory)
     assert document.status == "indexed"
     assert document.media_type == PDF
@@ -154,51 +156,53 @@ async def test_a_pdf_is_chunked_per_page_and_embedded(
 
 
 async def test_a_scanned_pdf_fails_with_a_clear_message(
-    library, session_factory, make_pdf
+    library, user, session_factory, make_pdf
 ):
-    stored = await upload(library, make_pdf([[], []]), "scan.pdf")
+    stored = await upload(library, user, make_pdf([[], []]), "scan.pdf")
 
     await indexer_for(library, session_factory, RecordingEmbedder()).embed_pending()
 
-    document = await library.get(stored.document.id)
+    document = await library.get(user.id, stored.document.id)
     assert document.status == "failed"
     assert document.error == NO_TEXT_LAYER
     assert await chunk_rows(session_factory) == []
 
 
 async def test_a_missing_original_fails_instead_of_retrying_forever(
-    library, session_factory
+    library, user, session_factory
 ):
-    stored = await upload(library, b"notes")
+    stored = await upload(library, user, b"notes")
     library.path_for(stored.document).unlink()
 
     await indexer_for(library, session_factory, RecordingEmbedder()).embed_pending()
 
-    document = await library.get(stored.document.id)
+    document = await library.get(user.id, stored.document.id)
     assert document.status == "failed"
     assert document.error == MISSING_ORIGINAL
 
 
 async def test_a_failing_embedder_leaves_the_document_pending_until_retried(
-    library, session_factory
+    library, user, session_factory
 ):
-    stored = await upload(library, b"the deposit clause")
+    stored = await upload(library, user, b"the deposit clause")
     embedder = RecordingEmbedder(failing=True)
     indexer = indexer_for(library, session_factory, embedder)
 
     await indexer.embed_pending()
-    assert (await library.get(stored.document.id)).status == "pending"
+    assert (await library.get(user.id, stored.document.id)).status == "pending"
     assert len(await chunk_rows(session_factory)) == 1
 
     embedder.failing = False
     await indexer.embed_pending()
 
-    assert (await library.get(stored.document.id)).status == "indexed"
+    assert (await library.get(user.id, stored.document.id)).status == "indexed"
     assert len(await chunk_rows(session_factory)) == 1
 
 
-async def test_chunks_are_created_once_even_across_passes(library, session_factory):
-    await upload(library, b"the deposit clause")
+async def test_chunks_are_created_once_even_across_passes(
+    library, user, session_factory
+):
+    await upload(library, user, b"the deposit clause")
     indexer = indexer_for(library, session_factory, RecordingEmbedder())
 
     await indexer.embed_pending()
@@ -209,34 +213,73 @@ async def test_chunks_are_created_once_even_across_passes(library, session_facto
 
 
 async def test_without_an_embedder_documents_are_chunked_but_stay_pending(
-    library, session_factory
+    library, user, session_factory
 ):
-    stored = await upload(library, b"the deposit clause")
+    stored = await upload(library, user, b"the deposit clause")
 
     await indexer_for(library, session_factory, None).embed_pending()
 
-    assert (await library.get(stored.document.id)).status == "pending"
+    assert (await library.get(user.id, stored.document.id)).status == "pending"
     assert len(await chunk_rows(session_factory)) == 1
 
 
-async def test_trigger_indexes_in_the_background(library, session_factory):
-    stored = await upload(library, b"the deposit clause")
+async def test_trigger_indexes_in_the_background(library, user, session_factory):
+    stored = await upload(library, user, b"the deposit clause")
     indexer = indexer_for(library, session_factory, RecordingEmbedder())
 
     indexer.trigger()
     await indexer._task
     await indexer.aclose()
 
-    assert (await library.get(stored.document.id)).status == "indexed"
+    assert (await library.get(user.id, stored.document.id)).status == "indexed"
 
 
-async def test_documents_are_listed_newest_first(library, session_factory):
-    await upload(library, b"older", "old.txt")
-    await upload(library, b"newer", "new.md")
+async def test_documents_are_listed_newest_first(library, user, session_factory):
+    await upload(library, user, b"older", "old.txt")
+    await upload(library, user, b"newer", "new.md")
 
     async with session_factory() as session:
         names = (await session.scalars(select(Document.filename))).all()
-    listed = [document.filename for document in await library.list()]
+    listed = [document.filename for document in await library.list(user.id)]
 
     assert sorted(names) == sorted(listed)
     assert listed[0] == "new.md"
+
+
+async def test_each_user_has_their_own_copy_of_identical_bytes(
+    library, user, other_user
+):
+    mine = await upload(library, user, b"same bytes", "mine.txt")
+    theirs = await upload(library, other_user, b"same bytes", "theirs.txt")
+
+    assert theirs.created is True
+    assert theirs.document.id != mine.document.id
+    assert [d.filename for d in await library.list(user.id)] == ["mine.txt"]
+    assert [d.filename for d in await library.list(other_user.id)] == ["theirs.txt"]
+
+
+async def test_another_users_document_is_not_found(library, user, other_user):
+    stored = await upload(library, user, b"private notes")
+
+    with pytest.raises(DocumentNotFoundError):
+        await library.get(other_user.id, stored.document.id)
+    with pytest.raises(DocumentNotFoundError):
+        await library.delete(other_user.id, stored.document.id)
+
+    assert (await library.get(user.id, stored.document.id)).id == stored.document.id
+    assert library.path_for(stored.document).exists()
+
+
+async def test_deleting_keeps_the_file_while_another_user_still_has_it(
+    library, user, other_user
+):
+    mine = await upload(library, user, b"shared bytes")
+    theirs = await upload(library, other_user, b"shared bytes")
+
+    await library.delete(user.id, mine.document.id)
+
+    assert library.path_for(theirs.document).exists()
+
+    await library.delete(other_user.id, theirs.document.id)
+
+    assert not library.path_for(theirs.document).exists()

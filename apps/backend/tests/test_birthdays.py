@@ -1,4 +1,5 @@
 import os
+import uuid
 from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
@@ -23,8 +24,9 @@ def local(year: int, month: int, day: int, hour: int = 8) -> datetime:
     return datetime(year, month, day, hour, tzinfo=ZONE)
 
 
-def mom(notice: int = 15, year: int | None = 1965) -> Person:
+def mom(notice: int = 15, year: int | None = 1965, user_id=None) -> Person:
     return Person(
+        user_id=user_id,
         name="Mom",
         birth_month=10,
         birth_day=25,
@@ -118,16 +120,20 @@ class RecordingPush:
 
     def __init__(self) -> None:
         self.sent: list[Notification] = []
+        self.recipients: list[uuid.UUID] = []
 
-    async def send(self, notification: Notification) -> DeliveryReport:
+    async def send(
+        self, user_id: uuid.UUID, notification: Notification
+    ) -> DeliveryReport:
+        self.recipients.append(user_id)
         self.sent.append(notification)
         return DeliveryReport(sent=1, expired=0)
 
 
 @requires_database
-async def test_scheduling_creates_reminder_rows(session_factory):
+async def test_scheduling_creates_reminder_rows(session_factory, user):
     async with session_factory() as session:
-        session.add(mom())
+        session.add(mom(user_id=user.id))
         await session.commit()
 
     async with session_factory() as session:
@@ -143,9 +149,9 @@ async def test_scheduling_creates_reminder_rows(session_factory):
 
 
 @requires_database
-async def test_scheduling_twice_does_not_duplicate(session_factory):
+async def test_scheduling_twice_does_not_duplicate(session_factory, user):
     async with session_factory() as session:
-        session.add(mom())
+        session.add(mom(user_id=user.id))
         await session.commit()
 
     for _ in range(2):
@@ -160,9 +166,9 @@ async def test_scheduling_twice_does_not_duplicate(session_factory):
 
 
 @requires_database
-async def test_a_fired_birthday_is_not_recreated(session_factory):
+async def test_a_fired_birthday_is_not_recreated(session_factory, user):
     async with session_factory() as session:
-        session.add(mom(notice=0))
+        session.add(mom(notice=0, user_id=user.id))
         await session.commit()
 
     async with session_factory() as session:
@@ -182,9 +188,9 @@ async def test_a_fired_birthday_is_not_recreated(session_factory):
 
 
 @requires_database
-async def test_forgetting_a_person_removes_their_reminders(session_factory):
+async def test_forgetting_a_person_removes_their_reminders(session_factory, user):
     async with session_factory() as session:
-        person = mom()
+        person = mom(user_id=user.id)
         session.add(person)
         await session.commit()
         await schedule_birthday_reminders(
@@ -198,13 +204,14 @@ async def test_forgetting_a_person_removes_their_reminders(session_factory):
 
 
 @requires_database
-async def test_a_due_birthday_is_pushed_with_its_own_tag(session_factory):
+async def test_a_due_birthday_is_pushed_with_its_own_tag(session_factory, user):
     async with session_factory() as session:
-        person = mom(notice=0)
+        person = mom(notice=0, user_id=user.id)
         session.add(person)
         await session.flush()
         session.add(
             Reminder(
+                user_id=user.id,
                 text="It's Mom's birthday today",
                 due_at=local(2020, 1, 2),
                 person_id=person.id,
@@ -223,3 +230,35 @@ async def test_a_due_birthday_is_pushed_with_its_own_tag(session_factory):
     assert [(n.tag, n.body) for n in push.sent] == [
         ("birthday", "It's Mom's birthday today")
     ]
+    assert push.recipients == [user.id]
+
+
+@requires_database
+async def test_each_person_s_reminders_belong_to_the_person_s_owner(
+    session_factory, user, other_user
+):
+    async with session_factory() as session:
+        session.add(mom(notice=0, user_id=user.id))
+        session.add(
+            Person(
+                user_id=other_user.id,
+                name="Dad",
+                birth_month=10,
+                birth_day=25,
+                birthday_notice_days=0,
+            )
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        await schedule_birthday_reminders(
+            session, now=local(2026, 10, 1), zone=ZONE, remind_at=NINE_AM
+        )
+
+    async with session_factory() as session:
+        rows = await session.execute(
+            select(Person.name, Reminder.user_id).join(
+                Reminder, Reminder.person_id == Person.id
+            )
+        )
+    assert dict(rows.all()) == {"Mom": user.id, "Dad": other_user.id}

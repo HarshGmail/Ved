@@ -6,7 +6,7 @@ import pytest_asyncio
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from ved_db.testing import drop_schema, guard_test_url, recreate_schema
+from ved_db.testing import add_user, drop_schema, guard_test_url, recreate_schema
 
 TEST_DATABASE_URL = os.environ.get("VED_TEST_DATABASE_URL")
 
@@ -25,6 +25,18 @@ async def session_factory():
 
     await drop_schema(engine)
     await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def user(session_factory):
+    async with session_factory() as session:
+        return await add_user(session, "first@example.com")
+
+
+@pytest_asyncio.fixture
+async def other_user(session_factory):
+    async with session_factory() as session:
+        return await add_user(session, "second@example.com")
 
 
 PAGE_WIDTH_POINTS = 612

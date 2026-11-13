@@ -5,7 +5,7 @@ from collections.abc import AsyncIterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ved_db import Document
@@ -52,7 +52,10 @@ class DocumentLibrary:
         return stored_path(self._directory, document.sha256)
 
     async def upload(
-        self, body: AsyncIterable[bytes], content_type: str | None
+        self,
+        user_id: uuid.UUID,
+        body: AsyncIterable[bytes],
+        content_type: str | None,
     ) -> StoredUpload:
         self._directory.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(
@@ -72,13 +75,14 @@ class DocumentLibrary:
                 temporary_path.unlink(missing_ok=True)
                 raise
 
-        existing = await self._find_by_hash(received.sha256)
+        existing = await self._find_by_hash(user_id, received.sha256)
         if existing is not None:
             temporary_path.unlink(missing_ok=True)
             return StoredUpload(document=existing, created=False)
 
         os.replace(temporary_path, stored_path(self._directory, received.sha256))
         document = Document(
+            user_id=user_id,
             filename=received.filename,
             media_type=media_type,
             size_bytes=received.size_bytes,
@@ -90,39 +94,57 @@ class DocumentLibrary:
                 await session.commit()
             except IntegrityError:
                 await session.rollback()
-                raced = await self._find_by_hash(received.sha256)
+                raced = await self._find_by_hash(user_id, received.sha256)
                 if raced is None:
                     raise
                 return StoredUpload(document=raced, created=False)
             await session.refresh(document)
         return StoredUpload(document=document, created=True)
 
-    async def list(self) -> Sequence[Document]:
+    async def list(self, user_id: uuid.UUID) -> Sequence[Document]:
         async with self._session_factory() as session:
             rows = await session.scalars(
-                select(Document).order_by(Document.created_at.desc(), Document.id)
+                select(Document)
+                .where(Document.user_id == user_id)
+                .order_by(Document.created_at.desc(), Document.id)
             )
             return rows.all()
 
-    async def get(self, document_id: uuid.UUID) -> Document:
+    async def get(self, user_id: uuid.UUID, document_id: uuid.UUID) -> Document:
         async with self._session_factory() as session:
-            document = await session.get(Document, document_id)
+            document = await self._owned(session, user_id, document_id)
         if document is None:
             raise DocumentNotFoundError(document_id)
         return document
 
-    async def delete(self, document_id: uuid.UUID) -> None:
+    async def delete(self, user_id: uuid.UUID, document_id: uuid.UUID) -> None:
         async with self._session_factory() as session:
-            document = await session.get(Document, document_id)
+            document = await self._owned(session, user_id, document_id)
             if document is None:
                 raise DocumentNotFoundError(document_id)
             path = self.path_for(document)
             await session.delete(document)
             await session.commit()
-        path.unlink(missing_ok=True)
+            still_referenced = await session.scalar(
+                select(exists().where(Document.sha256 == document.sha256))
+            )
+        if not still_referenced:
+            path.unlink(missing_ok=True)
 
-    async def _find_by_hash(self, sha256: str) -> Document | None:
+    @staticmethod
+    async def _owned(
+        session: AsyncSession, user_id: uuid.UUID, document_id: uuid.UUID
+    ) -> Document | None:
+        return await session.scalar(
+            select(Document).where(
+                Document.id == document_id, Document.user_id == user_id
+            )
+        )
+
+    async def _find_by_hash(self, user_id: uuid.UUID, sha256: str) -> Document | None:
         async with self._session_factory() as session:
             return await session.scalar(
-                select(Document).where(Document.sha256 == sha256)
+                select(Document).where(
+                    Document.user_id == user_id, Document.sha256 == sha256
+                )
             )

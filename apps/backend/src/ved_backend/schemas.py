@@ -152,3 +152,8 @@ class DocumentSummary(BaseModel):
 
 class DocumentList(BaseModel):
     documents: list[DocumentSummary]
+
+
+class MeResponse(BaseModel):
+    email: str
+    name: str | None = None

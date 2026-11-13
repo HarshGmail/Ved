@@ -72,6 +72,7 @@ services:
       VED_ACCESS_TEAM_DOMAIN: ${VED_ACCESS_TEAM_DOMAIN:-floral-limit-f927.cloudflareaccess.com}
       VED_ACCESS_AUD: ${VED_ACCESS_AUD:-}
       VED_ADMIN_EMAILS: ${VED_ADMIN_EMAILS:-}
+      VED_OWNER_EMAIL: ${VED_OWNER_EMAIL:-}
       VED_PLAN_MCP_URL: ${VED_PLAN_MCP_URL:-http://family-planner:3456/api/mcp}
       VED_PLAN_MCP_TOKEN: ${VED_PLAN_MCP_TOKEN:-}
     volumes:

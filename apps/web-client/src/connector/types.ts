@@ -6,6 +6,11 @@ export interface HealthStatus {
   database: ServiceState;
 }
 
+export interface Me {
+  email: string;
+  name: string | null;
+}
+
 export interface ToolInvocation {
   name: string;
   arguments: Record<string, unknown>;
