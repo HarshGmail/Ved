@@ -138,8 +138,15 @@ def validate_token(token: str) -> str:
     return token
 
 
+def innermost_failure(error: BaseException) -> BaseException:
+    while isinstance(error, BaseExceptionGroup) and error.exceptions:
+        error = error.exceptions[0]
+    return error
+
+
 def describe_failure(error: BaseException) -> str:
-    return str(error) or type(error).__name__
+    cause = innermost_failure(error)
+    return str(cause) or type(cause).__name__
 
 
 async def probe(connection: RemoteConnection) -> ConnectionProbe:
