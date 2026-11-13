@@ -15,7 +15,11 @@ from mcp.server.mcpserver import MCPServer
 
 from ved_backend.config import Settings
 from ved_backend.connections import list_remote_tools, probe
-from ved_backend.tools.servers import configured_servers
+from ved_backend.tools.servers import (
+    configured_servers,
+    connection_tool_limit_for,
+    exposed_tools_for,
+)
 from ved_backend.tools.toolbox import (
     CONNECTION_TOOL_LIMIT,
     PLAN,
@@ -548,3 +552,34 @@ async def test_real_tool_calls_are_scoped_to_the_injected_user(
     assert "Mom" in mine_people
     assert "mine" not in theirs_reminders
     assert "mine" in mine_reminders
+
+
+async def test_under_anthropic_every_tool_but_deletes_is_exposed_up_to_forty():
+    crm = build_fake_crm(44)
+    seen: list[str] = []
+    async with serving(crm, seen) as url:
+        toolbox = MCPToolbox(
+            {},
+            [],
+            connections=remote_only(RemoteConnection("crm", url, FAKE_TOKEN)),
+            connection_tool_limit=40,
+        )
+        await toolbox.connect()
+        try:
+            names = [tool.name for tool in await toolbox.tools_for(USER_ID)]
+        finally:
+            await toolbox.aclose()
+
+    assert len(names) == 40
+    assert all(name.startswith("crm.contacts.lookup_") for name in names)
+    assert "crm.delete_all" not in names
+
+
+def test_anthropic_settings_drop_the_allowlist_and_raise_the_limit():
+    anthropic = Settings(_env_file=None, llm_provider="anthropic")
+    local = Settings(_env_file=None, llm_provider="openai-compatible")
+
+    assert exposed_tools_for(anthropic) == []
+    assert connection_tool_limit_for(anthropic) == 40
+    assert exposed_tools_for(local) == local.exposed_tools
+    assert connection_tool_limit_for(local) == CONNECTION_TOOL_LIMIT == 15

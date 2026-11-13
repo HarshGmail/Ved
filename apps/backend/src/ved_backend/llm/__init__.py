@@ -1,4 +1,5 @@
 from ved_backend.config import Settings
+from ved_backend.llm.anthropic_provider import AnthropicProvider
 from ved_backend.llm.base import LLMProvider
 from ved_backend.llm.embeddings import OpenAICompatibleEmbedder
 from ved_backend.llm.openai_compatible import OpenAICompatibleProvider
@@ -6,8 +7,9 @@ from ved_backend.llm.stub import StubProvider
 
 STUB = "stub"
 OPENAI_COMPATIBLE = "openai-compatible"
+ANTHROPIC = "anthropic"
 
-PROVIDER_NAMES = (STUB, OPENAI_COMPATIBLE)
+PROVIDER_NAMES = (STUB, OPENAI_COMPATIBLE, ANTHROPIC)
 
 
 class UnknownProviderError(ValueError):
@@ -17,6 +19,13 @@ class UnknownProviderError(ValueError):
             + ", ".join(PROVIDER_NAMES)
         )
         self.name = name
+
+
+class MissingAnthropicKeyError(ValueError):
+    def __init__(self) -> None:
+        super().__init__(
+            "VED_LLM_PROVIDER is anthropic but VED_ANTHROPIC_API_KEY is not set."
+        )
 
 
 def build_provider(settings: Settings) -> LLMProvider:
@@ -29,6 +38,15 @@ def build_provider(settings: Settings) -> LLMProvider:
             api_key=settings.llm_api_key,
             timeout_seconds=settings.llm_timeout_seconds,
             temperature=settings.llm_temperature,
+        )
+    if settings.llm_provider == ANTHROPIC:
+        if not settings.anthropic_api_key:
+            raise MissingAnthropicKeyError()
+        return AnthropicProvider(
+            api_key=settings.anthropic_api_key,
+            model=settings.llm_model,
+            max_tokens=settings.llm_max_tokens,
+            timeout_seconds=settings.llm_timeout_seconds,
         )
     raise UnknownProviderError(settings.llm_provider)
 
@@ -47,9 +65,11 @@ def build_embedder(settings: Settings) -> OpenAICompatibleEmbedder | None:
 
 
 __all__ = [
+    "ANTHROPIC",
     "OPENAI_COMPATIBLE",
     "STUB",
     "LLMProvider",
+    "MissingAnthropicKeyError",
     "UnknownProviderError",
     "build_embedder",
     "build_provider",

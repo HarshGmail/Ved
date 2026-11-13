@@ -5,6 +5,7 @@ description = "Ved backend — agent orchestration, MCP, memory"
 requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.20.0",
+    "anthropic>=1.0",
     "cryptography>=46",
     "fastapi>=0.115",
     "httpx2>=2.13.0",

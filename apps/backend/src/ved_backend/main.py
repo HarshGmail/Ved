@@ -63,7 +63,11 @@ from ved_backend.schemas import (
     ToolStartedEvent,
 )
 from ved_backend.token_cipher import TokenCipher
-from ved_backend.tools.servers import configured_servers
+from ved_backend.tools.servers import (
+    configured_servers,
+    connection_tool_limit_for,
+    exposed_tools_for,
+)
 from ved_backend.tools.toolbox import PLAN, MCPToolbox, RemoteConnection
 from ved_backend.turns import TurnItem, TurnRegistry
 from ved_backend.uploads import (
@@ -112,8 +116,9 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     )
     toolbox = MCPToolbox(
         configured_servers(settings),
-        settings.exposed_tools,
+        exposed_tools_for(settings),
         connections=connections.enabled_for,
+        connection_tool_limit=connection_tool_limit_for(settings),
     )
     await toolbox.connect()
     provider = build_provider(settings)
@@ -293,7 +298,7 @@ async def agent_message(
             request.prompt,
             history,
             user_id=user.id,
-            user_label=speaker_label(user),
+            user_line=speaker_label(user),
         )
     except LLMRequestError as error:
         logger.warning("LLM unreachable: %s", error)
@@ -313,7 +318,7 @@ TurnGuard = Annotated[None, Depends(ensure_turn_can_run)]
 
 
 async def stream_turn(
-    user_id: uuid.UUID, user_label: str, request: AgentRequest
+    user_id: uuid.UUID, user_line: str, request: AgentRequest
 ) -> AsyncIterator[TurnItem]:
     agent: Agent = app.state.agent
     store: ConversationStore = app.state.conversations
@@ -324,9 +329,7 @@ async def stream_turn(
             else await store.history(user_id, request.conversation_id)
         )
         async with aclosing(
-            agent.stream(
-                request.prompt, history, user_id=user_id, user_label=user_label
-            )
+            agent.stream(request.prompt, history, user_id=user_id, user_line=user_line)
         ) as events:
             async for event in events:
                 if isinstance(event, AgentTurn):

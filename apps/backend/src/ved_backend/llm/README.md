@@ -29,6 +29,15 @@ disagreement belongs inside each implementation, not in `agent.py`.
 | --- | --- | --- |
 | `stub` | `StubProvider` | No |
 | `openai-compatible` | `OpenAICompatibleProvider` | Only for hosted endpoints |
+| `anthropic` | `AnthropicProvider` | `VED_ANTHROPIC_API_KEY` (Claude Haiku 5.5 via `VED_LLM_MODEL`) |
+
+The `anthropic` provider uses the official `anthropic` SDK and nothing else.
+Ved's tool names contain dots, which Anthropic rejects, so `ToolNameMap` sends
+safe names (`memory_search`) per request and maps them back. Its replies carry
+`provider_content`, Anthropic's raw content blocks, so thinking survives the
+tool rounds of one turn; that field is excluded from serialisation and never
+stored. Embeddings stay on `VED_LLM_BASE_URL`: the Anthropic key never reaches
+Ollama.
 
 ## Why "openai-compatible" and not "ollama"
 
@@ -48,9 +57,9 @@ That last row is the Phase 8 path: when the GPU server exists, Ved points at it
 by editing one variable. An `ollama.py` would have made every one of these a new
 module.
 
-Anthropic will still need its own provider — its wire format genuinely differs,
-and pretending otherwise through a translation shim costs more than it saves.
-That is one module, not one per runtime.
+Anthropic has its own provider because its wire format differs (content blocks,
+tool_use and tool_result), and a shim would cost more than it saves. That is one
+module, not one per runtime.
 
 ## Local models and tool calling
 

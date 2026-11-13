@@ -9,6 +9,11 @@ from ved_db import User
 from ved_backend.access import AccessResult, require_access
 from ved_backend.config import settings
 
+UNKNOWN_NAME_LINE = (
+    "You don't know this person's name yet. Ask for it once, early, "
+    "and remember it with people.remember."
+)
+
 
 class UserDirectory:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
@@ -37,7 +42,9 @@ class UserDirectory:
 
 
 def speaker_label(user: User) -> str:
-    return user.name or user.email
+    if user.name:
+        return f"You are talking with {user.name}."
+    return UNKNOWN_NAME_LINE
 
 
 def users_directory(request: Request) -> UserDirectory:

@@ -23,7 +23,9 @@ Phases 1, 2 and 4 are done; 3 (photos) waits for the home server; 5 (voice) is
 next. Ved chats with streaming replies and history, sets and fires reminders by
 Web Push, remembers people and plans birthday reminders and check-ins, searches
 past conversations and uploaded documents by meaning, and searches and reads
-the web. Everything runs locally; nothing needs an API key.
+the web. It runs on a local model by default; Claude Haiku 5.5 can answer
+instead through Anthropic's API (`VED_LLM_PROVIDER=anthropic`), and then the
+person's connected apps are exposed to the model.
 
 Every person has their own chats, memory, documents, people, reminders, push
 devices and MCP connections (Cloudflare Access email picks the user; the owner is

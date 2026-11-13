@@ -12,7 +12,8 @@
       "phone access verified end to end (needs Tailscale)"
     ],
     "home_server": "noddy: containerised setup via ./ved server written, not yet run there; Cloudflare tunnel hostname and streaming through it unconfirmed; auth, unattended running and backups not built yet",
-    "per_user_data": "done: users table, Access email picks the user, chats, memory, documents, people, reminders and push are per person; owner from VED_OWNER_EMAIL"
+    "per_user_data": "done: users table, Access email picks the user, chats, memory, documents, people, reminders and push are per person; owner from VED_OWNER_EMAIL",
+    "claude_provider": "done: Claude Haiku 5.5 through Anthropic's SDK behind VED_LLM_PROVIDER=anthropic, with the person's MCP connections exposed to it; Ved's connection-aware stamp and no-email labels."
   },
   "topics": {
     "agent-loop": {
@@ -27,7 +28,10 @@
         "Agent._events",
         "Agent._invoke_concurrently",
         "SYSTEM_PROMPT",
-        "TOOL_LIMIT_MESSAGE"
+        "TOOL_LIMIT_MESSAGE",
+        "connected_apps",
+        "connected_apps_line",
+        "BUILT_IN_SERVERS"
       ],
       "settings": [
         "VED_AGENT_MAX_TOOL_ROUNDS",
@@ -39,8 +43,9 @@
         "Tool failures return to the model as is_error, never raised.",
         "The system prompt is a constant, kept short; the current time, timezone and the signed-in user's name ride on the latest user message, never in history.",
         "Tool calls in one round run concurrently; outcomes go back in call order.",
-        "Agent.run and Agent.stream require user_id and user_label; user_id goes to toolbox calls and never into prompts or stored tool arguments, user_label only into the latest user line.",
-        "The model sees a fixed tool list (VED_EXPOSED_TOOLS, sorted by name), never a per-message choice: Ollama reuses its cache only for an identical system prompt plus tools prefix."
+        "Agent.run and Agent.stream require user_id and user_line; user_id goes to toolbox calls and never into prompts or stored tool arguments. user_line is speaker_label(user): a name sentence, or an ask-for-the-name sentence, never the email.",
+        "The model sees a fixed tool list (VED_EXPOSED_TOOLS, sorted by name), never a per-message choice: Ollama reuses its cache only for an identical system prompt plus tools prefix.",
+        "The latest user line is stamped with the current time, the user line and a Connected apps line (non-built-in tool prefixes, from the same tools_for call the round uses). The system prompt tells the model to use these lines silently."
       ],
       "tests": [
         "apps/backend/tests/test_agent.py",
@@ -102,7 +107,7 @@
       ]
     },
     "llm-provider": {
-      "summary": "The model sits behind LLMProvider; Ollama today via the OpenAI /v1 shape.",
+      "summary": "The model sits behind LLMProvider: Ollama through the OpenAI /v1 shape today, or Claude Haiku 5.5 through Anthropic's SDK when VED_LLM_PROVIDER=anthropic.",
       "files": [
         "apps/backend/scripts/model_eval.py",
         "apps/backend/scripts/model_eval_cases.json",
@@ -111,7 +116,9 @@
         "apps/backend/src/ved_backend/llm/base.py",
         "apps/backend/src/ved_backend/llm/openai_compatible.py",
         "apps/backend/src/ved_backend/llm/stub.py",
-        "apps/backend/tests/test_model_eval.py"
+        "apps/backend/tests/test_model_eval.py",
+        "apps/backend/src/ved_backend/llm/anthropic_provider.py",
+        "apps/backend/tests/test_anthropic_provider.py"
       ],
       "symbols": [
         "LLMProvider",
@@ -120,7 +127,14 @@
         "build_provider",
         "TextDelta",
         "ReasoningDelta",
-        "LLMRequestError"
+        "LLMRequestError",
+        "AnthropicProvider",
+        "ToolNameMap",
+        "to_anthropic_messages",
+        "to_assistant_message",
+        "AssistantMessage.provider_content",
+        "MissingAnthropicKeyError",
+        "ANTHROPIC"
       ],
       "settings": [
         "VED_LLM_PROVIDER",
@@ -128,18 +142,27 @@
         "VED_LLM_MODEL",
         "VED_LLM_API_KEY",
         "VED_LLM_TIMEOUT_SECONDS",
-        "VED_LLM_TEMPERATURE"
+        "VED_LLM_TEMPERATURE",
+        "VED_ANTHROPIC_API_KEY",
+        "VED_LLM_MAX_TOKENS"
       ],
       "rules": [
         "No vendor SDK outside llm/.",
         "A provider implements complete() and stream(); streamed tool calls arrive in fragments keyed by index.",
         "Moving the model is a URL change, not a code change.",
         "VED_LLM_TEMPERATURE=0.0; sampling corrupts tool arguments.",
-        "The model needs 'tools' in `ollama show <model>` capabilities."
+        "The model needs 'tools' in `ollama show <model>` capabilities.",
+        "Anthropic is the official SDK only (AsyncAnthropic, typed APIError classes); no shim, no raw HTTP. The SDK speaks httpx2, which is the httpx the project already uses.",
+        "Anthropic tool names must match ^[a-zA-Z0-9_-]{1,64}$: ToolNameMap maps each Ved name (memory.search) to a safe name per request and back; a collision gets a numeric suffix.",
+        "AssistantMessage.provider_content carries Anthropic's raw content blocks (thinking included) across tool rounds of one turn; it is excluded from model_dump and never stored, since history keeps only text and tool calls.",
+        "Anthropic requests send no temperature or thinking field; the system prompt is one cached text block.",
+        "VED_LLM_PROVIDER=anthropic without VED_ANTHROPIC_API_KEY fails at startup; the key is never sent to the embedder, which stays on VED_LLM_BASE_URL (Ollama).",
+        "Anthropic errors become LLMRequestError with a plain message: a 401 names VED_ANTHROPIC_API_KEY, a credit-balance 400 says the balance ran out, timeouts and unreachable hosts are named as such."
       ],
       "tests": [
         "apps/backend/tests/test_openai_compatible.py",
-        "apps/backend/tests/test_stub_provider.py"
+        "apps/backend/tests/test_stub_provider.py",
+        "apps/backend/tests/test_anthropic_provider.py"
       ]
     },
     "conversations": {
@@ -441,7 +464,9 @@
         "RemoteSession",
         "ConnectionSource",
         "tools_for",
-        "ToolNotAvailableError"
+        "ToolNotAvailableError",
+        "exposed_tools_for",
+        "connection_tool_limit_for"
       ],
       "rules": [
         "SDK v2: MCPServer; bare Context from mcp.server.mcpserver.context.",
@@ -452,7 +477,8 @@
         "Tools whose names start with delete_ are never exposed to the model; sensitive actions need the permission layer first.",
         "A server or remote connection that fails to start is logged as a warning and skipped, so startup and the turn continue without its tools.",
         "people, memory and reminders tools take user_id; MCPToolbox.call(name, args, user_id=) injects it on stdio tools that declare it, overwriting anything the model sent, and removes it from the model-facing schema. Remote servers get nothing.",
-        "Toolbox lists only the exposed tools for a user, sorted by name, and refuses calls to any other tool as not available. The VED_EXPOSED_TOOLS allowlist applies to built-ins and plan.*; an empty allowlist exposes everything."
+        "Toolbox lists only the exposed tools for a user, sorted by name, and refuses calls to any other tool as not available. The VED_EXPOSED_TOOLS allowlist applies to built-ins and plan.*; an empty allowlist exposes everything.",
+        "Under VED_LLM_PROVIDER=anthropic the exposure allowlist is empty (every tool except delete_*) and each connection is capped at 40 tools (ANTHROPIC_CONNECTION_TOOL_LIMIT in tools/servers.py); other providers keep VED_EXPOSED_TOOLS and the limit of 15 (CONNECTION_TOOL_LIMIT). The Toolbox takes connection_tool_limit as a constructor argument."
       ],
       "settings": [
         "VED_EXPOSED_TOOLS",
@@ -680,14 +706,19 @@
         "ensure_server_env",
         "ensure_push_keys",
         "infra_env_value",
-        "wait_for_url"
+        "wait_for_url",
+        "cmd_set_anthropic_key",
+        "cmd_use_local_model",
+        "uses_anthropic"
       ],
       "settings": [
         "VED_LLM_MODEL",
         "VED_LLM_BASE_URL",
         "SERVER_MODEL",
         "VED_EMBEDDING_MODEL",
-        "VED_ADMIN_EMAILS"
+        "VED_ADMIN_EMAILS",
+        "VED_LLM_PROVIDER",
+        "VED_ANTHROPIC_API_KEY"
       ],
       "rules": [
         "The ved script runs on macOS (Colima) and Linux (native Docker); detect with is_macos, never assume.",
@@ -697,7 +728,10 @@
         "Unattended running, auto-deploy and backups are not built yet.",
         "The server is noddy: i7-10510U, 7.5 GB RAM, no GPU. ./ved server is the containerised path; the bare-metal steps are older notes.",
         "./ved server refuses to run on macOS. Its default chat model is qwen3:4b-instruct-2507-q4_K_M because qwen3.6:35b does not fit.",
-        "Migrations run in the backend container with docker compose run --rm --no-deps backend alembic upgrade head."
+        "Migrations run in the backend container with docker compose run --rm --no-deps backend alembic upgrade head.",
+        "./ved set-anthropic-key <file> stores the key (must start with sk-ant-) in infra/.env, sets VED_LLM_PROVIDER=anthropic and VED_LLM_MODEL=claude-haiku-5-5, restarts the backend, then stops the local chat model in Ollama to free memory. It never prints the key.",
+        "./ved use-local-model switches back to openai-compatible with the server's local model (SERVER_MODEL) and restarts the backend; it does not pull the model, so run ./ved server first if it is missing.",
+        "While VED_LLM_PROVIDER=anthropic, ./ved server does not overwrite VED_LLM_MODEL or pull the chat model; it still pulls the embedding model."
       ]
     },
     "auth": {
@@ -764,7 +798,9 @@
         "without_user_id",
         "TurnKey",
         "require_owned",
-        "add_user"
+        "add_user",
+        "speaker_label",
+        "UNKNOWN_NAME_LINE"
       ],
       "endpoints": [
         "GET /me"
@@ -781,7 +817,8 @@
         "Names (people) and file hashes (documents) are unique per user; stored files are shared by hash, so delete unlinks only when no document references it.",
         "Birthday reminders and check-ins inherit the person's owner; push goes only to the owner's subscriptions.",
         "A push endpoint belongs to one user; subscribing from another account moves it.",
-        "MCP connections belong to one user and are listed, tested, changed and deleted only by that user."
+        "MCP connections belong to one user and are listed, tested, changed and deleted only by that user.",
+        "speaker_label never returns the email: a named user is 'You are talking with {name}.', an unnamed one gets a line asking for the name once and saving it with people.remember (there is no memory save tool)."
       ],
       "tests": [
         "apps/backend/tests/test_users.py",
@@ -841,7 +878,7 @@
         "Every connection query filters by user_id; another person's connection is a 404.",
         "Names are 2-20 lowercase slugs and may not be a built-in prefix (memory, documents, web, people, reminders).",
         "A connection's name is its tool prefix; delete_* tools from any remote server are never exposed.",
-        "plan keeps the VED_EXPOSED_TOOLS allowlist; other connections expose non-destructive tools in name order, capped at 15.",
+        "plan keeps the VED_EXPOSED_TOOLS allowlist; other connections expose non-destructive tools in name order, capped at 15 (40 under anthropic).",
         "A user with an enabled plan connection (or the owner fallback) has Ved's reminders.* tools hidden from the model; the reminders server still runs.",
         "Remote sessions are cached per (user, connection) for five minutes; each runs in its own task so it opens and closes in one task."
       ],

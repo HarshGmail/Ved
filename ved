@@ -25,6 +25,7 @@ PHONE_API_PORT=8443
 TAILSCALE_APP_CLI="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
 DEFAULT_MODEL="qwen3.6:35b"
 SERVER_MODEL="qwen3:4b-instruct-2507-q4_K_M"
+ANTHROPIC_MODEL="claude-haiku-5-5"
 EMBEDDING_MODEL="nomic-embed-text"
 SERVER_WAIT_SECONDS=300
 SERVER_COMPOSE_FILE="compose.server.yaml"
@@ -251,12 +252,19 @@ ensure_server_env() {
   ensure_push_keys
   ensure_server_secret_key
   ensure_infra_env_value VED_LLM_BASE_URL "http://ollama:11434/v1"
+  if uses_anthropic; then
+    return 0
+  fi
   local model
   model="$(infra_env_value "$INFRA/.env" VED_LLM_MODEL)"
   if [ -z "$model" ] || [ "$model" = "$DEFAULT_MODEL" ]; then
     say "using $SERVER_MODEL as the chat model; $DEFAULT_MODEL is too large for this server"
     set_env_value "$INFRA/.env" VED_LLM_MODEL "$SERVER_MODEL"
   fi
+}
+
+uses_anthropic() {
+  [ "$(infra_env_value "$INFRA/.env" VED_LLM_PROVIDER)" = "anthropic" ]
 }
 
 server_compose() {
@@ -309,7 +317,9 @@ cmd_server() {
   say "applying database migrations"
   server_compose run --rm --no-deps backend alembic upgrade head
   wait_for_ollama
-  pull_model "$(infra_env_value "$INFRA/.env" VED_LLM_MODEL)"
+  if ! uses_anthropic; then
+    pull_model "$(infra_env_value "$INFRA/.env" VED_LLM_MODEL)"
+  fi
   pull_model "$(embedding_model)"
   say "starting Ved"
   server_compose up -d --remove-orphans
@@ -329,6 +339,38 @@ cmd_set_plan_token() {
   say "writing VED_PLAN_MCP_TOKEN into infra/.env"
   set_env_value "$INFRA/.env" VED_PLAN_MCP_TOKEN "$token"
   say "restarting the backend so it picks up the token"
+  server_compose up -d backend
+}
+
+cmd_set_anthropic_key() {
+  local key_file="${1:-}" key old_model
+  [ -n "$key_file" ] || fail "usage: ./ved set-anthropic-key <file>"
+  [ -f "$key_file" ] || fail "no such file: $key_file"
+  key="$(tr -d '[:space:]' <"$key_file")"
+  [ -n "$key" ] || fail "$key_file is empty. Make a key at console.anthropic.com"
+  [[ "$key" == sk-ant-* ]] || fail "$key_file does not hold an Anthropic key, which starts with sk-ant-"
+  is_macos && fail "set-anthropic-key restarts the backend container on the home server. On the Mac set VED_ANTHROPIC_API_KEY and VED_LLM_PROVIDER in apps/backend/.env"
+  [ -f "$INFRA/.env" ] || fail "infra/.env missing. Run ./ved server first."
+  old_model="$(infra_env_value "$INFRA/.env" VED_LLM_MODEL)"
+  say "writing VED_ANTHROPIC_API_KEY and the Claude provider into infra/.env"
+  set_env_value "$INFRA/.env" VED_ANTHROPIC_API_KEY "$key"
+  set_env_value "$INFRA/.env" VED_LLM_PROVIDER anthropic
+  set_env_value "$INFRA/.env" VED_LLM_MODEL "$ANTHROPIC_MODEL"
+  say "restarting the backend on $ANTHROPIC_MODEL"
+  server_compose up -d backend
+  if [ -n "$old_model" ]; then
+    say "freeing the memory the local model held"
+    server_compose exec -T ollama ollama stop "$old_model" >/dev/null 2>&1 || true
+  fi
+}
+
+cmd_use_local_model() {
+  is_macos && fail "use-local-model restarts the backend container on the home server. On the Mac set VED_LLM_PROVIDER in apps/backend/.env"
+  [ -f "$INFRA/.env" ] || fail "infra/.env missing. Run ./ved server first."
+  say "switching the chat model back to $SERVER_MODEL"
+  set_env_value "$INFRA/.env" VED_LLM_PROVIDER openai-compatible
+  set_env_value "$INFRA/.env" VED_LLM_MODEL "$SERVER_MODEL"
+  say "restarting the backend on the local model"
   server_compose up -d backend
 }
 
@@ -498,6 +540,9 @@ Home server (Linux, see docs/server.md)
             apply migrations and wait until backend and web answer
   server-eval <model>...  Pull each model and score it on Ved's tool calls
   set-plan-token <file>  Store Plan's API token from a file and restart the backend
+  set-anthropic-key <file>  Answer with Claude Haiku 5.5 using the Anthropic key in
+            the file (starts with sk-ant-) and restart the backend
+  use-local-model  Answer with the local model again and restart the backend
 
 Other
   status    Show which services are running
@@ -516,6 +561,8 @@ case "${1:-help}" in
   server) cmd_server ;;
   server-eval) shift; cmd_server_eval "$@" ;;
   set-plan-token) shift; cmd_set_plan_token "$@" ;;
+  set-anthropic-key) shift; cmd_set_anthropic_key "$@" ;;
+  use-local-model) cmd_use_local_model ;;
   model) cmd_model ;;
   api) cmd_api ;;
   web) cmd_web ;;

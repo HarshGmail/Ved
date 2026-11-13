@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     llm_api_key: str | None = None
     llm_timeout_seconds: float = 120.0
     llm_temperature: float | None = 0.0
+    llm_max_tokens: int = 4096
+    anthropic_api_key: str | None = None
 
     embedding_model: str = "nomic-embed-text"
     embedding_dimensions: int = 768

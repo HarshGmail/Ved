@@ -35,6 +35,7 @@ class AssistantMessage(BaseModel):
     role: Literal["assistant"] = "assistant"
     text: str = ""
     tool_calls: list[ToolCall] = Field(default_factory=list)
+    provider_content: list[dict[str, Any]] | None = Field(default=None, exclude=True)
 
 
 class ToolResultMessage(BaseModel):
