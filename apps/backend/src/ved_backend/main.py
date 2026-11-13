@@ -4,7 +4,6 @@ from collections.abc import AsyncIterable, AsyncIterator
 from contextlib import aclosing, asynccontextmanager
 from typing import Annotated
 
-import anyio
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.sse import EventSourceResponse, ServerSentEvent
@@ -29,6 +28,7 @@ from ved_backend.schemas import (
     AgentRequest,
     AgentTurn,
     ConversationList,
+    ConversationStatus,
     ConversationSummary,
     ConversationTranscript,
     DocumentList,
@@ -47,6 +47,7 @@ from ved_backend.schemas import (
 )
 from ved_backend.tools.servers import configured_servers
 from ved_backend.tools.toolbox import MCPToolbox
+from ved_backend.turns import TurnItem, TurnRegistry
 from ved_backend.uploads import (
     MULTIPART_OVERHEAD_BYTES,
     MalformedUploadError,
@@ -115,6 +116,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         max_upload_bytes=settings.documents_max_upload_bytes,
     )
     application.state.push = push
+    application.state.turns = TurnRegistry()
     application.state.scheduler = scheduler
     application.state.agent = Agent(
         provider,
@@ -200,12 +202,13 @@ async def conversation_history(request: AgentRequest) -> list[Message]:
 History = Annotated[list[Message], Depends(conversation_history)]
 
 
-async def record_reply(request: AgentRequest, turn: AgentTurn) -> AgentReply:
+async def save_turn(
+    conversation_id: uuid.UUID, prompt: str, turn: AgentTurn
+) -> AgentReply:
     store: ConversationStore = app.state.conversations
-    conversation_id = request.conversation_id or await store.start(request.prompt)
     await store.record_turn(
         conversation_id,
-        prompt=request.prompt,
+        prompt=prompt,
         answer=turn.text,
         model=turn.model,
         tool_calls=turn.tool_calls,
@@ -219,6 +222,12 @@ async def record_reply(request: AgentRequest, turn: AgentTurn) -> AgentReply:
         conversation_id=conversation_id,
         tool_calls=turn.tool_calls,
     )
+
+
+async def record_reply(request: AgentRequest, turn: AgentTurn) -> AgentReply:
+    store: ConversationStore = app.state.conversations
+    conversation_id = request.conversation_id or await store.start(request.prompt)
+    return await save_turn(conversation_id, request.prompt, turn)
 
 
 @app.post("/agent/message")
@@ -236,32 +245,53 @@ async def agent_message(request: AgentRequest, history: History) -> AgentReply:
     return await record_reply(request, turn)
 
 
-@app.post("/agent/message/stream", response_class=EventSourceResponse)
-async def agent_message_stream(
-    request: AgentRequest, history: History
-) -> AsyncIterable[ServerSentEvent]:
+async def ensure_turn_can_run(request: AgentRequest) -> None:
+    await conversation_history(request)
+
+
+TurnGuard = Annotated[None, Depends(ensure_turn_can_run)]
+
+
+async def stream_turn(request: AgentRequest) -> AsyncIterator[TurnItem]:
     agent: Agent = app.state.agent
+    store: ConversationStore = app.state.conversations
     try:
+        history = (
+            []
+            if request.conversation_id is None
+            else await store.history(request.conversation_id)
+        )
         async with aclosing(agent.stream(request.prompt, history)) as events:
             async for event in events:
                 if isinstance(event, AgentTurn):
-                    with anyio.CancelScope(shield=True):
-                        reply = await record_reply(request, event)
-                    yield ServerSentEvent(event=DONE_EVENT, data=reply)
+                    yield await record_reply(request, event)
                 else:
-                    yield ServerSentEvent(
-                        event=STREAM_EVENT_NAMES[type(event)], data=event
-                    )
+                    yield event
     except LLMRequestError as error:
         logger.warning("LLM failed mid-stream: %s", error)
-        yield ServerSentEvent(
-            event=ERROR_EVENT, data=StreamErrorEvent(detail=str(error))
-        )
+        yield StreamErrorEvent(detail=str(error))
     except Exception:
         logger.exception("Streaming reply failed")
-        yield ServerSentEvent(
-            event=ERROR_EVENT, data=StreamErrorEvent(detail=UNEXPECTED_STREAM_FAILURE)
-        )
+        yield StreamErrorEvent(detail=UNEXPECTED_STREAM_FAILURE)
+
+
+def server_sent_event(item: TurnItem) -> ServerSentEvent:
+    if isinstance(item, AgentReply):
+        return ServerSentEvent(event=DONE_EVENT, data=item)
+    if isinstance(item, StreamErrorEvent):
+        return ServerSentEvent(event=ERROR_EVENT, data=item)
+    return ServerSentEvent(event=STREAM_EVENT_NAMES[type(item)], data=item)
+
+
+@app.post("/agent/message/stream", response_class=EventSourceResponse)
+async def agent_message_stream(
+    request: AgentRequest, _: TurnGuard
+) -> AsyncIterable[ServerSentEvent]:
+    turns: TurnRegistry = app.state.turns
+    turn_key = request.conversation_id or uuid.uuid4()
+    items = turns.start(turn_key, lambda: stream_turn(request))
+    while (item := await items.get()) is not None:
+        yield server_sent_event(item)
 
 
 @app.get("/push/status")
@@ -326,6 +356,12 @@ async def list_conversations() -> ConversationList:
     return ConversationList(
         conversations=[ConversationSummary.model_validate(row) for row in rows]
     )
+
+
+@app.get("/conversations/{conversation_id}/status")
+async def conversation_status(conversation_id: uuid.UUID) -> ConversationStatus:
+    turns: TurnRegistry = app.state.turns
+    return ConversationStatus(answering=turns.is_answering(conversation_id))
 
 
 @app.get("/conversations/{conversation_id}")

@@ -284,3 +284,10 @@
   opacity: 0.5;
   cursor: default;
 }
+
+.queued {
+  margin-left: 0.5rem;
+  font-size: 0.6875rem;
+  letter-spacing: 0.03em;
+  opacity: 0.6;
+}

@@ -63,6 +63,10 @@ export interface ConversationList {
   conversations: ConversationSummary[];
 }
 
+export interface ConversationStatus {
+  answering: boolean;
+}
+
 export interface TranscriptMessage {
   id: string;
   role: string;

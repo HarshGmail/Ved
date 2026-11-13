@@ -12,6 +12,7 @@ import { createStreamClient } from "./stream";
 import type {
   AgentReply,
   ConversationList,
+  ConversationStatus,
   ConversationTranscript,
   DocumentList,
   DocumentSummary,
@@ -107,6 +108,14 @@ export function createConnector(overrides: Partial<ConnectorConfig> = {}) {
         path: `/conversations/${conversationId}`,
         ...options,
       }),
+    conversationStatus: (
+      conversationId: string,
+      options: Pick<RequestOptions, "signal"> = {},
+    ) =>
+      request<ConversationStatus>({
+        path: `/conversations/${conversationId}/status`,
+        ...options,
+      }),
     listDocuments: (options: Pick<RequestOptions, "signal"> = {}) =>
       request<DocumentList>({ path: "/documents", ...options }),
     uploadDocument: (
@@ -155,6 +164,7 @@ export type {
   Acknowledgement,
   AgentReply,
   ConversationList,
+  ConversationStatus,
   ConversationSummary,
   ConversationTranscript,
   DocumentList,

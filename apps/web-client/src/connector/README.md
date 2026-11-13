@@ -61,3 +61,7 @@ network chunks, so `sse.ts` buffers until each one is complete. The idle timeout
 resets on every chunk, so a long but live answer is never cut off. If the
 backend has no streaming route, `StreamUnavailableError` lets the caller fall
 back to `sendMessage`.
+
+`conversationStatus(id)` reads `GET /conversations/{id}/status` and returns
+`{ answering }`. The chat polls it on open, so a reply still being written
+after a refresh is shown as pending and then reloaded.

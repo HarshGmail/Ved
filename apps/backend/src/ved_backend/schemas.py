@@ -125,6 +125,10 @@ class PushTestResult(BaseModel):
     expired: int
 
 
+class ConversationStatus(BaseModel):
+    answering: bool
+
+
 class ConversationTranscript(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

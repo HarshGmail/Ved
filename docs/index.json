@@ -51,7 +51,8 @@
         "apps/backend/src/ved_backend/agent.py",
         "apps/web-client/src/connector/sse.ts",
         "apps/web-client/src/connector/reply-stream.ts",
-        "apps/web-client/src/app/chat.tsx"
+        "apps/web-client/src/app/chat.tsx",
+        "apps/backend/src/ved_backend/turns.py"
       ],
       "symbols": [
         "agent_message_stream",
@@ -61,17 +62,23 @@
         "StreamErrorEvent",
         "createSseParser",
         "createReplyStream",
-        "requestReply"
+        "requestReply",
+        "TurnRegistry",
+        "stream_turn",
+        "server_sent_event"
       ],
       "endpoints": [
         "POST /agent/message/stream",
         "POST /agent/message"
       ],
       "rules": [
-        "A streamed turn is recorded only on its final answer.",
+        "A streamed turn runs as a background task in TurnRegistry and saves its answer even if the client left.",
+        "A turn in one conversation waits on that conversation's lock, so turns never run concurrently.",
+        "A failed turn saves nothing; the server mints conversation_id only at save time.",
         "Tool calls and recording are shielded from client disconnect.",
         "fetch, not EventSource, because EventSource cannot POST.",
-        "Reasoning text is dropped in the provider; only a thinking event is sent."
+        "Reasoning text is dropped in the provider; only a thinking event is sent.",
+        "Messages sent while busy queue in memory and send in order."
       ],
       "tests": [
         "apps/backend/tests/test_agent_endpoint.py",
@@ -147,11 +154,13 @@
         "Conversation",
         "ConversationMessage",
         "to_llm_messages",
-        "summarise_title"
+        "summarise_title",
+        "TurnRegistry.is_answering"
       ],
       "endpoints": [
         "GET /conversations",
-        "GET /conversations/{conversation_id}"
+        "GET /conversations/{conversation_id}",
+        "GET /conversations/{conversation_id}/status"
       ],
       "settings": [
         "VED_CONVERSATION_HISTORY_LIMIT",
@@ -161,7 +170,8 @@
         "Order by sequence, never created_at.",
         "Replay prompts and final answers only, never tool calls.",
         "The server mints conversation_id, only after the model answers.",
-        "The open conversation is ?c=<id> via history.pushState; useSearchParams needs Suspense."
+        "The open conversation is ?c=<id> via history.pushState; useSearchParams needs Suspense.",
+        "A conversation opened while answering polls status every 3 s and reloads when it finishes."
       ],
       "tests": [
         "apps/backend/tests/test_conversation_store.py",
@@ -473,7 +483,8 @@
         "connector",
         "createConnector",
         "HttpError",
-        "StreamUnavailableError"
+        "StreamUnavailableError",
+        "conversationStatus"
       ],
       "settings": [
         "NEXT_PUBLIC_VED_API_URL"
@@ -481,7 +492,8 @@
       "rules": [
         "No React or Next imports.",
         "Components call connector.*, never fetch.",
-        "HttpError surfaces the backend's detail message."
+        "HttpError surfaces the backend's detail message.",
+        "conversationStatus reads GET /conversations/{id}/status."
       ]
     },
     "web-ui": {

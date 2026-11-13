@@ -1,6 +1,13 @@
 "use client";
 
-import { type DragEvent, type FormEvent, useRef, useState } from "react";
+import {
+  type DragEvent,
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   type AgentReply,
   connector,
@@ -9,12 +16,14 @@ import {
 import styles from "./chat.module.css";
 import { DocumentPicker } from "./documents";
 import { MarkdownReply } from "./markdown-reply";
-import type { TranscriptTurn } from "./transcript";
+import { type TranscriptTurn, transcriptToTurns } from "./transcript";
 
 type Turn =
   | { role: "user"; text: string }
   | { role: "ved"; reply: AgentReply }
   | { role: "error"; text: string };
+
+type QueuedPrompt = { id: number; text: string };
 
 type StreamingReply = {
   text: string;
@@ -25,6 +34,8 @@ type StreamingReply = {
 
 const PLACEHOLDER = "Ved, remind me at 8 PM to call Mom";
 const THINKING_LABEL = "thinking…";
+const BACKGROUND_PLACEHOLDER = "Ved is still answering…";
+const ANSWER_POLL_MS = 3000;
 const NOTHING_STREAMED: StreamingReply = {
   text: "",
   activeTool: null,
@@ -110,7 +121,45 @@ export function Chat({
   const [streaming, setStreaming] = useState<StreamingReply | null>(null);
   const [conversationId, setConversationId] = useState(initialConversationId);
   const [dragging, setDragging] = useState(false);
+  const [queue, setQueue] = useState<QueuedPrompt[]>([]);
+  const [awaitingBackground, setAwaitingBackground] = useState(false);
+  const nextQueuedId = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const busy = pending || awaitingBackground;
+
+  useEffect(() => {
+    if (!initialConversationId) return;
+    const watchedId = initialConversationId;
+    let cancelled = false;
+    let followed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    async function checkAnswering() {
+      try {
+        const { answering } = await connector.conversationStatus(watchedId);
+        if (cancelled) return;
+        if (answering) {
+          followed = true;
+          setAwaitingBackground(true);
+          timer = setTimeout(checkAnswering, ANSWER_POLL_MS);
+          return;
+        }
+        if (!followed) return;
+        const transcript = await connector.readConversation(watchedId);
+        if (cancelled) return;
+        setTurns(transcriptToTurns(transcript));
+        setAwaitingBackground(false);
+      } catch {
+        if (!cancelled) setAwaitingBackground(false);
+      }
+    }
+
+    checkAnswering();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [initialConversationId]);
 
   function onDragOver(event: DragEvent) {
     if (!onDocuments || !carriesFiles(event)) return;
@@ -132,6 +181,43 @@ export function Chat({
     if (files.length > 0) onDocuments(files);
   }
 
+  const sendPrompt = useCallback(
+    async (text: string) => {
+      setTurns((current) => [...current, { role: "user", text }]);
+      setPending(true);
+      setStreaming(NOTHING_STREAMED);
+
+      try {
+        const reply = await requestReply(text, conversationId, (update) =>
+          setStreaming((current) => update(current ?? NOTHING_STREAMED)),
+        );
+        setConversationId(reply.conversation_id);
+        setTurns((current) => [...current, { role: "ved", reply }]);
+        onReply?.(reply.conversation_id);
+      } catch (error: unknown) {
+        setTurns((current) => [
+          ...current,
+          {
+            role: "error",
+            text: error instanceof Error ? error.message : "Request failed",
+          },
+        ]);
+      } finally {
+        setStreaming(null);
+        setPending(false);
+        inputRef.current?.focus();
+      }
+    },
+    [conversationId, onReply],
+  );
+
+  useEffect(() => {
+    if (busy || queue.length === 0) return;
+    const [next, ...rest] = queue;
+    setQueue(rest);
+    sendPrompt(next.text);
+  }, [busy, queue, sendPrompt]);
+
   function startNewConversation() {
     setConversationId(undefined);
     setTurns([]);
@@ -139,36 +225,18 @@ export function Chat({
     onNewConversation?.();
   }
 
-  async function onSubmit(event: FormEvent) {
+  function onSubmit(event: FormEvent) {
     event.preventDefault();
     const trimmed = prompt.trim();
-    if (!trimmed || pending) return;
-
-    setTurns((current) => [...current, { role: "user", text: trimmed }]);
+    if (!trimmed) return;
     setPrompt("");
-    setPending(true);
-    setStreaming(NOTHING_STREAMED);
 
-    try {
-      const reply = await requestReply(trimmed, conversationId, (update) =>
-        setStreaming((current) => update(current ?? NOTHING_STREAMED)),
-      );
-      setConversationId(reply.conversation_id);
-      setTurns((current) => [...current, { role: "ved", reply }]);
-      onReply?.(reply.conversation_id);
-    } catch (error: unknown) {
-      setTurns((current) => [
-        ...current,
-        {
-          role: "error",
-          text: error instanceof Error ? error.message : "Request failed",
-        },
-      ]);
-    } finally {
-      setStreaming(null);
-      setPending(false);
-      inputRef.current?.focus();
+    if (busy || queue.length > 0) {
+      const id = nextQueuedId.current++;
+      setQueue((current) => [...current, { id, text: trimmed }]);
+      return;
     }
+    sendPrompt(trimmed);
   }
 
   return (
@@ -188,7 +256,7 @@ export function Chat({
             className={styles.reset}
             type="button"
             onClick={startNewConversation}
-            disabled={pending}
+            disabled={busy}
           >
             New conversation
           </button>
@@ -212,6 +280,13 @@ export function Chat({
             )}
           </li>
         ))}
+        {awaitingBackground && (
+          <li className={styles.turn} data-role="ved" aria-live="polite">
+            <div className={styles.bubble}>
+              <p className={styles.status}>{BACKGROUND_PLACEHOLDER}</p>
+            </div>
+          </li>
+        )}
         {streaming && hasSomethingToShow(streaming) && (
           <li className={styles.turn} data-role="ved" aria-live="polite">
             <div className={styles.bubble}>
@@ -230,6 +305,13 @@ export function Chat({
             </div>
           </li>
         )}
+        {queue.map((item) => (
+          <li key={item.id} className={styles.turn} data-role="user">
+            <p className={styles.bubble}>
+              {item.text} <span className={styles.queued}>queued</span>
+            </p>
+          </li>
+        ))}
       </ol>
 
       <form className={styles.form} onSubmit={onSubmit}>
@@ -243,10 +325,9 @@ export function Chat({
           onChange={(event) => setPrompt(event.target.value)}
           placeholder={PLACEHOLDER}
           aria-label="Message Ved"
-          disabled={pending}
         />
-        <button className={styles.send} type="submit" disabled={pending}>
-          {pending ? "…" : "Send"}
+        <button className={styles.send} type="submit">
+          Send
         </button>
       </form>
     </section>
