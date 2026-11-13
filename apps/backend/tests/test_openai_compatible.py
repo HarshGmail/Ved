@@ -1,4 +1,5 @@
 import json
+import logging
 
 import httpx2
 import pytest
@@ -25,6 +26,7 @@ CREATE = ToolSpec(
     description="Create a reminder.",
     input_schema={"type": "object", "properties": {"text": {"type": "string"}}},
 )
+LLM_LOGGER = "ved_backend.llm.openai_compatible"
 
 
 def test_system_prompt_leads_the_conversation():
@@ -492,3 +494,65 @@ def test_reasoning_in_a_complete_reply_is_ignored():
     reply = from_wire_message({"content": "391", "reasoning": "multiply"})
 
     assert reply == AssistantMessage(text="391")
+
+
+async def test_complete_logs_the_model_call_with_token_usage(caplog):
+    caplog.set_level(logging.INFO, logger=LLM_LOGGER)
+
+    def handler(request):
+        return httpx2.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "ok"}}],
+                "usage": {"prompt_tokens": 3120, "completion_tokens": 42},
+            },
+        )
+
+    await build_provider(handler).complete(
+        system="s", messages=[UserMessage(text="hi")], tools=[CREATE]
+    )
+
+    assert (
+        "llm_call model=test-model messages=2 tools=1 prompt_tokens=3120 "
+        "completion_tokens=42 first_token_s=None total_s="
+    ) in caplog.text
+
+
+async def test_stream_logs_first_token_and_usage_from_the_final_chunk(caplog):
+    caplog.set_level(logging.INFO, logger=LLM_LOGGER)
+    seen: dict = {}
+
+    def handler(request):
+        seen.update(json.loads(request.content))
+        return httpx2.Response(
+            200,
+            content=sse_body(
+                delta_event({"role": "assistant", "content": ""}),
+                delta_event({"content": "Hi"}),
+                'data: {"choices": [], "usage": {"prompt_tokens": 900, '
+                '"completion_tokens": 3}}',
+                "data: [DONE]",
+            ),
+        )
+
+    texts, _ = await collect_stream(build_provider(handler))
+
+    assert seen["stream_options"] == {"include_usage": True}
+    assert texts == ["Hi"]
+    assert "messages=2 tools=1 prompt_tokens=900 completion_tokens=3" in caplog.text
+    assert "first_token_s=None" not in caplog.text
+
+
+async def test_stream_without_usage_still_logs_the_call(caplog):
+    caplog.set_level(logging.INFO, logger=LLM_LOGGER)
+
+    def handler(request):
+        return httpx2.Response(
+            200, content=sse_body(delta_event({"content": "ok"}), "data: [DONE]")
+        )
+
+    texts, final = await collect_stream(build_provider(handler))
+
+    assert texts == ["ok"]
+    assert final.text == "ok"
+    assert "prompt_tokens=None completion_tokens=None" in caplog.text

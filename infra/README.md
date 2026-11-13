@@ -133,6 +133,10 @@ The `ollama` service sits behind the `server` profile, so the Mac never starts i
 `docker compose --profile server up -d ollama`. It publishes no port and caps
 memory at 4.5 GB; models are pulled into the `ollama-models` volume.
 
+Ollama 0.12 defaults to a 4096-token context, which Ved's system prompt and tool
+schemas nearly fill. `OLLAMA_CONTEXT_LENGTH` (default `8192`) sets it for the
+container; override it in `infra/.env` if the server runs out of memory.
+
 ## On the home server
 
 The home server is `noddy` (i7-10510U, 7.5 GB RAM, no GPU). It runs the whole
