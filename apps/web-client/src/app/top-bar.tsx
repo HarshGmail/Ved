@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { BackendStatus } from "./backend-status";
-import { GearIcon, ListIcon, PenIcon } from "./icons";
+import { GearIcon, ListIcon, PlusIcon } from "./icons";
 import styles from "./top-bar.module.css";
 import { VedEmblem } from "./ved-emblem";
 
@@ -36,12 +36,13 @@ export function TopBar({ conversationsOpen, onToggleConversations, onNewConversa
           <ListIcon className={styles.icon} />
         </button>
         <button
-          className={styles.button}
+          className={`${styles.button} ${styles.newButton}`}
           type="button"
           aria-label="New conversation"
           onClick={onNewConversation}
         >
-          <PenIcon className={styles.icon} />
+          <PlusIcon className={styles.icon} />
+          <span className={styles.newLabel}>New</span>
         </button>
         <Link href="/settings" className={styles.button} aria-label="Settings">
           <GearIcon className={styles.icon} />
