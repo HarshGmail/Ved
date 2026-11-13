@@ -9,10 +9,18 @@ backend. Look topics up in `../docs/index.json` before searching.
 | `people/` | `people.remember`, `.list`, `.forget` |
 | `memory/` | `memory.search`, `documents.search`, `documents.list` |
 | `web/` | `web.search` (swappable provider), `web.fetch` |
+| `snappy/` | `search_photos`, `list_people`, `photos_of_person`, `list_albums`, `album_photos`, `recent_photos`, `photo_details` (HTTP, not stdio) |
 
 ## Rules
 
-- **Tools are named `<domain>.<verb>`.**
+- **Tools are named `<domain>.<verb>`.** `snappy/` is the exception: its names
+  are fixed plain verbs, and the backend prefixes them with the connection name
+  (`photos.search_photos`).
+- **snappy is a streamable HTTP server, not stdio.** It runs as its own
+  container (`ved-mcp-snappy`, port 8200, `/mcp`) and is reached as a user's
+  connection, not started by the backend. Each request carries that person's
+  snappy API key as a Bearer token; no token is a 401 and the key is forwarded
+  as `x-api-key`, never stored or logged.
 - **MCP SDK is v2**: `MCPServer`, not `FastMCP`. `Context` must be imported
   bare from `mcp.server.mcpserver.context`, or it leaks into the tool schema.
   Lifespan state is at `ctx.request_context.lifespan_context`.

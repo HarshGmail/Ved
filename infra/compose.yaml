@@ -98,6 +98,19 @@ services:
         limits:
           memory: 768m
 
+  mcp-snappy:
+    build:
+      context: ../mcp-servers/snappy
+    container_name: ved-mcp-snappy
+    restart: unless-stopped
+    environment:
+      SNAPPY_API_URL: ${SNAPPY_API_URL:-https://photos.my-finances.site/api}
+      SNAPPY_PUBLIC_URL: ${SNAPPY_PUBLIC_URL:-https://photos.my-finances.site}
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
   web:
     build:
       context: ../apps/web-client

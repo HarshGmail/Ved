@@ -336,6 +336,39 @@ def test_presets_offer_plan_and_myfinances(api):
     )
 
 
+def test_presets_offer_snappy_the_tv_remote_home_admin_and_cards(api):
+    presets = {
+        preset["id"]: preset
+        for preset in api.get("/connections/presets").json()["presets"]
+    }
+
+    assert presets["snappy"]["label"] == "Snappy (photos)"
+    assert presets["snappy"]["name"] == "photos"
+    assert presets["snappy"]["url"] == "http://ved-mcp-snappy:8200/mcp"
+    assert (
+        presets["snappy"]["help"]
+        == "snappy → Account settings → API keys → New API key"
+    )
+    assert presets["tv"]["label"] == "TV remote"
+    assert presets["tv"]["name"] == "tv"
+    assert presets["tv"]["url"] == "http://host.docker.internal:8766/mcp"
+    assert presets["tv"]["help"] == "On noddy: cd ~/home-ai-tv && deploy/tv mcp-token"
+    assert presets["home-admin"]["label"] == "home-admin"
+    assert presets["home-admin"]["name"] == "home"
+    assert presets["home-admin"]["url"] == "http://home-admin:3470/api/mcp"
+    assert (
+        presets["home-admin"]["help"]
+        == "On noddy: cd ~/home-admin && ./home-admin mcp-token"
+    )
+    assert presets["cards"]["name"] == "cards"
+    assert presets["cards"]["url"] == "https://playing-cards-nine.vercel.app/api/mcp"
+
+
+@pytest.mark.parametrize("name", ["photos", "tv", "home", "cards"])
+def test_preset_names_are_valid_and_not_reserved(name):
+    assert validate_name(name) == name
+
+
 def test_a_missing_secret_key_is_a_503_for_writes(api):
     app.state.connections = ConnectionStore(
         api.app.state.connections._session_factory,
