@@ -880,11 +880,66 @@
         "A connection's name is its tool prefix; delete_* tools from any remote server are never exposed.",
         "plan keeps the VED_EXPOSED_TOOLS allowlist; other connections expose non-destructive tools in name order, capped at 15 (40 under anthropic).",
         "A user with an enabled plan connection (or the owner fallback) has Ved's reminders.* tools hidden from the model; the reminders server still runs.",
-        "Remote sessions are cached per (user, connection) for five minutes; each runs in its own task so it opens and closes in one task."
+        "Remote sessions are cached per (user, connection) for five minutes; each runs in its own task so it opens and closes in one task.",
+        "Presets (PRESETS in connections.py) are one-click starting points: Plan, MyFinances, Snappy (photos, http://ved-mcp-snappy:8200/mcp), TV remote (host.docker.internal:8766) and home-admin. The backend container maps host.docker.internal to the host gateway so the TV remote is reachable.",
+        "A preset is only a name, URL and help line; the user still pastes their own token, and the connection is tested like any other."
       ],
       "tests": [
         "apps/backend/tests/test_connections.py",
         "apps/backend/tests/test_toolbox.py"
+      ]
+    },
+    "snappy": {
+      "summary": "snappy, the user's photo app: a read-only MCP server over streamable HTTP where each person sends their own snappy API key.",
+      "files": [
+        "mcp-servers/snappy/src/ved_snappy/server.py",
+        "mcp-servers/snappy/src/ved_snappy/photos.py",
+        "mcp-servers/snappy/src/ved_snappy/snappy_client.py",
+        "mcp-servers/snappy/src/ved_snappy/auth.py",
+        "mcp-servers/snappy/src/ved_snappy/config.py",
+        "mcp-servers/snappy/Dockerfile",
+        "mcp-servers/snappy/README.md",
+        "infra/compose.yaml",
+        "apps/backend/src/ved_backend/connections.py",
+        "apps/backend/src/ved_backend/agent.py"
+      ],
+      "symbols": [
+        "search_photos",
+        "list_people",
+        "photos_of_person",
+        "list_albums",
+        "album_photos",
+        "recent_photos",
+        "photo_details",
+        "BearerTokenMiddleware",
+        "SnappyClient",
+        "create_app"
+      ],
+      "endpoints": [
+        "POST /api/search/smart",
+        "POST /api/search/metadata",
+        "GET /api/search/person",
+        "GET /api/people",
+        "GET /api/albums",
+        "GET /api/assets/{id}"
+      ],
+      "settings": [
+        "SNAPPY_API_URL",
+        "SNAPPY_PUBLIC_URL",
+        "SNAPPY_REQUEST_TIMEOUT_SECONDS"
+      ],
+      "rules": [
+        "Runs as its own container (ved-mcp-snappy) on the default network, port 8200, path /mcp; no published ports.",
+        "Every request needs Authorization: Bearer <snappy API key>; no token is a 401 before MCP runs. The key is forwarded to snappy as x-api-key and never stored or logged.",
+        "Read-only: no tool writes to snappy. Photo links are {SNAPPY_PUBLIC_URL}/photos/{id}.",
+        "Results are capped at 50 photos per call and named people and albums at 50 per list.",
+        "Person and album names match case-insensitively; an ambiguous person name asks for the full name instead of guessing.",
+        "Only read tools are exposed; the photos server never calls a write endpoint."
+      ],
+      "tests": [
+        "mcp-servers/snappy/tests/test_photos.py",
+        "mcp-servers/snappy/tests/test_auth.py",
+        "mcp-servers/snappy/tests/test_server.py"
       ]
     }
   }

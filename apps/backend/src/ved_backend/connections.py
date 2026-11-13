@@ -70,6 +70,34 @@ PRESETS = (
         url="https://mcp.my-finances.site/mcp",
         help="MyFinances → Integrations → MCP → ingest token",
     ),
+    ConnectionPreset(
+        id="snappy",
+        label="Snappy (photos)",
+        name="photos",
+        url="http://ved-mcp-snappy:8200/mcp",
+        help="snappy → Account settings → API keys → New API key",
+    ),
+    ConnectionPreset(
+        id="tv",
+        label="TV remote",
+        name="tv",
+        url="http://host.docker.internal:8766/mcp",
+        help="On noddy: cd ~/home-ai-tv && deploy/tv mcp-token",
+    ),
+    ConnectionPreset(
+        id="home-admin",
+        label="home-admin",
+        name="home",
+        url="http://home-admin:3470/api/mcp",
+        help="On noddy: cd ~/home-admin && ./home-admin mcp-token",
+    ),
+    ConnectionPreset(
+        id="cards",
+        label="Playing Cards",
+        name="cards",
+        url="https://playing-cards-nine.vercel.app/api/mcp",
+        help="Playing Cards → Settings → Integrations → Connect Ved",
+    ),
 )
 
 

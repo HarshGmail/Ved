@@ -59,7 +59,8 @@ Examples:
 - "who am I": answer from the "You are talking with" line, or say you do not
   know the name yet and ask for it.
 - "remind me to call Amma tomorrow at 9": call plan.create_reminder with the
-  title "Call Amma", the date as YYYY-MM-DD and times ["09:00"]."""
+  title "Call Amma", the date as YYYY-MM-DD and times ["09:00"].
+- "show me photos from Goa": call photos.search_photos and reply with the links."""
 
 TIME_FORMAT = "%A %d %B %Y, %H:%M %z"
 BUILT_IN_SERVERS = frozenset({"memory", "documents", "web", "people", "reminders"})
