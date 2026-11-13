@@ -20,6 +20,7 @@ from ved_backend.llm.anthropic_provider import (
 from ved_backend.llm.base import (
     AssistantMessage,
     LLMRequestError,
+    ModelUsage,
     ReasoningDelta,
     TextDelta,
     ToolCall,
@@ -181,9 +182,14 @@ class FakeStream:
         return self._final
 
 
-def provider_with(stream: FakeStream) -> tuple[AnthropicProvider, list[dict]]:
+def provider_with(
+    stream: FakeStream, on_usage=None
+) -> tuple[AnthropicProvider, list[dict]]:
     provider = AnthropicProvider(
-        api_key="sk-ant-test", model="claude-haiku-5-5", max_tokens=512
+        api_key="sk-ant-test",
+        model="claude-haiku-5-5",
+        max_tokens=512,
+        on_usage=on_usage,
     )
     calls: list[dict] = []
 
@@ -336,3 +342,46 @@ def test_embeddings_stay_on_the_local_embedder_under_anthropic():
     )
 
     assert isinstance(embedder, OpenAICompatibleEmbedder)
+
+
+async def test_each_final_reply_reports_its_usage_and_missing_cache_counts_are_zero():
+    reported: list[ModelUsage] = []
+
+    async def record(usage: ModelUsage) -> None:
+        reported.append(usage)
+
+    provider, _ = provider_with(
+        FakeStream(
+            [], final_message([{"type": "text", "text": "Hi", "citations": None}])
+        ),
+        on_usage=record,
+    )
+
+    await collect(provider)
+
+    assert reported == [
+        ModelUsage(
+            model="claude-haiku-5-5",
+            input_tokens=12,
+            cache_creation_input_tokens=0,
+            cache_read_input_tokens=0,
+            output_tokens=4,
+        )
+    ]
+
+
+async def test_a_failing_usage_callback_never_breaks_the_reply(caplog):
+    async def broken(usage: ModelUsage) -> None:
+        raise RuntimeError("database is down")
+
+    provider, _ = provider_with(
+        FakeStream(
+            [], final_message([{"type": "text", "text": "Hi", "citations": None}])
+        ),
+        on_usage=broken,
+    )
+
+    chunks = await collect(provider)
+
+    assert chunks[-1].text == "Hi"
+    assert "Could not record Claude usage" in caplog.text

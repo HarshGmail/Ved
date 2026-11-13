@@ -12,6 +12,7 @@ import { createEventStreamClient } from "./sse";
 import { createStreamClient } from "./stream";
 import type {
   AgentReply,
+  ClaudeUsage,
   McpConnection,
   McpConnectionDraft,
   McpConnectionList,
@@ -153,6 +154,18 @@ export function createConnector(overrides: Partial<ConnectorConfig> = {}) {
       request<McpConnectionList>({ path: "/connections", ...options }),
     listConnectionPresets: (options: Pick<RequestOptions, "signal"> = {}) =>
       request<McpConnectionPresetList>({ path: "/connections/presets", ...options }),
+    claudeUsage: (options: Pick<RequestOptions, "signal"> = {}) =>
+      request<ClaudeUsage>({ path: "/usage/claude", ...options }),
+    setClaudeBalance: (
+      balanceUsd: number,
+      options: Pick<RequestOptions, "signal"> = {},
+    ) =>
+      request<ClaudeUsage>({
+        method: "PUT",
+        path: "/usage/claude/balance",
+        body: { balance_usd: balanceUsd },
+        ...options,
+      }),
     createConnection: (
       draft: McpConnectionDraft,
       options: Pick<RequestOptions, "signal"> = {},
@@ -217,6 +230,7 @@ export type { StreamClient, StreamHandle, StreamHandlers } from "./stream";
 export type {
   Acknowledgement,
   AgentReply,
+  ClaudeUsage,
   McpConnection,
   McpConnectionDraft,
   McpConnectionList,

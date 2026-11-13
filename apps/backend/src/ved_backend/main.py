@@ -2,6 +2,7 @@ import logging
 import uuid
 from collections.abc import AsyncIterable, AsyncIterator
 from contextlib import aclosing, asynccontextmanager
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
@@ -9,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from pydantic import BaseModel
 from sqlalchemy import text
-from ved_db import MCPConnection
+from ved_db import MCPConnection, User
 
 from ved_backend.access import require_access
 from ved_backend.agent import Agent
@@ -26,8 +27,8 @@ from ved_backend.database import engine, session_factory
 from ved_backend.documents import DocumentLibrary, DocumentNotFoundError
 from ved_backend.extraction import UnsupportedDocumentError
 from ved_backend.indexing import DocumentIndexer, MessageIndexer
-from ved_backend.llm import build_embedder, build_provider
-from ved_backend.llm.base import LLMRequestError, Message
+from ved_backend.llm import ANTHROPIC, build_embedder, build_provider
+from ved_backend.llm.base import LLMProvider, LLMRequestError, Message
 from ved_backend.memory import ConversationNotFoundError, ConversationStore
 from ved_backend.push import Notification, PushNotConfiguredError, PushService
 from ved_backend.scheduler import ReminderScheduler
@@ -36,6 +37,8 @@ from ved_backend.schemas import (
     AgentReply,
     AgentRequest,
     AgentTurn,
+    ClaudeBalanceUpdate,
+    ClaudeUsage,
     ConnectionCreate,
     ConnectionList,
     ConnectionPresetList,
@@ -75,7 +78,8 @@ from ved_backend.uploads import (
     MalformedUploadError,
     UploadTooLargeError,
 )
-from ved_backend.users import CurrentUser, UserDirectory, speaker_label
+from ved_backend.usage import UsageStore, money, money_or_none
+from ved_backend.users import CurrentUser, UserDirectory, is_owner, speaker_label
 
 logging.basicConfig(
     level=logging.INFO,
@@ -85,6 +89,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 NO_TOOLS_MESSAGE = "No MCP servers are connected, so Ved cannot act yet."
+NOT_OWNER_BALANCE_MESSAGE = "Only the owner can change the Claude balance."
 UNEXPECTED_STREAM_FAILURE = "Ved hit an unexpected error while answering."
 
 DONE_EVENT = "done"
@@ -121,9 +126,12 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         connection_tool_limit=connection_tool_limit_for(settings),
     )
     await toolbox.connect()
-    provider = build_provider(settings)
+    usage = UsageStore(session_factory, timezone=settings.timezone)
+    provider = build_provider(settings, on_usage=usage.record)
 
     application.state.toolbox = toolbox
+    application.state.usage = usage
+    application.state.llm = provider
     application.state.connections = connections
     application.state.users = UserDirectory(session_factory)
     application.state.conversations = ConversationStore(
@@ -229,6 +237,44 @@ async def health() -> HealthStatus:
 @app.get("/me")
 async def read_me(user: CurrentUser) -> MeResponse:
     return MeResponse(email=user.email, name=user.name)
+
+
+async def claude_usage_for(user: User) -> ClaudeUsage:
+    usage: UsageStore = app.state.usage
+    provider: LLMProvider = app.state.llm
+    summary = await usage.summary(datetime.now(UTC))
+    return ClaudeUsage(
+        provider=settings.llm_provider,
+        model=provider.model,
+        tracking=settings.llm_provider == ANTHROPIC,
+        balance_usd=money_or_none(summary.balance_usd),
+        balance_set_at=summary.balance_set_at,
+        spent_since_balance_usd=money(summary.spent_since_balance_usd),
+        remaining_usd=money_or_none(summary.remaining_usd),
+        today_usd=money(summary.today.usd),
+        today_messages=summary.today.messages,
+        month_usd=money(summary.month_usd),
+        last_30_days_usd=money(summary.last_30_days_usd),
+        can_edit=is_owner(user),
+    )
+
+
+@app.get("/usage/claude")
+async def read_claude_usage(user: CurrentUser) -> ClaudeUsage:
+    return await claude_usage_for(user)
+
+
+@app.put("/usage/claude/balance")
+async def set_claude_balance(
+    request: ClaudeBalanceUpdate, user: CurrentUser
+) -> ClaudeUsage:
+    if not is_owner(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=NOT_OWNER_BALANCE_MESSAGE
+        )
+    usage: UsageStore = app.state.usage
+    await usage.set_balance(request.balance_usd, datetime.now(UTC))
+    return await claude_usage_for(user)
 
 
 async def conversation_history(

@@ -1,6 +1,6 @@
 from ved_backend.config import Settings
 from ved_backend.llm.anthropic_provider import AnthropicProvider
-from ved_backend.llm.base import LLMProvider
+from ved_backend.llm.base import LLMProvider, UsageReporter
 from ved_backend.llm.embeddings import OpenAICompatibleEmbedder
 from ved_backend.llm.openai_compatible import OpenAICompatibleProvider
 from ved_backend.llm.stub import StubProvider
@@ -28,7 +28,9 @@ class MissingAnthropicKeyError(ValueError):
         )
 
 
-def build_provider(settings: Settings) -> LLMProvider:
+def build_provider(
+    settings: Settings, on_usage: UsageReporter | None = None
+) -> LLMProvider:
     if settings.llm_provider == STUB:
         return StubProvider(timezone=settings.timezone)
     if settings.llm_provider == OPENAI_COMPATIBLE:
@@ -47,6 +49,7 @@ def build_provider(settings: Settings) -> LLMProvider:
             model=settings.llm_model,
             max_tokens=settings.llm_max_tokens,
             timeout_seconds=settings.llm_timeout_seconds,
+            on_usage=on_usage,
         )
     raise UnknownProviderError(settings.llm_provider)
 

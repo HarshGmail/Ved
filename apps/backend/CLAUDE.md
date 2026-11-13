@@ -54,6 +54,7 @@ FastAPI, Python 3.13, managed by **uv** — `uv run` handles the venv; never
   `(user_id, conversation_id)`. Background jobs run across all users but a
   reminder's push goes only to its owner's subscriptions. The user id reaches
   tools through `Agent` to `MCPToolbox.call(..., user_id=)`, never the prompt.
+- **Claude spend is counted, not fetched.** Anthropic gives no balance for this key, so `AnthropicProvider` reports each final message's usage through `on_usage` (`UsageStore.record`, injected by `build_provider`) and `llm/pricing.py` prices it. The owner types the balance in; `llm_usage` is shared, not per user.
 - MCP servers start once in the lifespan and stay open; one that fails to start
   is logged and skipped. The package is `tools/`, not `mcp/` (that would shadow
   the SDK).
