@@ -527,10 +527,13 @@
         "apps/web-client/Dockerfile",
         "apps/web-client/.dockerignore",
         "apps/web-client/next.config.ts",
-        "apps/web-client/src/connector/http.ts"
+        "apps/web-client/src/connector/http.ts",
+        "apps/web-client/src/app/ved-emblem.tsx",
+        "apps/web-client/src/app/ved-emblem.module.css"
       ],
       "rules": [
         "Check node_modules/next/dist/docs/ before writing Next code.",
+        "The emblem (VedEmblem in ved-emblem.tsx) follows the chat's pending or streaming state: thinking until the first reply token, speaking while text streams, and a 28 px avatar beside the in-flight reply only. Completed replies get no avatar. Its animations are CSS transforms and opacity only, and reduced motion keeps only a glow fade.",
         "Markdown replies never render raw HTML.",
         "Icons are generated from assets/ved-mark.png.",
         "The install banner is app-wide. It is hidden when standalone, after appinstalled, and for 14 days after ✕.",
@@ -551,7 +554,10 @@
         "isSnoozed",
         "snoozeInstallBanner",
         "GET",
-        "TypingIndicator"
+        "TypingIndicator",
+        "VedEmblem",
+        "EmblemState",
+        "PendingReply"
       ],
       "settings": [
         "NEXT_PUBLIC_VED_API_URL",

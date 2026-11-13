@@ -3,6 +3,7 @@
 import {
   type DragEvent,
   type FormEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useRef,
@@ -17,6 +18,7 @@ import styles from "./chat.module.css";
 import { DocumentPicker } from "./documents";
 import { MarkdownReply } from "./markdown-reply";
 import { type TranscriptTurn, transcriptToTurns } from "./transcript";
+import { type EmblemState, VedEmblem } from "./ved-emblem";
 
 type Turn =
   | { role: "user"; text: string }
@@ -36,6 +38,7 @@ const PLACEHOLDER = "Ved, remind me at 8 PM to call Mom";
 const THINKING_LABEL = "thinking…";
 const BACKGROUND_PLACEHOLDER = "Ved is still answering…";
 const ANSWER_POLL_MS = 3000;
+const AVATAR_SIZE = 28;
 const NOTHING_STREAMED: StreamingReply = {
   text: "",
   activeTool: null,
@@ -54,6 +57,10 @@ function waitingLabel(reply: StreamingReply): string | null {
   return null;
 }
 
+function emblemStateFor(reply: StreamingReply): EmblemState {
+  return reply.text ? "speaking" : "thinking";
+}
+
 function TypingIndicator({ label }: { label?: string | null }) {
   return (
     <p className={styles.typing} role="status" aria-label="Ved is typing">
@@ -64,6 +71,25 @@ function TypingIndicator({ label }: { label?: string | null }) {
       </span>
       {label && <span className={styles.typingLabel}>{label}</span>}
     </p>
+  );
+}
+
+function PendingReply({
+  state,
+  children,
+}: {
+  state: EmblemState;
+  children: ReactNode;
+}) {
+  return (
+    <li className={styles.pendingTurn} data-role="ved" aria-live="polite">
+      <VedEmblem
+        state={state}
+        size={AVATAR_SIZE}
+        className={styles.avatar}
+      />
+      <div className={styles.bubble}>{children}</div>
+    </li>
   );
 }
 
@@ -295,22 +321,18 @@ export function Chat({
           </li>
         ))}
         {awaitingBackground && (
-          <li className={styles.turn} data-role="ved" aria-live="polite">
-            <div className={styles.bubble}>
-              <TypingIndicator label={BACKGROUND_PLACEHOLDER} />
-            </div>
-          </li>
+          <PendingReply state="thinking">
+            <TypingIndicator label={BACKGROUND_PLACEHOLDER} />
+          </PendingReply>
         )}
         {streaming && (
-          <li className={styles.turn} data-role="ved" aria-live="polite">
-            <div className={styles.bubble}>
-              {streaming.text ? (
-                <MarkdownReply text={streaming.text} />
-              ) : (
-                <TypingIndicator label={waitingLabel(streaming)} />
-              )}
-            </div>
-          </li>
+          <PendingReply state={emblemStateFor(streaming)}>
+            {streaming.text ? (
+              <MarkdownReply text={streaming.text} />
+            ) : (
+              <TypingIndicator label={waitingLabel(streaming)} />
+            )}
+          </PendingReply>
         )}
         {queue.map((item) => (
           <li key={item.id} className={styles.turn} data-role="user">
