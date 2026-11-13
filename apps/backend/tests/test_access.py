@@ -193,3 +193,17 @@ def test_app_routes_refuse_requests_without_sign_in(monkeypatch, admin_settings)
 def test_admin_emails_accept_empty_comma_and_json(monkeypatch, raw, expected):
     monkeypatch.setenv("VED_ADMIN_EMAILS", raw)
     assert Settings().admin_emails == expected
+
+
+def test_star_lets_in_anyone_cloudflare_signed_in(admin_settings, resolver, sign):
+    family = admin_settings.model_copy(update={"admin_emails": ["*"]})
+
+    assert check_access(sign({"email": "dad@example.com"}), family, resolver).email == (
+        "dad@example.com"
+    )
+    assert (
+        check_access(
+            sign({"email": "dad@example.com"}, audience="other-app"), family, resolver
+        ).email
+        is None
+    )

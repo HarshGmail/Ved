@@ -323,7 +323,7 @@ working here are in `CLAUDE.md` next to this file.
 home server set `VED_AUTH=cloudflare-access` and every route except `/health`
 requires the `Cf-Access-Jwt-Assertion` token that Cloudflare Access sends. The
 backend verifies its RS256 signature, audience and issuer, then admits only the
-emails in `VED_ADMIN_EMAILS` (case-insensitive). Anything else gets `401` with
+emails in `VED_ADMIN_EMAILS (`*` lets in anyone the Access policy allows)` (case-insensitive). Anything else gets `401` with
 a `detail` naming the cause.
 
 | Setting | Purpose |
