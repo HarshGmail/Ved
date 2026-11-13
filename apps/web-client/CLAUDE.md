@@ -21,7 +21,9 @@ Next.js 16 App Router + TypeScript PWA. Look topics up in
 - **Assistant replies render as markdown** through `markdown-reply.tsx`. Raw
   HTML is never rendered; links open with `rel="noopener noreferrer"`.
 - **Every icon is generated from `assets/ved-mark.png`** by
-  `scripts/generate-icons.py`. Never hand-edit the outputs.
+  `scripts/generate-icons.py`. Never hand-edit the outputs. The mark itself is
+  drawn in `assets/ved-mark.svg` (render it to the 1024px PNG with sharp, then
+  run the script).
 - Push needs a secure context: `localhost` or real HTTPS. A `192.168.x.x`
   address is not enough.
 
