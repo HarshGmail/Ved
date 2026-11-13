@@ -121,6 +121,18 @@ MCP servers are started once in the FastAPI lifespan and held open, not spawned
 per request — see `tools/`. A server that fails to start is logged and skipped;
 the rest still work.
 
+## Plan (family planner)
+
+Plan, the family planner on the home server, is reached over its MCP endpoint
+(`VED_PLAN_MCP_URL`, default `http://family-planner:3456/api/mcp`). Its tools
+appear as `plan.<tool>`, and `delete_*` tools are never exposed.
+
+To connect it, make a token in Plan under Settings, API tokens, save the token
+to a file, then run `./ved set-plan-token <file>`. That writes
+`VED_PLAN_MCP_TOKEN` into `infra/.env` and restarts the backend. While the token
+is set, Ved's own reminders server is not started and Plan's reminder tools take
+its place. Without a token, Plan is skipped and Ved runs as before.
+
 ## Reminders actually firing
 
 Storing a reminder is not reminding anyone. `scheduler.py` runs a background
@@ -305,6 +317,8 @@ Settings read `VED_`-prefixed env vars, or a local `.env`. See `.env.example`.
 | `VED_VAPID_SUBJECT` | `mailto:ved@example.com` | Contact the push service can use |
 | `VED_REMINDERS_SERVER_DIR` | repo path | Where to launch the reminders MCP server |
 | `VED_PEOPLE_SERVER_DIR` | repo path | Where to launch the people MCP server |
+| `VED_PLAN_MCP_URL` | `http://family-planner:3456/api/mcp` | Plan's MCP endpoint |
+| `VED_PLAN_MCP_TOKEN` | unset | Plan API token; setting it swaps Ved's reminders for Plan's |
 
 `VED_TIMEZONE` is not cosmetic. The reminders server rejects timestamps without
 a UTC offset, so this is what turns "8 PM" into `20:00+05:30` rather than a

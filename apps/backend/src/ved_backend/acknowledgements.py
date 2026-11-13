@@ -3,6 +3,7 @@ DEFAULT_ACKNOWLEDGEMENT = "On it…"
 
 ACKNOWLEDGEMENTS: dict[str, str] = {
     "reminders": "Setting that up…",
+    "plan": "Checking your planner…",
     "reminders.list": "Let me check your reminders…",
     "people": "Noting that down…",
     "people.list": "Let me check…",

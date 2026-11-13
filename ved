@@ -305,6 +305,20 @@ cmd_server() {
   server_compose ps
 }
 
+cmd_set_plan_token() {
+  local token_file="${1:-}" token
+  [ -n "$token_file" ] || fail "usage: ./ved set-plan-token <file>"
+  [ -f "$token_file" ] || fail "no such file: $token_file"
+  token="$(tr -d '[:space:]' <"$token_file")"
+  [ -n "$token" ] || fail "$token_file is empty. Make a token in Plan under Settings, API tokens"
+  is_macos && fail "set-plan-token restarts the backend container on the home server. On the Mac set VED_PLAN_MCP_TOKEN in apps/backend/.env"
+  ensure_env_files
+  say "writing VED_PLAN_MCP_TOKEN into infra/.env"
+  set_env_value "$INFRA/.env" VED_PLAN_MCP_TOKEN "$token"
+  say "restarting the backend so it picks up the token"
+  server_compose up -d backend
+}
+
 cmd_server_eval() {
   [ "$#" -gt 0 ] || fail "usage: ./ved server-eval <model>..."
   local model models=()
@@ -465,6 +479,7 @@ Home server (Linux, see docs/server.md)
   server    Build and start everything in containers, pull the models,
             apply migrations and wait until backend and web answer
   server-eval <model>...  Pull each model and score it on Ved's tool calls
+  set-plan-token <file>  Store Plan's API token from a file and restart the backend
 
 Other
   status    Show which services are running
@@ -482,6 +497,7 @@ case "${1:-help}" in
   db) cmd_db ;;
   server) cmd_server ;;
   server-eval) shift; cmd_server_eval "$@" ;;
+  set-plan-token) shift; cmd_set_plan_token "$@" ;;
   model) cmd_model ;;
   api) cmd_api ;;
   web) cmd_web ;;

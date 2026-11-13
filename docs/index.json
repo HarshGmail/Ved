@@ -191,7 +191,8 @@
         "Claimed FOR UPDATE SKIP LOCKED with notified_at in the same transaction.",
         "If nothing was reachable the stamp is cleared and it retries until give_up_after.",
         "Prefer reschedule over complete-then-create.",
-        "due_at must carry a UTC offset."
+        "due_at must carry a UTC offset.",
+        "When VED_PLAN_MCP_TOKEN is set, Ved's reminders server is not started; plan.create_reminder, plan.list_reminders, plan.my_due_reminders and plan.mark_reminder_done replace it."
       ],
       "tests": [
         "mcp-servers/reminders/tests",
@@ -403,17 +404,31 @@
       "files": [
         "apps/backend/src/ved_backend/tools/toolbox.py",
         "apps/backend/src/ved_backend/tools/servers.py",
-        "mcp-servers/CLAUDE.md"
+        "mcp-servers/CLAUDE.md",
+        "apps/backend/src/ved_backend/config.py"
       ],
       "symbols": [
         "MCPToolbox",
-        "configured_servers"
+        "configured_servers",
+        "RemoteServer",
+        "is_destructive",
+        "PLAN"
       ],
       "rules": [
         "SDK v2: MCPServer; bare Context from mcp.server.mcpserver.context.",
         "Return Pydantic models; raise ToolError for bad input.",
         "Servers never run DDL.",
-        "A new server needs a Dockerfile stage, a configured_servers entry, a config.py dir, a CI job and a ./ved setup line."
+        "A new server needs a Dockerfile stage, a configured_servers entry, a config.py dir, a CI job and a ./ved setup line.",
+        "Plan is a remote streamable HTTP server at VED_PLAN_MCP_URL, authenticated with Authorization: Bearer; its tools appear as plan.<tool>.",
+        "Tools whose names start with delete_ are never exposed to the model; sensitive actions need the permission layer first.",
+        "A remote server that fails to connect is logged as a warning and skipped, so startup continues without its tools."
+      ],
+      "settings": [
+        "VED_PLAN_MCP_URL",
+        "VED_PLAN_MCP_TOKEN"
+      ],
+      "tests": [
+        "apps/backend/tests/test_toolbox.py"
       ]
     },
     "database": {
