@@ -1,8 +1,10 @@
+import json
 from datetime import time
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 LOCAL_DATABASE_URL = "postgresql+psycopg://ved:ved@localhost:5432/ved"
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -27,7 +29,7 @@ class Settings(BaseSettings):
     auth: Literal["off", "cloudflare-access"] = "off"
     access_team_domain: str = "floral-limit-f927.cloudflareaccess.com"
     access_aud: str = ""
-    admin_emails: list[str] = []
+    admin_emails: Annotated[list[str], NoDecode] = []
     database_url: str = LOCAL_DATABASE_URL
     database_pool_size: int = 5
     database_pool_max_overflow: int = 5
@@ -77,6 +79,16 @@ class Settings(BaseSettings):
     web_server_dir: str = str(WEB_SERVER_DIR)
     search_provider: str = DEFAULT_SEARCH_PROVIDER
     searxng_url: str = LOCAL_SEARXNG_URL
+
+    @field_validator("admin_emails", mode="before")
+    @classmethod
+    def split_admin_emails(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        if text.startswith("["):
+            return json.loads(text)
+        return [email.strip() for email in text.split(",") if email.strip()]
 
 
 settings = Settings()
