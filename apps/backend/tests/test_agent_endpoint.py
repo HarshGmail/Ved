@@ -1,3 +1,4 @@
+import asyncio
 import json
 import uuid
 
@@ -5,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from ved_backend.llm.base import LLMRequestError, ToolSpec
-from ved_backend.main import agent_message_stream, app
+from ved_backend.main import agent_message_stream, app, conversation_status
 from ved_backend.memory import ConversationNotFoundError
 from ved_backend.schemas import (
     AcknowledgementEvent,
@@ -18,6 +19,7 @@ from ved_backend.schemas import (
     ToolInvocation,
     ToolStartedEvent,
 )
+from ved_backend.turns import TurnRegistry
 
 CREATE = ToolSpec(name="reminders.create", description="", input_schema={})
 CONVERSATION_ID = uuid.uuid4()
@@ -83,12 +85,14 @@ def wired():
         app.state.toolbox = FakeToolbox(tools)
         app.state.conversations = store or FakeStore()
         app.state.indexer = None
+        app.state.turns = TurnRegistry()
         return agent, app.state.conversations
 
     yield _wire
     app.state.agent = None
     app.state.toolbox = None
     app.state.conversations = None
+    app.state.turns = None
 
 
 def post(prompt: str, conversation_id: uuid.UUID | None = None):
@@ -346,16 +350,102 @@ def test_stream_failure_sends_an_error_event_and_records_nothing(wired):
     assert store.recorded == []
 
 
-async def test_a_client_leaving_mid_stream_records_nothing(wired):
-    _, store = wired(REMINDER_TURN)
-    stream = agent_message_stream(AgentRequest(prompt="remind me at 8 PM"), [])
+async def drain(stream) -> list:
+    return [item async for item in stream]
+
+
+async def wait_until_idle(turns: TurnRegistry, conversation_id: uuid.UUID) -> None:
+    async with asyncio.timeout(2):
+        while turns.is_answering(conversation_id):
+            await asyncio.sleep(0.01)
+
+
+async def answering(conversation_id: uuid.UUID) -> bool:
+    return (await conversation_status(conversation_id)).answering
+
+
+class GatedAgent:
+    def __init__(self) -> None:
+        self.release = asyncio.Event()
+        self.prompts: list[str] = []
+        self.running = 0
+        self.max_running = 0
+
+    async def stream(self, prompt, history=()):
+        self.prompts.append(prompt)
+        self.running += 1
+        self.max_running = max(self.max_running, self.running)
+        try:
+            yield TokenEvent(text="Working ")
+            await self.release.wait()
+            yield AgentTurn(text="Done.", model="stub-rules-v1")
+        finally:
+            self.running -= 1
+
+
+async def test_a_reply_is_saved_when_the_client_stops_reading(wired):
+    _, store = wired(REMINDER_TURN, store=FakeStore(known=[CONVERSATION_ID]))
+    stream = agent_message_stream(
+        AgentRequest(prompt="remind me at 8 PM", conversation_id=CONVERSATION_ID),
+        None,
+    )
 
     first = await anext(stream)
     await stream.aclose()
+    await wait_until_idle(app.state.turns, CONVERSATION_ID)
 
     assert first.event == "tool"
-    assert store.started == []
-    assert store.recorded == []
+    assert len(store.recorded) == 1
+    assert store.recorded[0]["answer"] == "Reminder set for 8 PM."
+
+
+async def test_status_is_answering_until_the_reply_is_saved(wired):
+    wired(store=FakeStore(known=[CONVERSATION_ID]))
+    agent = GatedAgent()
+    app.state.agent = agent
+    stream = agent_message_stream(
+        AgentRequest(prompt="remind me", conversation_id=CONVERSATION_ID), None
+    )
+
+    await anext(stream)
+    assert await answering(CONVERSATION_ID) is True
+
+    agent.release.set()
+    await drain(stream)
+    assert await answering(CONVERSATION_ID) is False
+
+
+def test_status_endpoint_reports_an_idle_conversation(wired):
+    wired()
+
+    response = client.get(f"/conversations/{uuid.uuid4()}/status")
+
+    assert response.status_code == 200
+    assert response.json() == {"answering": False}
+
+
+async def test_turns_in_one_conversation_run_one_after_another(wired):
+    wired(store=FakeStore(known=[CONVERSATION_ID]))
+    agent = GatedAgent()
+    app.state.agent = agent
+    first = agent_message_stream(
+        AgentRequest(prompt="first", conversation_id=CONVERSATION_ID), None
+    )
+    second = agent_message_stream(
+        AgentRequest(prompt="second", conversation_id=CONVERSATION_ID), None
+    )
+
+    await anext(first)
+    second_done = asyncio.create_task(drain(second))
+    await asyncio.sleep(0.05)
+    assert agent.prompts == ["first"]
+
+    agent.release.set()
+    await drain(first)
+    await second_done
+
+    assert agent.prompts == ["first", "second"]
+    assert agent.max_running == 1
 
 
 class ThinkingAgent:

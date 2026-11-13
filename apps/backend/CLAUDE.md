@@ -18,9 +18,10 @@ FastAPI, Python 3.13, managed by **uv** — `uv run` handles the venv; never
   results, never raised. `VED_AGENT_MAX_TOOL_ROUNDS` caps a looping model.
 - **Tool calls in a round run concurrently**; results go back in call order.
   Each call is shielded from client disconnects.
-- **A streamed turn is recorded only on its final answer.** The server mints
-  `conversation_id`, and only after the model answers, so a failed turn leaves no
-  empty thread.
+- **A streamed turn runs as a background task in `TurnRegistry`**, keyed by
+  conversation id and serialised by a per-conversation lock. It saves the final
+  answer even when the client has gone; a failed turn saves nothing. The server
+  mints `conversation_id` at save time, so a failed turn leaves no empty thread.
 - **History replays prompts and final answers, never tool calls** — a trimmed
   window of tool calls would be malformed on the wire.
 - **Order conversation messages by `sequence`, never `created_at`.** Both

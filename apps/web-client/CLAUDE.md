@@ -16,6 +16,9 @@ Next.js 16 App Router + TypeScript PWA. Look topics up in
   `fetch` because `EventSource` can't `POST`. `sse.ts` buffers events split
   across chunks. If streaming is unavailable the chat falls back to
   `sendMessage`.
+- **Messages sent while a reply is busy queue in memory** and send in order.
+  A conversation opened while the server is still answering polls
+  `connector.conversationStatus` every 3 s and reloads when it finishes.
 - **The open conversation lives in the URL as `?c=<id>`**, written with
   `history.pushState`. `useSearchParams` needs a `<Suspense>` boundary.
 - **Assistant replies render as markdown** through `markdown-reply.tsx`. Raw
