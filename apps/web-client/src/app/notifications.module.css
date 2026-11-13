@@ -1,56 +1,47 @@
-.panel {
-  width: 100%;
-  max-width: 34rem;
-  margin-top: 1.25rem;
-  padding: 0.75rem 0.875rem;
+.banner {
+  width: min(44rem, calc(100% - 2rem));
+  margin: 0.5rem auto 0;
+  padding: 0.25rem 0.25rem 0.25rem 0.875rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   border-radius: 0.75rem;
   border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
-  display: flex;
-  flex-direction: column;
-  gap: 0.625rem;
-  text-align: left;
-}
-
-.panel[data-state="on"] {
-  border-color: color-mix(in srgb, #3fb950 40%, transparent);
-}
-
-.panel[data-state="blocked"],
-.panel[data-state="error"] {
-  border-color: color-mix(in srgb, #f85149 45%, transparent);
-}
-
-.line {
-  margin: 0;
+  background: color-mix(in srgb, var(--accent) 10%, var(--background));
   font-size: 0.875rem;
-  line-height: 1.45;
-  opacity: 0.85;
 }
 
-.actions {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+.bannerText {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .button,
 .quiet {
-  padding: 0.4375rem 0.875rem;
-  border-radius: 0.625rem;
+  min-height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.875rem;
+  border-radius: 999px;
   border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
   color: inherit;
   font: inherit;
   font-size: 0.875rem;
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .button {
-  background: color-mix(in srgb, currentColor 12%, transparent);
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--on-accent);
+  font-weight: 600;
 }
 
 .quiet {
   background: transparent;
-  opacity: 0.7;
 }
 
 .button:disabled,
@@ -59,10 +50,58 @@
   cursor: default;
 }
 
+.dismiss {
+  flex: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.dismissIcon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.button:focus-visible,
+.quiet:focus-visible,
+.dismiss:focus-visible {
+  outline: 2px solid color-mix(in srgb, currentColor 45%, transparent);
+  outline-offset: 2px;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  text-align: left;
+}
+
+.line {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  opacity: 0.85;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .note {
   margin: 0;
   font-family: var(--font-geist-mono);
   font-size: 0.6875rem;
   letter-spacing: 0.02em;
   opacity: 0.6;
+  overflow-wrap: anywhere;
 }

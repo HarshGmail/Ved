@@ -1,10 +1,5 @@
-import type { Metadata } from "next";
-import { ConnectionsPanel } from "../connections-panel";
-
-export const metadata: Metadata = {
-  title: "Connections · Ved",
-};
+import { redirect } from "next/navigation";
 
 export default function ConnectionsPage() {
-  return <ConnectionsPanel />;
+  redirect("/settings#integrations");
 }

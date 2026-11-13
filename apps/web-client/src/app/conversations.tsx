@@ -7,7 +7,10 @@ import { ConversationList } from "./conversation-list";
 import { useConversationParam } from "./conversation-url";
 import styles from "./conversations.module.css";
 import { DocumentShelf, useDocuments } from "./documents";
+import { ReminderBanner } from "./notifications";
 import { type TranscriptTurn, transcriptToTurns } from "./transcript";
+import { TopBar } from "./top-bar";
+import { firstNameOf, usePerson } from "./use-person";
 
 const UNUSABLE_ID_STATUSES = new Set([404, 422]);
 const MISSING_CONVERSATION_NOTICE =
@@ -50,7 +53,9 @@ export function Conversations() {
     error: null,
   });
   const [panelOpen, setPanelOpen] = useState(false);
+  const [reminderBannerHidden, setReminderBannerHidden] = useState(false);
   const documents = useDocuments();
+  const firstName = firstNameOf(usePerson());
   const activeSessionKey = useRef(session.key);
 
   if (paramId !== seenParamId) {
@@ -146,15 +151,15 @@ export function Conversations() {
 
   return (
     <div className={styles.workspace}>
-      <button
-        className={styles.toggle}
-        type="button"
-        aria-expanded={panelOpen}
-        aria-controls="conversation-panel"
-        onClick={() => setPanelOpen((open) => !open)}
-      >
-        {panelOpen ? "Hide conversations" : "Conversations"}
-      </button>
+      <TopBar
+        conversationsOpen={panelOpen}
+        onToggleConversations={() => setPanelOpen((open) => !open)}
+        onNewConversation={() => open(null)}
+      />
+
+      {!reminderBannerHidden && (
+        <ReminderBanner onDismiss={() => setReminderBannerHidden(true)} />
+      )}
 
       <aside id="conversation-panel" className={styles.panel} data-open={panelOpen}>
         <ConversationList
@@ -166,6 +171,14 @@ export function Conversations() {
           onNewConversation={() => open(null)}
         />
       </aside>
+      {panelOpen && (
+        <button
+          className={styles.scrim}
+          type="button"
+          aria-label="Close conversations"
+          onClick={() => setPanelOpen(false)}
+        />
+      )}
 
       <DocumentShelf
         documents={documents.documents}
@@ -190,8 +203,8 @@ export function Conversations() {
           key={session.key}
           conversationId={session.conversationId ?? undefined}
           initialTurns={session.status === "ready" ? session.turns : []}
+          firstName={firstName}
           onReply={(conversationId) => onReply(session.key, conversationId)}
-          onNewConversation={() => open(null)}
           onDocuments={documents.upload}
         />
       )}

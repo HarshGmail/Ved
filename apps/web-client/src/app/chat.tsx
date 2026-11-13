@@ -9,7 +9,6 @@ import {
   useRef,
   useState,
 } from "react";
-import Link from "next/link";
 import {
   type AgentReply,
   connector,
@@ -17,10 +16,11 @@ import {
 } from "@/connector";
 import styles from "./chat.module.css";
 import { DocumentPicker } from "./documents";
-import { PlugIcon } from "./icons";
+import { ArrowUpIcon } from "./icons";
 import { MarkdownReply } from "./markdown-reply";
 import { type TranscriptTurn, transcriptToTurns } from "./transcript";
 import { type EmblemState, VedEmblem } from "./ved-emblem";
+import { Welcome } from "./welcome";
 
 type Turn =
   | { role: "user"; text: string }
@@ -145,16 +145,16 @@ async function requestReply(
 interface ChatProps {
   conversationId?: string;
   initialTurns?: TranscriptTurn[];
+  firstName?: string | null;
   onReply?: (conversationId: string) => void;
-  onNewConversation?: () => void;
   onDocuments?: (files: File[]) => void;
 }
 
 export function Chat({
   conversationId: initialConversationId,
   initialTurns = [],
+  firstName = null,
   onReply,
-  onNewConversation,
   onDocuments,
 }: ChatProps) {
   const [turns, setTurns] = useState<Turn[]>(initialTurns);
@@ -168,6 +168,7 @@ export function Chat({
   const nextQueuedId = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const busy = pending || awaitingBackground;
+  const showWelcome = turns.length === 0 && !busy && queue.length === 0;
 
   useEffect(() => {
     if (!initialConversationId) return;
@@ -260,11 +261,9 @@ export function Chat({
     sendPrompt(next.text);
   }, [busy, queue, sendPrompt]);
 
-  function startNewConversation() {
-    setConversationId(undefined);
-    setTurns([]);
+  function suggest(suggestion: string) {
+    setPrompt(suggestion);
     inputRef.current?.focus();
-    onNewConversation?.();
   }
 
   function onSubmit(event: FormEvent) {
@@ -289,82 +288,67 @@ export function Chat({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      {turns.length > 0 && (
-        <div className={styles.toolbar}>
-          <span className={styles.thread}>
-            {conversationId ? "remembering this thread" : "new thread"}
-          </span>
-          <div className={styles.toolbarActions}>
-            <button
-              className={styles.reset}
-              type="button"
-              onClick={startNewConversation}
-              disabled={busy}
-            >
-              New conversation
-            </button>
-            <Link href="/connections" className={styles.plug} aria-label="Connections">
-              <PlugIcon className={styles.plugIcon} />
-            </Link>
-          </div>
-        </div>
+      {showWelcome ? (
+        <Welcome firstName={firstName} onPick={suggest} />
+      ) : (
+        <ol className={styles.turns}>
+          {turns.map((turn, index) => (
+            <li key={index} className={styles.turn} data-role={turn.role}>
+              {turn.role === "user" && <p className={styles.bubble}>{turn.text}</p>}
+              {turn.role === "error" && (
+                <p className={styles.bubble}>{turn.text}</p>
+              )}
+              {turn.role === "ved" && (
+                <div className={styles.bubble}>
+                  <MarkdownReply text={turn.reply.text} />
+                  {toolLabel(turn.reply) && (
+                    <p className={styles.tools}>{toolLabel(turn.reply)}</p>
+                  )}
+                </div>
+              )}
+            </li>
+          ))}
+          {awaitingBackground && (
+            <PendingReply state="thinking">
+              <TypingIndicator label={BACKGROUND_PLACEHOLDER} />
+            </PendingReply>
+          )}
+          {streaming && (
+            <PendingReply state={emblemStateFor(streaming)}>
+              {streaming.text ? (
+                <MarkdownReply text={streaming.text} />
+              ) : (
+                <TypingIndicator label={waitingLabel(streaming)} />
+              )}
+            </PendingReply>
+          )}
+          {queue.map((item) => (
+            <li key={item.id} className={styles.turn} data-role="user">
+              <p className={styles.bubble}>
+                {item.text} <span className={styles.queued}>queued</span>
+              </p>
+            </li>
+          ))}
+        </ol>
       )}
 
-      <ol className={styles.turns}>
-        {turns.map((turn, index) => (
-          <li key={index} className={styles.turn} data-role={turn.role}>
-            {turn.role === "user" && <p className={styles.bubble}>{turn.text}</p>}
-            {turn.role === "error" && (
-              <p className={styles.bubble}>{turn.text}</p>
-            )}
-            {turn.role === "ved" && (
-              <div className={styles.bubble}>
-                <MarkdownReply text={turn.reply.text} />
-                {toolLabel(turn.reply) && (
-                  <p className={styles.tools}>{toolLabel(turn.reply)}</p>
-                )}
-              </div>
-            )}
-          </li>
-        ))}
-        {awaitingBackground && (
-          <PendingReply state="thinking">
-            <TypingIndicator label={BACKGROUND_PLACEHOLDER} />
-          </PendingReply>
-        )}
-        {streaming && (
-          <PendingReply state={emblemStateFor(streaming)}>
-            {streaming.text ? (
-              <MarkdownReply text={streaming.text} />
-            ) : (
-              <TypingIndicator label={waitingLabel(streaming)} />
-            )}
-          </PendingReply>
-        )}
-        {queue.map((item) => (
-          <li key={item.id} className={styles.turn} data-role="user">
-            <p className={styles.bubble}>
-              {item.text} <span className={styles.queued}>queued</span>
-            </p>
-          </li>
-        ))}
-      </ol>
-
-      <form className={styles.form} onSubmit={onSubmit}>
-        {onDocuments && (
-          <DocumentPicker className={styles.attach} onFiles={onDocuments} />
-        )}
-        <input
-          ref={inputRef}
-          className={styles.input}
-          value={prompt}
-          onChange={(event) => setPrompt(event.target.value)}
-          placeholder={PLACEHOLDER}
-          aria-label="Message Ved"
-        />
-        <button className={styles.send} type="submit">
-          Send
-        </button>
+      <form className={styles.composer} onSubmit={onSubmit}>
+        <div className={styles.field}>
+          {onDocuments && (
+            <DocumentPicker className={styles.attach} onFiles={onDocuments} />
+          )}
+          <input
+            ref={inputRef}
+            className={styles.input}
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            placeholder={PLACEHOLDER}
+            aria-label="Message Ved"
+          />
+          <button className={styles.send} type="submit" aria-label="Send">
+            <ArrowUpIcon className={styles.sendIcon} />
+          </button>
+        </div>
       </form>
     </section>
   );

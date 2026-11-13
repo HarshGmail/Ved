@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 import {
   connector,
@@ -8,7 +7,6 @@ import {
   type McpConnectionPreset,
   type McpConnectionTest,
 } from "@/connector";
-import { ChevronLeftIcon } from "./icons";
 import styles from "./connections.module.css";
 
 const NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -457,14 +455,8 @@ export function ConnectionsPanel() {
   const availablePresets = presets.filter((preset) => !connectedUrls.has(preset.url));
 
   return (
-    <main className={styles.page}>
-      <Link href="/" className={styles.back} aria-label="Back to Ved">
-        <ChevronLeftIcon className={styles.backIcon} />
-        Ved
-      </Link>
-
+    <div className={styles.page}>
       <header className={styles.header}>
-        <h1 className={styles.title}>Connections</h1>
         <p className={styles.intro}>
           Link your own tools. Ved can use only the connections you turn on, and only you see them.
         </p>
@@ -534,6 +526,6 @@ export function ConnectionsPanel() {
           />
         )}
       </Section>
-    </main>
+    </div>
   );
 }

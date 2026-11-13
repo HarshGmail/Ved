@@ -5,6 +5,7 @@ import { INSTALL_CAPTURE_SCRIPT } from "./install-prompt";
 import { InstallBanner } from "./install-banner";
 import { LaunchSplash } from "./launch-splash";
 import { ServiceWorkerRegistration } from "./service-worker-registration";
+import { THEME_INIT_SCRIPT } from "./theme";
 
 const SPLASH_DEVICES = [
   { width: 1290, height: 2796, ratio: 3 },
@@ -59,9 +60,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
       <head>
         <link rel="manifest" href="/app-manifest" crossOrigin="use-credentials" />
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: INSTALL_CAPTURE_SCRIPT }} />
       </head>
       <body>

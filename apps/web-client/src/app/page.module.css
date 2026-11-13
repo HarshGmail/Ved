@@ -2,55 +2,12 @@
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: calc(var(--safe-top) + 3rem) calc(var(--safe-right) + 1.5rem) calc(var(--safe-bottom) + 3rem)
-    calc(var(--safe-left) + 1.5rem);
-  text-align: center;
+  min-width: 0;
+  overflow-x: clip;
 }
 
-.title {
-  font-size: clamp(1.5rem, 6vw, 2rem);
-  letter-spacing: 0.08em;
-  margin: 0.25rem 0 0;
-}
-
-.subtitle {
-  margin: 0;
-  opacity: 0.75;
-}
-
-.phase {
-  margin-top: 1.5rem;
-  font-family: var(--font-geist-mono);
-  font-size: 0.8rem;
-  letter-spacing: 0.05em;
-  opacity: 0.5;
-}
-
-.connections {
-  margin-top: 0.75rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: 2.75rem;
-  padding: 0 1.125rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
-  background: color-mix(in srgb, currentColor 8%, transparent);
-  color: inherit;
-  font-size: 0.9375rem;
-  text-decoration: none;
-}
-
-.connections:focus-visible {
-  outline: 2px solid color-mix(in srgb, currentColor 45%, transparent);
-  outline-offset: 2px;
-}
-
-.connectionsIcon {
-  width: 1.125rem;
-  height: 1.125rem;
-  flex: none;
+@media (min-width: 72rem) {
+  .main {
+    padding-left: 16rem;
+  }
 }

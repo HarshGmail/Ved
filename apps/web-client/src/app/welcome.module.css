@@ -1,0 +1,70 @@
+.welcome {
+  position: relative;
+  isolation: isolate;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1.5rem 0;
+  text-align: center;
+}
+
+.welcome::before {
+  content: "";
+  position: absolute;
+  inset: -3rem -1rem;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(
+    closest-side at 50% 35%,
+    color-mix(in srgb, var(--accent) 16%, transparent),
+    transparent
+  );
+}
+
+.greeting {
+  margin: 0.5rem 0 0;
+  font-size: clamp(1.375rem, 5vw, 1.75rem);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  overflow-wrap: anywhere;
+}
+
+.suggestions {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  max-width: 100%;
+}
+
+.chip {
+  min-height: 2.5rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  background: color-mix(in srgb, currentColor 5%, transparent);
+  color: inherit;
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.3;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  transition: transform 150ms ease;
+}
+
+.chip:active {
+  transform: scale(0.97);
+}
+
+.chip:focus-visible {
+  outline: 2px solid color-mix(in srgb, currentColor 45%, transparent);
+  outline-offset: 2px;
+}

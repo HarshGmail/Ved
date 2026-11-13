@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { connector } from "@/connector";
+import { CloseIcon } from "./icons";
 import styles from "./notifications.module.css";
 
 type State =
@@ -13,7 +15,18 @@ type State =
   | { kind: "on"; endpoint: string }
   | { kind: "error"; reason: string };
 
+interface Reminders {
+  state: State;
+  busy: boolean;
+  note: string | null;
+  enable: () => Promise<void>;
+  disable: () => Promise<void>;
+  test: () => Promise<void>;
+}
+
 const VAPID_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+const BANNER_KINDS = new Set<State["kind"]>(["off", "error"]);
+const SETTINGS_NOTIFICATIONS_HREF = "/settings#notifications";
 
 function toApplicationServerKey(base64: string): Uint8Array<ArrayBuffer> {
   const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
@@ -38,7 +51,26 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong";
 }
 
-export function Notifications() {
+function statusMessage(state: State): string {
+  switch (state.kind) {
+    case "checking":
+      return "Checking reminders…";
+    case "unsupported":
+      return "This browser cannot deliver reminders.";
+    case "unconfigured":
+      return "Push keys are not set up on the server.";
+    case "blocked":
+      return "Notifications are blocked — allow them in browser settings to get reminders.";
+    case "off":
+      return "Reminders will not reach you until notifications are on.";
+    case "on":
+      return "Reminders will be delivered to this device.";
+    case "error":
+      return state.reason;
+  }
+}
+
+function useReminders(): Reminders {
   const [state, setState] = useState<State>({ kind: "checking" });
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -129,32 +161,50 @@ export function Notifications() {
     }
   }
 
-  if (state.kind === "checking") return null;
+  return { state, busy, note, enable, disable, test };
+}
+
+export function ReminderBanner({ onDismiss }: { onDismiss: () => void }) {
+  const { state } = useReminders();
+  if (!BANNER_KINDS.has(state.kind)) return null;
 
   return (
-    <section className={styles.panel} data-state={state.kind}>
-      <p className={styles.line}>
-        {state.kind === "unsupported" && "This browser cannot deliver reminders."}
-        {state.kind === "unconfigured" && "Push keys are not set up on the server."}
-        {state.kind === "blocked" &&
-          "Notifications are blocked — allow them in browser settings to get reminders."}
-        {state.kind === "off" && "Reminders will not reach you until notifications are on."}
-        {state.kind === "on" && "Reminders will be delivered to this device."}
-        {state.kind === "error" && state.reason}
-      </p>
+    <section className={styles.banner} aria-label="Reminders">
+      <p className={styles.bannerText}>Turn on reminders on this device</p>
+      <Link className={styles.button} href={SETTINGS_NOTIFICATIONS_HREF}>
+        Turn on
+      </Link>
+      <button
+        className={styles.dismiss}
+        type="button"
+        aria-label="Hide the reminders banner"
+        onClick={onDismiss}
+      >
+        <CloseIcon className={styles.dismissIcon} />
+      </button>
+    </section>
+  );
+}
+
+export function Notifications() {
+  const { state, busy, note, enable, disable, test } = useReminders();
+
+  return (
+    <div className={styles.panel} data-state={state.kind}>
+      <p className={styles.line}>{statusMessage(state)}</p>
 
       <div className={styles.actions}>
         {(state.kind === "off" || state.kind === "error") && (
-          <button className={styles.button} onClick={enable} disabled={busy}>
+          <button className={styles.button} type="button" onClick={enable} disabled={busy}>
             Enable reminders
           </button>
         )}
         {state.kind === "on" && (
           <>
-            <button className={styles.button} onClick={test} disabled={busy}>
+            <button className={styles.button} type="button" onClick={test} disabled={busy}>
               Send test
             </button>
-            <button className={styles.quiet} onClick={disable} disabled={busy}>
+            <button className={styles.quiet} type="button" onClick={disable} disabled={busy}>
               Turn off
             </button>
           </>
@@ -162,6 +212,6 @@ export function Notifications() {
       </div>
 
       {note && <p className={styles.note}>{note}</p>}
-    </section>
+    </div>
   );
 }
