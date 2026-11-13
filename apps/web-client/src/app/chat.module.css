@@ -63,6 +63,16 @@
   justify-content: flex-end;
 }
 
+.pendingTurn {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.avatar {
+  margin-top: 0.5rem;
+}
+
 .bubble {
   margin: 0;
   padding: 0.625rem 0.875rem;

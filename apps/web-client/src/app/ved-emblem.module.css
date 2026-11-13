@@ -1,0 +1,165 @@
+.emblem {
+  display: block;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.segments,
+.dashes,
+.ticks,
+.v,
+.vHaze,
+.vBright {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.orbit {
+  transform-box: view-box;
+  transform-origin: 512px 512px;
+}
+
+.emblem[data-state="idle"] {
+  --segment-turn: 40s;
+  --dash-turn: 60s;
+}
+
+.emblem[data-state="thinking"] {
+  --segment-turn: 6s;
+  --dash-turn: 9s;
+}
+
+.emblem[data-state="speaking"] {
+  --segment-turn: 16s;
+  --dash-turn: 24s;
+}
+
+.segments {
+  animation: spin var(--segment-turn) linear infinite;
+}
+
+.dashes {
+  animation: spin-reverse var(--dash-turn) linear infinite;
+}
+
+.vHaze {
+  animation: breathe 4s ease-in-out infinite;
+}
+
+.emblem[data-state="thinking"] .ticks {
+  animation: shimmer 2.4s ease-in-out infinite;
+}
+
+.emblem[data-state="thinking"] .orbit {
+  animation: spin 2.8s linear infinite;
+}
+
+.emblem[data-state="speaking"] .vBright {
+  animation: speak-bright 0.42s ease-in-out infinite;
+}
+
+.emblem[data-state="speaking"] .vHaze {
+  animation: speak-haze 0.7s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spin-reverse {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes shimmer {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+
+  50% {
+    opacity: 0.95;
+  }
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.98);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+}
+
+@keyframes speak-bright {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+
+  18% {
+    opacity: 1;
+  }
+
+  34% {
+    opacity: 0.78;
+  }
+
+  61% {
+    opacity: 1;
+  }
+
+  80% {
+    opacity: 0.85;
+  }
+}
+
+@keyframes speak-haze {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(0.97);
+  }
+
+  37% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+
+  70% {
+    opacity: 0.65;
+    transform: scale(1.01);
+  }
+}
+
+@keyframes glow-fade {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .emblem[data-state] .segments,
+  .emblem[data-state] .dashes,
+  .emblem[data-state] .ticks,
+  .emblem[data-state] .orbit,
+  .emblem[data-state] .vBright {
+    animation: none;
+  }
+
+  .emblem[data-state] .vHaze {
+    animation: glow-fade 6s ease-in-out infinite;
+  }
+}
