@@ -270,6 +270,43 @@ async def test_remote_servers_keep_their_schemas_and_get_nothing_injected(fake_p
     assert json.loads(text)["result"] == "hi|not-injected"
 
 
+async def test_only_exposed_tools_are_listed_in_name_order(fake_plan):
+    url, _ = fake_plan
+    exposed = ["plan.list_projects", "plan.create_reminder"]
+    toolbox = MCPToolbox({PLAN: RemoteServer(url=url, token=FAKE_TOKEN)}, exposed)
+    await toolbox.connect()
+    try:
+        first = [tool.name for tool in toolbox.tools]
+        second = [tool.name for tool in toolbox.tools]
+    finally:
+        await toolbox.aclose()
+
+    assert first == ["plan.create_reminder", "plan.list_projects"]
+    assert first == second
+
+
+async def test_a_call_to_a_tool_outside_the_allowlist_is_refused(fake_plan):
+    url, _ = fake_plan
+    toolbox = MCPToolbox(
+        {PLAN: RemoteServer(url=url, token=FAKE_TOKEN)}, ["plan.create_reminder"]
+    )
+    await toolbox.connect()
+    try:
+        with pytest.raises(ToolNotAvailableError):
+            await toolbox.call("plan.list_projects", {}, user_id=USER_ID)
+    finally:
+        await toolbox.aclose()
+
+
+def test_exposed_tools_default_and_parse_from_a_comma_list():
+    defaults = Settings(_env_file=None)
+    parsed = Settings(_env_file=None, exposed_tools="memory.search, web.fetch ,")
+
+    assert "memory.search" in defaults.exposed_tools
+    assert len(defaults.exposed_tools) == 12
+    assert parsed.exposed_tools == ["memory.search", "web.fetch"]
+
+
 requires_database = pytest.mark.skipif(
     not os.environ.get("VED_TEST_DATABASE_URL"),
     reason="Set VED_TEST_DATABASE_URL to run database-backed tests",

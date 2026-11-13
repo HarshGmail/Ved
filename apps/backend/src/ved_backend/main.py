@@ -54,7 +54,7 @@ from ved_backend.uploads import (
     MalformedUploadError,
     UploadTooLargeError,
 )
-from ved_backend.users import CurrentUser, UserDirectory
+from ved_backend.users import CurrentUser, UserDirectory, speaker_label
 
 logging.basicConfig(
     level=logging.INFO,
@@ -79,7 +79,7 @@ STREAM_EVENT_NAMES: dict[type[BaseModel], str] = {
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-    toolbox = MCPToolbox(configured_servers(settings))
+    toolbox = MCPToolbox(configured_servers(settings), settings.exposed_tools)
     await toolbox.connect()
     provider = build_provider(settings)
 
@@ -251,7 +251,12 @@ async def agent_message(
 ) -> AgentReply:
     agent: Agent = app.state.agent
     try:
-        turn = await agent.run(request.prompt, history, user_id=user.id)
+        turn = await agent.run(
+            request.prompt,
+            history,
+            user_id=user.id,
+            user_label=speaker_label(user),
+        )
     except LLMRequestError as error:
         logger.warning("LLM unreachable: %s", error)
         raise HTTPException(
@@ -270,7 +275,7 @@ TurnGuard = Annotated[None, Depends(ensure_turn_can_run)]
 
 
 async def stream_turn(
-    user_id: uuid.UUID, request: AgentRequest
+    user_id: uuid.UUID, user_label: str, request: AgentRequest
 ) -> AsyncIterator[TurnItem]:
     agent: Agent = app.state.agent
     store: ConversationStore = app.state.conversations
@@ -281,7 +286,9 @@ async def stream_turn(
             else await store.history(user_id, request.conversation_id)
         )
         async with aclosing(
-            agent.stream(request.prompt, history, user_id=user_id)
+            agent.stream(
+                request.prompt, history, user_id=user_id, user_label=user_label
+            )
         ) as events:
             async for event in events:
                 if isinstance(event, AgentTurn):
@@ -311,7 +318,9 @@ async def agent_message_stream(
     turns: TurnRegistry = app.state.turns
     conversation_key = request.conversation_id or uuid.uuid4()
     items = turns.start(
-        user.id, conversation_key, lambda: stream_turn(user.id, request)
+        user.id,
+        conversation_key,
+        lambda: stream_turn(user.id, speaker_label(user), request),
     )
     while (item := await items.get()) is not None:
         yield server_sent_event(item)

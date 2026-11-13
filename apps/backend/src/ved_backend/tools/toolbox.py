@@ -2,6 +2,7 @@ import copy
 import json
 import logging
 import uuid
+from collections.abc import Collection
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from typing import Any
@@ -78,8 +79,11 @@ def without_user_id(input_schema: dict[str, Any]) -> dict[str, Any]:
 
 
 class MCPToolbox:
-    def __init__(self, servers: dict[str, ServerSpec]) -> None:
+    def __init__(
+        self, servers: dict[str, ServerSpec], exposed_tools: Collection[str] = ()
+    ) -> None:
         self._servers = servers
+        self._exposed_tools = frozenset(exposed_tools)
         self._stack = AsyncExitStack()
         self._clients: dict[str, Client] = {}
         self._routes: dict[str, Route] = {}
@@ -112,6 +116,8 @@ class MCPToolbox:
                 if is_destructive(tool.name):
                     continue
                 exposed_name = self._exposed_name(name, spec, tool.name)
+                if not self._is_exposed(exposed_name):
+                    continue
                 user_scoped = not isinstance(spec, RemoteServer) and declares_user_id(
                     tool.input_schema
                 )
@@ -131,6 +137,10 @@ class MCPToolbox:
                 )
                 exposed += 1
             logger.info("MCP server %s exposed %d tools", name, exposed)
+        self._tools.sort(key=lambda tool: tool.name)
+
+    def _is_exposed(self, exposed_name: str) -> bool:
+        return not self._exposed_tools or exposed_name in self._exposed_tools
 
     async def _open(self, spec: ServerSpec) -> Client:
         if isinstance(spec, RemoteServer):
