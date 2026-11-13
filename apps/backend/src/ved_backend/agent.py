@@ -133,6 +133,7 @@ class Agent:
         stamped = self._stamped(prompt, user_label)
         messages: list[Message] = [*history, UserMessage(text=stamped)]
         invocations: list[ToolInvocation] = []
+        tools = await self._toolbox.tools_for(user_id)
 
         for round_number in range(self._max_tool_rounds):
             reply: AssistantMessage | None = None
@@ -142,7 +143,7 @@ class Agent:
                 model_round(
                     system=SYSTEM_PROMPT,
                     messages=messages,
-                    tools=self._toolbox.tools,
+                    tools=tools,
                 )
             ) as chunks:
                 async for chunk in chunks:

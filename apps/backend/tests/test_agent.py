@@ -45,6 +45,9 @@ class FakeToolbox:
         self.user_ids: list[uuid.UUID] = []
         self._results = results or {}
 
+    async def tools_for(self, user_id):
+        return list(self.tools)
+
     async def call(self, name, arguments, *, user_id):
         self.calls.append((name, arguments))
         self.user_ids.append(user_id)

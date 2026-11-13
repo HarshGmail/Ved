@@ -101,6 +101,7 @@ class Settings(BaseSettings):
 
     plan_mcp_url: str = DEFAULT_PLAN_MCP_URL
     plan_mcp_token: str = ""
+    secret_key: str = ""
 
     exposed_tools: Annotated[list[str], NoDecode] = DEFAULT_EXPOSED_TOOLS
 

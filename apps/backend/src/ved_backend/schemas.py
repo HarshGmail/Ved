@@ -2,7 +2,14 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from ved_backend.connections import (
+    TOKEN_MAX_LENGTH,
+    validate_name,
+    validate_token,
+    validate_url,
+)
 
 ServiceState = Literal["ok", "degraded", "down"]
 
@@ -157,3 +164,71 @@ class DocumentList(BaseModel):
 class MeResponse(BaseModel):
     email: str
     name: str | None = None
+
+
+class ConnectionSummary(BaseModel):
+    id: uuid.UUID
+    name: str
+    url: str
+    enabled: bool
+    has_token: bool
+    created_at: datetime
+
+
+class ConnectionList(BaseModel):
+    connections: list[ConnectionSummary]
+
+
+class ConnectionCreate(BaseModel):
+    name: str
+    url: str = Field(max_length=2048)
+    token: str = Field(max_length=2048)
+
+    @field_validator("name")
+    @classmethod
+    def check_name(cls, value: str) -> str:
+        return validate_name(value)
+
+    @field_validator("url")
+    @classmethod
+    def check_url(cls, value: str) -> str:
+        return validate_url(value)
+
+    @field_validator("token")
+    @classmethod
+    def check_token(cls, value: str) -> str:
+        return validate_token(value)
+
+
+class ConnectionUpdate(BaseModel):
+    enabled: bool | None = None
+    url: str | None = Field(default=None, max_length=2048)
+    token: str | None = Field(default=None, max_length=TOKEN_MAX_LENGTH)
+
+    @field_validator("url")
+    @classmethod
+    def check_url(cls, value: str | None) -> str | None:
+        return None if value is None else validate_url(value)
+
+    @field_validator("token")
+    @classmethod
+    def check_token(cls, value: str | None) -> str | None:
+        return None if value is None else validate_token(value)
+
+
+class ConnectionTest(BaseModel):
+    ok: bool
+    tool_count: int
+    error: str | None
+
+
+class ConnectionPresetSummary(BaseModel):
+    id: str
+    label: str
+    name: str
+    url: str
+    help: str
+
+
+class ConnectionPresetList(BaseModel):
+    presets: list[ConnectionPresetSummary]
