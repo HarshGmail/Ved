@@ -28,6 +28,8 @@ DEFAULT_EXPOSED_TOOLS = [
     "web.fetch",
     "people.list",
     "people.remember",
+    "reminders.create",
+    "reminders.list",
     "plan.create_reminder",
     "plan.my_due_reminders",
     "plan.list_my_tasks",
