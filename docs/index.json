@@ -537,7 +537,8 @@
         "The manifest is served from /app-manifest with crossOrigin=use-credentials, not from a metadata manifest entry.",
         "The browser calls /api; next.config.ts rewrites /api/* to the backend, so the container serves one origin. Rewrite destinations are fixed at build time.",
         "compress is off so the rewrite does not gzip the SSE reply stream. Streaming through the tunnel is not confirmed yet; check it on the server.",
-        "The connector accepts a relative base URL such as /api and resolves it against the page origin."
+        "The connector accepts a relative base URL such as /api and resolves it against the page origin.",
+        "The typing indicator (TypingIndicator in chat.tsx) shows three CSS-animated dots from send until the first reply text, with the tool, acknowledgement or thinking label beside them, and in the answering placeholder after a refresh. It has role=status and aria-label=\"Ved is typing\", and reduced motion swaps the bounce for an opacity pulse."
       ],
       "symbols": [
         "InstallBanner",
@@ -549,7 +550,8 @@
         "isStandalone",
         "isSnoozed",
         "snoozeInstallBanner",
-        "GET"
+        "GET",
+        "TypingIndicator"
       ],
       "settings": [
         "NEXT_PUBLIC_VED_API_URL",

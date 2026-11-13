@@ -47,9 +47,23 @@ function carriesFiles(event: DragEvent): boolean {
   return event.dataTransfer.types.includes("Files");
 }
 
-function hasSomethingToShow(reply: StreamingReply): boolean {
-  return Boolean(
-    reply.text || reply.activeTool || reply.thinking || reply.acknowledgement,
+function waitingLabel(reply: StreamingReply): string | null {
+  if (reply.activeTool) return `using ${reply.activeTool}…`;
+  if (reply.acknowledgement) return reply.acknowledgement;
+  if (reply.thinking) return THINKING_LABEL;
+  return null;
+}
+
+function TypingIndicator({ label }: { label?: string | null }) {
+  return (
+    <p className={styles.typing} role="status" aria-label="Ved is typing">
+      <span className={styles.dots} aria-hidden="true">
+        <span className={styles.dot} />
+        <span className={styles.dot} />
+        <span className={styles.dot} />
+      </span>
+      {label && <span className={styles.typingLabel}>{label}</span>}
+    </p>
   );
 }
 
@@ -283,24 +297,17 @@ export function Chat({
         {awaitingBackground && (
           <li className={styles.turn} data-role="ved" aria-live="polite">
             <div className={styles.bubble}>
-              <p className={styles.status}>{BACKGROUND_PLACEHOLDER}</p>
+              <TypingIndicator label={BACKGROUND_PLACEHOLDER} />
             </div>
           </li>
         )}
-        {streaming && hasSomethingToShow(streaming) && (
+        {streaming && (
           <li className={styles.turn} data-role="ved" aria-live="polite">
             <div className={styles.bubble}>
-              {streaming.text && <MarkdownReply text={streaming.text} />}
-              {!streaming.text && streaming.acknowledgement && (
-                <p className={styles.status}>{streaming.acknowledgement}</p>
-              )}
-              {!streaming.text &&
-                !streaming.acknowledgement &&
-                streaming.thinking && (
-                  <p className={styles.status}>{THINKING_LABEL}</p>
-                )}
-              {streaming.activeTool && (
-                <p className={styles.tools}>using {streaming.activeTool}…</p>
+              {streaming.text ? (
+                <MarkdownReply text={streaming.text} />
+              ) : (
+                <TypingIndicator label={waitingLabel(streaming)} />
               )}
             </div>
           </li>
