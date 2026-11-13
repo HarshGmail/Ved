@@ -229,6 +229,18 @@ ensure_push_keys() {
   rm -f "$key_file"
 }
 
+connections_secret() {
+  openssl rand -base64 32 | tr -d '\n' | tr '+/' '-_'
+}
+
+ensure_server_secret_key() {
+  if [ -n "$(infra_env_value "$INFRA/.env" VED_SECRET_KEY)" ]; then
+    return
+  fi
+  say "generating the connections secret in infra/.env"
+  set_env_value "$INFRA/.env" VED_SECRET_KEY "$(connections_secret)"
+}
+
 ensure_server_env() {
   if [ ! -f "$INFRA/.env" ]; then
     say "creating infra/.env from the example"
@@ -237,6 +249,7 @@ ensure_server_env() {
   ensure_infra_env_value POSTGRES_PASSWORD "$(openssl rand -hex 24)"
   ensure_search_secret
   ensure_push_keys
+  ensure_server_secret_key
   ensure_infra_env_value VED_LLM_BASE_URL "http://ollama:11434/v1"
   local model
   model="$(infra_env_value "$INFRA/.env" VED_LLM_MODEL)"
@@ -436,6 +449,11 @@ cmd_setup() {
   else
     say "generating push keys"
     (cd "$BACKEND" && uv run python scripts/generate_vapid_keys.py)
+  fi
+
+  if ! grep -q '^VED_SECRET_KEY=.' "$BACKEND/.env"; then
+    say "generating the connections secret in apps/backend/.env"
+    set_env_value "$BACKEND/.env" VED_SECRET_KEY "$(connections_secret)"
   fi
 
   cmd_db

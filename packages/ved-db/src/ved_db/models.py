@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Integer,
     Date,
@@ -28,6 +29,7 @@ DocumentStatus = Literal["pending", "indexed", "failed"]
 DOCUMENT_STATUSES: tuple[DocumentStatus, ...] = ("pending", "indexed", "failed")
 SHA256_HEX_LENGTH = 64
 EMAIL_MAX_LENGTH = 320
+CONNECTION_NAME_MAX_LENGTH = 20
 
 CONVERSATION_MESSAGE_SEQUENCE = Sequence("conversation_messages_sequence_seq")
 
@@ -186,6 +188,27 @@ class PushSubscription(Base):
     )
     last_used_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
+    )
+
+
+class MCPConnection(Base):
+    __tablename__ = "mcp_connections"
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_mcp_connections_user_name"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = owner_column("mcp_connections")
+    name: Mapped[str] = mapped_column(String(CONNECTION_NAME_MAX_LENGTH))
+    url: Mapped[str] = mapped_column(Text)
+    token_encrypted: Mapped[str] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=text("true")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )
 
 

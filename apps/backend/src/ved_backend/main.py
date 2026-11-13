@@ -9,10 +9,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from pydantic import BaseModel
 from sqlalchemy import text
+from ved_db import MCPConnection
 
 from ved_backend.access import require_access
 from ved_backend.agent import Agent
 from ved_backend.config import settings
+from ved_backend.connections import (
+    PRESETS,
+    ConnectionNameTakenError,
+    ConnectionNotFoundError,
+    ConnectionsDisabledError,
+    ConnectionStore,
+    probe,
+)
 from ved_backend.database import engine, session_factory
 from ved_backend.documents import DocumentLibrary, DocumentNotFoundError
 from ved_backend.extraction import UnsupportedDocumentError
@@ -27,6 +36,13 @@ from ved_backend.schemas import (
     AgentReply,
     AgentRequest,
     AgentTurn,
+    ConnectionCreate,
+    ConnectionList,
+    ConnectionPresetList,
+    ConnectionPresetSummary,
+    ConnectionSummary,
+    ConnectionTest,
+    ConnectionUpdate,
     ConversationList,
     ConversationStatus,
     ConversationSummary,
@@ -46,8 +62,9 @@ from ved_backend.schemas import (
     ToolFinishedEvent,
     ToolStartedEvent,
 )
+from ved_backend.token_cipher import TokenCipher
 from ved_backend.tools.servers import configured_servers
-from ved_backend.tools.toolbox import MCPToolbox
+from ved_backend.tools.toolbox import PLAN, MCPToolbox, RemoteConnection
 from ved_backend.turns import TurnItem, TurnRegistry
 from ved_backend.uploads import (
     MULTIPART_OVERHEAD_BYTES,
@@ -79,11 +96,30 @@ STREAM_EVENT_NAMES: dict[type[BaseModel], str] = {
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-    toolbox = MCPToolbox(configured_servers(settings), settings.exposed_tools)
+    cipher = TokenCipher(settings.secret_key) if settings.secret_key else None
+    owner_plan = (
+        RemoteConnection(
+            name=PLAN, url=settings.plan_mcp_url, token=settings.plan_mcp_token
+        )
+        if settings.plan_configured
+        else None
+    )
+    connections = ConnectionStore(
+        session_factory,
+        cipher,
+        owner_email=settings.owner_email,
+        owner_plan=owner_plan,
+    )
+    toolbox = MCPToolbox(
+        configured_servers(settings),
+        settings.exposed_tools,
+        connections=connections.enabled_for,
+    )
     await toolbox.connect()
     provider = build_provider(settings)
 
     application.state.toolbox = toolbox
+    application.state.connections = connections
     application.state.users = UserDirectory(session_factory)
     application.state.conversations = ConversationStore(
         session_factory, history_limit=settings.conversation_history_limit
@@ -127,7 +163,9 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         max_tool_rounds=settings.agent_max_tool_rounds,
         timezone=settings.timezone,
     )
-    logger.info("Agent ready on %s with %d tools", provider.model, len(toolbox.tools))
+    logger.info(
+        "Agent ready on %s with %d built-in tools", provider.model, len(toolbox.tools)
+    )
     if not push.configured:
         logger.warning("Push is not configured — due reminders will only be logged")
     scheduler.start()
@@ -503,3 +541,112 @@ async def delete_document(document_id: uuid.UUID, user: CurrentUser) -> None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
         ) from error
+
+
+def connection_summary(row: MCPConnection) -> ConnectionSummary:
+    return ConnectionSummary(
+        id=row.id,
+        name=row.name,
+        url=row.url,
+        enabled=row.enabled,
+        has_token=bool(row.token_encrypted),
+        created_at=row.created_at,
+    )
+
+
+def connection_store() -> ConnectionStore:
+    return app.state.connections
+
+
+def connection_not_found() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND, detail=str(ConnectionNotFoundError())
+    )
+
+
+def connections_disabled(error: ConnectionsDisabledError) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error)
+    )
+
+
+@app.get("/connections")
+async def list_connections(user: CurrentUser) -> ConnectionList:
+    rows = await connection_store().list_for(user.id)
+    return ConnectionList(connections=[connection_summary(row) for row in rows])
+
+
+@app.get("/connections/presets")
+async def list_connection_presets(_: CurrentUser) -> ConnectionPresetList:
+    return ConnectionPresetList(
+        presets=[
+            ConnectionPresetSummary(
+                id=preset.id,
+                label=preset.label,
+                name=preset.name,
+                url=preset.url,
+                help=preset.help,
+            )
+            for preset in PRESETS
+        ]
+    )
+
+
+@app.post("/connections", status_code=status.HTTP_201_CREATED)
+async def create_connection(
+    request: ConnectionCreate, user: CurrentUser
+) -> ConnectionSummary:
+    try:
+        row = await connection_store().create(
+            user.id, request.name, request.url, request.token
+        )
+    except ConnectionNameTakenError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(error)
+        ) from error
+    except ConnectionsDisabledError as error:
+        raise connections_disabled(error) from error
+    return connection_summary(row)
+
+
+@app.patch("/connections/{connection_id}")
+async def update_connection(
+    connection_id: uuid.UUID, request: ConnectionUpdate, user: CurrentUser
+) -> ConnectionSummary:
+    try:
+        row = await connection_store().update(
+            user.id,
+            connection_id,
+            enabled=request.enabled,
+            url=request.url,
+            token=request.token,
+        )
+    except ConnectionNotFoundError as error:
+        raise connection_not_found() from error
+    except ConnectionsDisabledError as error:
+        raise connections_disabled(error) from error
+    return connection_summary(row)
+
+
+@app.delete("/connections/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_connection(connection_id: uuid.UUID, user: CurrentUser) -> None:
+    try:
+        await connection_store().delete(user.id, connection_id)
+    except ConnectionNotFoundError as error:
+        raise connection_not_found() from error
+
+
+@app.post("/connections/{connection_id}/test")
+async def test_connection(
+    connection_id: uuid.UUID, user: CurrentUser
+) -> ConnectionTest:
+    try:
+        connection = await connection_store().remote_connection(user.id, connection_id)
+    except ConnectionNotFoundError as error:
+        raise connection_not_found() from error
+    except ConnectionsDisabledError as error:
+        raise connections_disabled(error) from error
+    report = await probe(connection)
+    return ConnectionTest(
+        ok=report.ok, tool_count=report.tool_count, error=report.error
+    )

@@ -1,12 +1,13 @@
 import asyncio
 import json
+import uuid
 from types import SimpleNamespace
 from typing import Any
 
 from ved_backend.agent import SYSTEM_PROMPT
 from ved_backend.config import Settings
 from ved_backend.tools.servers import configured_servers
-from ved_backend.tools.toolbox import MCPToolbox, RemoteServer
+from ved_backend.tools.toolbox import PLAN, MCPToolbox, RemoteConnection, RemoteSession
 
 CHARS_PER_TOKEN = 4
 FAKE_PLAN_TOKEN = "fixture"
@@ -216,20 +217,29 @@ def plan_tool(
     )
 
 
-class FixturePlanClient:
-    async def list_tools(self) -> SimpleNamespace:
-        tools = [plan_tool(*entry) for entry in PLAN_TOOL_FIXTURE]
-        return SimpleNamespace(tools=tools)
+class FixtureSession:
+    def __init__(self, connection: RemoteConnection) -> None:
+        self.connection = connection
+        self.tools = [plan_tool(*entry) for entry in PLAN_TOOL_FIXTURE]
+
+    def serves(self, connection: RemoteConnection) -> bool:
+        return self.connection == connection
+
+    async def close(self) -> None:
+        return None
 
 
-async def connect_fixture_plan(self: MCPToolbox, spec: Any) -> Any:
-    if isinstance(spec, RemoteServer):
-        return FixturePlanClient()
-    return await ORIGINAL_OPEN(self, spec)
+async def open_fixture_session(
+    cls: type[RemoteSession], connection: RemoteConnection
+) -> FixtureSession:
+    return FixtureSession(connection)
 
 
-ORIGINAL_OPEN = MCPToolbox._open
-MCPToolbox._open = connect_fixture_plan
+RemoteSession.open = classmethod(open_fixture_session)
+
+
+async def fixture_connections(user_id: uuid.UUID) -> list[RemoteConnection]:
+    return [RemoteConnection(name=PLAN, url="http://fixture", token=FAKE_PLAN_TOKEN)]
 
 
 def openai_payload(
@@ -251,10 +261,14 @@ def estimate_tokens(text: str) -> int:
 
 async def main() -> None:
     settings = Settings(_env_file=None, plan_mcp_token=FAKE_PLAN_TOKEN)
-    toolbox = MCPToolbox(configured_servers(settings), settings.exposed_tools)
+    toolbox = MCPToolbox(
+        configured_servers(settings),
+        settings.exposed_tools,
+        connections=fixture_connections,
+    )
     await toolbox.connect()
     try:
-        tools = toolbox.tools
+        tools = await toolbox.tools_for(uuid.uuid4())
     finally:
         await toolbox.aclose()
 

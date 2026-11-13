@@ -421,40 +421,48 @@
       ]
     },
     "mcp": {
-      "summary": "How the backend runs MCP servers and how to write one.",
+      "summary": "How the backend runs MCP servers, per-user remote connections, and how to write one.",
       "files": [
         "apps/backend/src/ved_backend/tools/toolbox.py",
         "apps/backend/src/ved_backend/tools/servers.py",
         "mcp-servers/CLAUDE.md",
         "apps/backend/src/ved_backend/config.py",
-        "apps/backend/scripts/prompt_size.py"
+        "apps/backend/scripts/prompt_size.py",
+        "apps/backend/src/ved_backend/connections.py",
+        "apps/backend/src/ved_backend/token_cipher.py"
       ],
       "symbols": [
         "MCPToolbox",
         "configured_servers",
-        "RemoteServer",
         "is_destructive",
         "PLAN",
-        "USER_ID_ARGUMENT"
+        "USER_ID_ARGUMENT",
+        "RemoteConnection",
+        "RemoteSession",
+        "ConnectionSource",
+        "tools_for",
+        "ToolNotAvailableError"
       ],
       "rules": [
         "SDK v2: MCPServer; bare Context from mcp.server.mcpserver.context.",
         "Return Pydantic models; raise ToolError for bad input.",
         "Servers never run DDL.",
         "A new server needs a Dockerfile stage, a configured_servers entry, a config.py dir, a CI job and a ./ved setup line.",
-        "Plan is a remote streamable HTTP server at VED_PLAN_MCP_URL, authenticated with Authorization: Bearer; its tools appear as plan.<tool>.",
+        "Built-in stdio servers start once in the lifespan. Remote MCP connections are per user (see the connections topic) and are listed by tools_for(user_id) once per turn.",
         "Tools whose names start with delete_ are never exposed to the model; sensitive actions need the permission layer first.",
-        "A remote server that fails to connect is logged as a warning and skipped, so startup continues without its tools.",
+        "A server or remote connection that fails to start is logged as a warning and skipped, so startup and the turn continue without its tools.",
         "people, memory and reminders tools take user_id; MCPToolbox.call(name, args, user_id=) injects it on stdio tools that declare it, overwriting anything the model sent, and removes it from the model-facing schema. Remote servers get nothing.",
-        "Toolbox lists only the exposed tools, sorted by name, and refuses calls to any other tool as not available. An empty allowlist exposes everything."
+        "Toolbox lists only the exposed tools for a user, sorted by name, and refuses calls to any other tool as not available. The VED_EXPOSED_TOOLS allowlist applies to built-ins and plan.*; an empty allowlist exposes everything."
       ],
       "settings": [
         "VED_EXPOSED_TOOLS",
         "VED_PLAN_MCP_URL",
-        "VED_PLAN_MCP_TOKEN"
+        "VED_PLAN_MCP_TOKEN",
+        "VED_SECRET_KEY"
       ],
       "tests": [
-        "apps/backend/tests/test_toolbox.py"
+        "apps/backend/tests/test_toolbox.py",
+        "apps/backend/tests/test_connections.py"
       ]
     },
     "database": {
@@ -497,14 +505,21 @@
         "apps/web-client/src/connector/reply-stream.ts",
         "apps/web-client/src/connector/errors.ts",
         "apps/web-client/src/connector/types.ts",
-        "apps/web-client/src/connector/config.ts"
+        "apps/web-client/src/connector/config.ts",
+        "apps/web-client/src/connector/types.ts"
       ],
       "symbols": [
         "connector",
         "createConnector",
         "HttpError",
         "StreamUnavailableError",
-        "conversationStatus"
+        "conversationStatus",
+        "listConnections",
+        "createConnection",
+        "updateConnection",
+        "deleteConnection",
+        "testConnection",
+        "listConnectionPresets"
       ],
       "settings": [
         "NEXT_PUBLIC_VED_API_URL"
@@ -514,6 +529,14 @@
         "Components call connector.*, never fetch.",
         "HttpError surfaces the backend's detail message.",
         "conversationStatus reads GET /conversations/{id}/status."
+      ],
+      "endpoints": [
+        "GET /connections",
+        "POST /connections",
+        "PATCH /connections/{id}",
+        "DELETE /connections/{id}",
+        "POST /connections/{id}/test",
+        "GET /connections/presets"
       ]
     },
     "web-ui": {
@@ -534,7 +557,10 @@
         "apps/web-client/next.config.ts",
         "apps/web-client/src/connector/http.ts",
         "apps/web-client/src/app/ved-emblem.tsx",
-        "apps/web-client/src/app/ved-emblem.module.css"
+        "apps/web-client/src/app/ved-emblem.module.css",
+        "apps/web-client/src/app/connections-panel.tsx",
+        "apps/web-client/src/app/connections/page.tsx",
+        "apps/web-client/src/app/connections.module.css"
       ],
       "rules": [
         "Check node_modules/next/dist/docs/ before writing Next code.",
@@ -546,7 +572,8 @@
         "The browser calls /api; next.config.ts rewrites /api/* to the backend, so the container serves one origin. Rewrite destinations are fixed at build time.",
         "compress is off so the rewrite does not gzip the SSE reply stream. Streaming through the tunnel is not confirmed yet; check it on the server.",
         "The connector accepts a relative base URL such as /api and resolves it against the page origin.",
-        "The typing indicator (TypingIndicator in chat.tsx) shows three CSS-animated dots from send until the first reply text, with the tool, acknowledgement or thinking label beside them, and in the answering placeholder after a refresh. It has role=status and aria-label=\"Ved is typing\", and reduced motion swaps the bounce for an opacity pulse."
+        "The typing indicator (TypingIndicator in chat.tsx) shows three CSS-animated dots from send until the first reply text, with the tool, acknowledgement or thinking label beside them, and in the answering placeholder after a refresh. It has role=status and aria-label=\"Ved is typing\", and reduced motion swaps the bounce for an opacity pulse.",
+        "The Connections page (/connections) is linked from the home screen. It calls connector.* only, shows a per-connection on/off switch, Test and Remove, and offers the Plan and MyFinances presets or a custom server."
       ],
       "symbols": [
         "InstallBanner",
@@ -721,7 +748,9 @@
         "apps/backend/src/ved_backend/tools/toolbox.py",
         "apps/backend/migrations/versions/3f7a1c2d9b64_add_users_and_per_user_ownership.py",
         "packages/ved-db/src/ved_db/models.py",
-        "apps/web-client/src/app/signed-in-as.tsx"
+        "apps/web-client/src/app/signed-in-as.tsx",
+        "apps/backend/src/ved_backend/connections.py",
+        "apps/backend/tests/test_connections.py"
       ],
       "symbols": [
         "User",
@@ -751,7 +780,8 @@
         "The migration creates the owner from VED_OWNER_EMAIL (process env) and backfills every existing row to it.",
         "Names (people) and file hashes (documents) are unique per user; stored files are shared by hash, so delete unlinks only when no document references it.",
         "Birthday reminders and check-ins inherit the person's owner; push goes only to the owner's subscriptions.",
-        "A push endpoint belongs to one user; subscribing from another account moves it."
+        "A push endpoint belongs to one user; subscribing from another account moves it.",
+        "MCP connections belong to one user and are listed, tested, changed and deleted only by that user."
       ],
       "tests": [
         "apps/backend/tests/test_users.py",
@@ -764,7 +794,60 @@
         "apps/backend/tests/test_scheduler.py",
         "mcp-servers/people/tests",
         "mcp-servers/reminders/tests",
-        "mcp-servers/memory/tests"
+        "mcp-servers/memory/tests",
+        "apps/backend/tests/test_connections.py"
+      ]
+    },
+    "connections": {
+      "summary": "Per-person MCP connections: each user links Plan, MyFinances or a custom MCP server; tokens are encrypted and tools are prefixed by connection name.",
+      "files": [
+        "apps/backend/src/ved_backend/connections.py",
+        "apps/backend/src/ved_backend/token_cipher.py",
+        "apps/backend/src/ved_backend/tools/toolbox.py",
+        "apps/backend/migrations/versions/9c2e4a6b1d7f_add_mcp_connections.py",
+        "packages/ved-db/src/ved_db/models.py",
+        "apps/web-client/src/app/connections-panel.tsx",
+        "apps/web-client/src/app/connections/page.tsx",
+        "apps/web-client/src/app/connections.module.css"
+      ],
+      "symbols": [
+        "MCPConnection",
+        "ConnectionStore",
+        "TokenCipher",
+        "PRESETS",
+        "validate_name",
+        "validate_url",
+        "probe",
+        "RemoteConnection",
+        "RemoteSession",
+        "ConnectionsPanel"
+      ],
+      "endpoints": [
+        "GET /connections",
+        "POST /connections",
+        "PATCH /connections/{connection_id}",
+        "DELETE /connections/{connection_id}",
+        "POST /connections/{connection_id}/test",
+        "GET /connections/presets"
+      ],
+      "settings": [
+        "VED_SECRET_KEY",
+        "VED_PLAN_MCP_URL",
+        "VED_PLAN_MCP_TOKEN"
+      ],
+      "rules": [
+        "Connection tokens are Fernet-encrypted with VED_SECRET_KEY and never returned; responses carry has_token only.",
+        "Without VED_SECRET_KEY, connection writes return 503 and only the owner's VED_PLAN_MCP_TOKEN fallback is served.",
+        "Every connection query filters by user_id; another person's connection is a 404.",
+        "Names are 2-20 lowercase slugs and may not be a built-in prefix (memory, documents, web, people, reminders).",
+        "A connection's name is its tool prefix; delete_* tools from any remote server are never exposed.",
+        "plan keeps the VED_EXPOSED_TOOLS allowlist; other connections expose non-destructive tools in name order, capped at 15.",
+        "A user with an enabled plan connection (or the owner fallback) has Ved's reminders.* tools hidden from the model; the reminders server still runs.",
+        "Remote sessions are cached per (user, connection) for five minutes; each runs in its own task so it opens and closes in one task."
+      ],
+      "tests": [
+        "apps/backend/tests/test_connections.py",
+        "apps/backend/tests/test_toolbox.py"
       ]
     }
   }

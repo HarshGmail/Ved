@@ -2,16 +2,14 @@ from mcp import StdioServerParameters
 from mcp.client.stdio import get_default_environment
 
 from ved_backend.config import Settings
-from ved_backend.tools.toolbox import RemoteServer, ServerSpec
+from ved_backend.tools.toolbox import REMINDERS
 
-REMINDERS = "reminders"
 PEOPLE = "people"
 MEMORY = "memory"
 WEB = "web"
-PLAN = "plan"
 
 
-def configured_servers(settings: Settings) -> dict[str, ServerSpec]:
+def configured_servers(settings: Settings) -> dict[str, StdioServerParameters]:
     environment = {
         **get_default_environment(),
         "VED_DATABASE_URL": settings.database_url,
@@ -31,18 +29,14 @@ def configured_servers(settings: Settings) -> dict[str, ServerSpec]:
         "VED_SEARCH_PROVIDER": settings.search_provider,
         "VED_SEARXNG_URL": settings.searxng_url,
     }
-    servers: dict[str, ServerSpec] = {}
-    if settings.plan_configured:
-        servers[PLAN] = RemoteServer(
-            url=settings.plan_mcp_url, token=settings.plan_mcp_token
-        )
-    else:
-        servers[REMINDERS] = StdioServerParameters(
+    servers: dict[str, StdioServerParameters] = {
+        REMINDERS: StdioServerParameters(
             command=settings.reminders_server_command,
             args=settings.reminders_server_args,
             cwd=settings.reminders_server_dir,
             env=environment,
-        )
+        ),
+    }
     servers[PEOPLE] = StdioServerParameters(
         command=settings.people_server_command,
         args=settings.people_server_args,

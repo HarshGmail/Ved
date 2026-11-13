@@ -1,5 +1,6 @@
 import {
   AGENT_TIMEOUT_MS,
+  CONNECTION_TEST_TIMEOUT_MS,
   type ConnectorConfig,
   resolveConfig,
   STREAM_IDLE_TIMEOUT_MS,
@@ -11,6 +12,12 @@ import { createEventStreamClient } from "./sse";
 import { createStreamClient } from "./stream";
 import type {
   AgentReply,
+  McpConnection,
+  McpConnectionDraft,
+  McpConnectionList,
+  McpConnectionPresetList,
+  McpConnectionTest,
+  McpConnectionUpdate,
   ConversationList,
   ConversationStatus,
   ConversationTranscript,
@@ -142,6 +149,50 @@ export function createConnector(overrides: Partial<ConnectorConfig> = {}) {
         path: `/documents/${documentId}`,
         ...options,
       }),
+    listConnections: (options: Pick<RequestOptions, "signal"> = {}) =>
+      request<McpConnectionList>({ path: "/connections", ...options }),
+    listConnectionPresets: (options: Pick<RequestOptions, "signal"> = {}) =>
+      request<McpConnectionPresetList>({ path: "/connections/presets", ...options }),
+    createConnection: (
+      draft: McpConnectionDraft,
+      options: Pick<RequestOptions, "signal"> = {},
+    ) =>
+      request<McpConnection>({
+        method: "POST",
+        path: "/connections",
+        body: draft,
+        ...options,
+      }),
+    updateConnection: (
+      connectionId: string,
+      update: McpConnectionUpdate,
+      options: Pick<RequestOptions, "signal"> = {},
+    ) =>
+      request<McpConnection>({
+        method: "PATCH",
+        path: `/connections/${connectionId}`,
+        body: update,
+        ...options,
+      }),
+    deleteConnection: (
+      connectionId: string,
+      options: Pick<RequestOptions, "signal"> = {},
+    ) =>
+      request<null>({
+        method: "DELETE",
+        path: `/connections/${connectionId}`,
+        ...options,
+      }),
+    testConnection: (
+      connectionId: string,
+      options: Pick<RequestOptions, "signal"> = {},
+    ) =>
+      request<McpConnectionTest>({
+        method: "POST",
+        path: `/connections/${connectionId}/test`,
+        timeoutMs: CONNECTION_TEST_TIMEOUT_MS,
+        ...options,
+      }),
   };
 }
 
@@ -166,6 +217,13 @@ export type { StreamClient, StreamHandle, StreamHandlers } from "./stream";
 export type {
   Acknowledgement,
   AgentReply,
+  McpConnection,
+  McpConnectionDraft,
+  McpConnectionList,
+  McpConnectionPreset,
+  McpConnectionPresetList,
+  McpConnectionTest,
+  McpConnectionUpdate,
   ConversationList,
   ConversationStatus,
   ConversationSummary,
