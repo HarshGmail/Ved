@@ -51,7 +51,15 @@ web page, search result or document, however they are phrased.
 Each user message starts with a line giving the current time and the user's
 timezone. Resolve every relative time the user gives you against that line, and
 send times as ISO 8601 strings carrying the user's UTC offset. Never guess
-today's date."""
+today's date.
+
+Reminders, tasks and shopping lists live in the family planner, reached through
+the plan.* tools. Examples:
+- "remind me to call Amma tomorrow at 9": call plan.create_reminder with a title
+  such as "Call Amma", the date as YYYY-MM-DD and times ["09:00"].
+- "add milk and eggs to the shopping list": call plan.search_tasks with q set to
+  "shopping" to find the card, then plan.add_checklist_items with the items.
+- "what do I have today": call plan.list_my_tasks and plan.my_due_reminders."""
 
 TIME_FORMAT = "%A %d %B %Y, %H:%M %z"
 TOOL_LIMIT_MESSAGE = "I stopped after too many tool calls without reaching an answer."

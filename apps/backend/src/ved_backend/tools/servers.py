@@ -2,14 +2,16 @@ from mcp import StdioServerParameters
 from mcp.client.stdio import get_default_environment
 
 from ved_backend.config import Settings
+from ved_backend.tools.toolbox import RemoteServer, ServerSpec
 
 REMINDERS = "reminders"
 PEOPLE = "people"
 MEMORY = "memory"
 WEB = "web"
+PLAN = "plan"
 
 
-def configured_servers(settings: Settings) -> dict[str, StdioServerParameters]:
+def configured_servers(settings: Settings) -> dict[str, ServerSpec]:
     environment = {
         **get_default_environment(),
         "VED_DATABASE_URL": settings.database_url,
@@ -29,29 +31,34 @@ def configured_servers(settings: Settings) -> dict[str, StdioServerParameters]:
         "VED_SEARCH_PROVIDER": settings.search_provider,
         "VED_SEARXNG_URL": settings.searxng_url,
     }
-    return {
-        REMINDERS: StdioServerParameters(
+    servers: dict[str, ServerSpec] = {}
+    if settings.plan_configured:
+        servers[PLAN] = RemoteServer(
+            url=settings.plan_mcp_url, token=settings.plan_mcp_token
+        )
+    else:
+        servers[REMINDERS] = StdioServerParameters(
             command=settings.reminders_server_command,
             args=settings.reminders_server_args,
             cwd=settings.reminders_server_dir,
             env=environment,
-        ),
-        PEOPLE: StdioServerParameters(
-            command=settings.people_server_command,
-            args=settings.people_server_args,
-            cwd=settings.people_server_dir,
-            env=environment,
-        ),
-        MEMORY: StdioServerParameters(
-            command=settings.memory_server_command,
-            args=settings.memory_server_args,
-            cwd=settings.memory_server_dir,
-            env=memory_environment,
-        ),
-        WEB: StdioServerParameters(
-            command=settings.web_server_command,
-            args=settings.web_server_args,
-            cwd=settings.web_server_dir,
-            env=web_environment,
-        ),
-    }
+        )
+    servers[PEOPLE] = StdioServerParameters(
+        command=settings.people_server_command,
+        args=settings.people_server_args,
+        cwd=settings.people_server_dir,
+        env=environment,
+    )
+    servers[MEMORY] = StdioServerParameters(
+        command=settings.memory_server_command,
+        args=settings.memory_server_args,
+        cwd=settings.memory_server_dir,
+        env=memory_environment,
+    )
+    servers[WEB] = StdioServerParameters(
+        command=settings.web_server_command,
+        args=settings.web_server_args,
+        cwd=settings.web_server_dir,
+        env=web_environment,
+    )
+    return servers

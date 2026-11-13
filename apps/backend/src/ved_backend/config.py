@@ -19,6 +19,7 @@ DEFAULT_SEARCH_PROVIDER = "searxng"
 LOCAL_SEARXNG_URL = "http://127.0.0.1:8888"
 NOMIC_DOCUMENT_PREFIX = "search_document: "
 NOMIC_QUERY_PREFIX = "search_query: "
+DEFAULT_PLAN_MCP_URL = "http://family-planner:3456/api/mcp"
 
 
 class Settings(BaseSettings):
@@ -79,6 +80,13 @@ class Settings(BaseSettings):
     web_server_dir: str = str(WEB_SERVER_DIR)
     search_provider: str = DEFAULT_SEARCH_PROVIDER
     searxng_url: str = LOCAL_SEARXNG_URL
+
+    plan_mcp_url: str = DEFAULT_PLAN_MCP_URL
+    plan_mcp_token: str = ""
+
+    @property
+    def plan_configured(self) -> bool:
+        return bool(self.plan_mcp_token)
 
     @field_validator("admin_emails", mode="before")
     @classmethod
