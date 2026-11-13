@@ -38,3 +38,9 @@ export function snoozeInstallBanner(now: number): void {
     localStorage.setItem(INSTALL_SNOOZE_KEY, String(now + SNOOZE_DAYS * DAY_MS));
   } catch {}
 }
+
+export async function promptInstall(event: InstallPromptEvent): Promise<void> {
+  await event.prompt();
+  await event.userChoice;
+  (window as InstallWindow).__vedInstallPrompt = undefined;
+}

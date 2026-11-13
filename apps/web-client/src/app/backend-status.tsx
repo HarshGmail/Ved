@@ -4,12 +4,12 @@ import { useEffect, useState } from "react";
 import { connector, type HealthStatus } from "@/connector";
 import styles from "./backend-status.module.css";
 
-type Probe =
+export type Probe =
   | { state: "checking" }
   | { state: "reachable"; health: HealthStatus }
   | { state: "unreachable"; reason: string };
 
-export function BackendStatus() {
+export function useBackendProbe(): Probe {
   const [probe, setProbe] = useState<Probe>({ state: "checking" });
 
   useEffect(() => {
@@ -29,18 +29,38 @@ export function BackendStatus() {
     return () => controller.abort();
   }, []);
 
+  return probe;
+}
+
+export function summarizeBackend(probe: Probe): string {
+  if (probe.state === "checking") return "checking backend…";
+  if (probe.state === "reachable") {
+    const { status, version, database } = probe.health;
+    return `backend ${status} — v${version} · db ${database}`;
+  }
+  return `backend unreachable — ${probe.reason}`;
+}
+
+export function BackendStatus() {
+  const probe = useBackendProbe();
   const indicator =
     probe.state === "reachable" && probe.health.status !== "ok"
       ? "degraded"
       : probe.state;
+  const summary = summarizeBackend(probe);
 
   return (
-    <p className={styles.status} data-state={indicator}>
-      <span className={styles.dot} aria-hidden="true" />
-      {probe.state === "checking" && "checking backend…"}
-      {probe.state === "reachable" &&
-        `backend ${probe.health.status} — v${probe.health.version} · db ${probe.health.database}`}
-      {probe.state === "unreachable" && `backend unreachable — ${probe.reason}`}
-    </p>
+    <span
+      className={styles.dot}
+      role="img"
+      aria-label={summary}
+      title={summary}
+      data-state={indicator}
+    />
   );
+}
+
+export function BackendStatusLine() {
+  const probe = useBackendProbe();
+  return <p>{summarizeBackend(probe)}</p>;
 }

@@ -9,11 +9,12 @@ import {
   isIosDevice,
   isSnoozed,
   isStandalone,
+  promptInstall,
   snoozeInstallBanner,
 } from "./install-prompt";
 import styles from "./install-banner.module.css";
 
-type InstallOffer = { kind: "prompt"; event: InstallPromptEvent } | { kind: "ios" };
+export type InstallOffer = { kind: "prompt"; event: InstallPromptEvent } | { kind: "ios" };
 
 function ignoreSubscription(): () => void {
   return () => {};
@@ -40,32 +41,37 @@ function noCapturedPrompt(): InstallPromptEvent | null {
   return null;
 }
 
-function readHiddenByPlatform(): boolean {
-  return isStandalone() || isSnoozed(Date.now());
+function readSnoozed(): boolean {
+  return isSnoozed(Date.now());
 }
 
-function alwaysHidden(): boolean {
+function alwaysTrue(): boolean {
   return true;
 }
 
-function neverIos(): boolean {
+function neverTrue(): boolean {
   return false;
 }
 
-export function InstallBanner() {
+export function useInstallOffer(): { installed: boolean; offer: InstallOffer | null } {
   const capturedPrompt = useSyncExternalStore(subscribeToInstallEvents, readCapturedPrompt, noCapturedPrompt);
-  const iosBrowserTab = useSyncExternalStore(ignoreSubscription, isIosDevice, neverIos);
-  const hiddenByPlatform = useSyncExternalStore(ignoreSubscription, readHiddenByPlatform, alwaysHidden);
-  const [dismissed, setDismissed] = useState(false);
-
-  if (hiddenByPlatform || dismissed) return null;
+  const iosBrowserTab = useSyncExternalStore(ignoreSubscription, isIosDevice, neverTrue);
+  const installed = useSyncExternalStore(ignoreSubscription, isStandalone, neverTrue);
 
   const offer: InstallOffer | null = capturedPrompt
     ? { kind: "prompt", event: capturedPrompt }
     : iosBrowserTab
       ? { kind: "ios" }
       : null;
-  if (!offer) return null;
+  return { installed, offer };
+}
+
+export function InstallBanner() {
+  const { installed, offer } = useInstallOffer();
+  const snoozed = useSyncExternalStore(ignoreSubscription, readSnoozed, alwaysTrue);
+  const [dismissed, setDismissed] = useState(false);
+
+  if (installed || snoozed || dismissed || !offer) return null;
 
   const dismiss = () => {
     snoozeInstallBanner(Date.now());
@@ -73,9 +79,7 @@ export function InstallBanner() {
   };
 
   const install = async (event: InstallPromptEvent) => {
-    await event.prompt();
-    await event.userChoice;
-    (window as InstallWindow).__vedInstallPrompt = undefined;
+    await promptInstall(event);
     dismiss();
   };
 

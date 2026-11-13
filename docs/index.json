@@ -586,7 +586,17 @@
         "apps/web-client/src/app/ved-emblem.module.css",
         "apps/web-client/src/app/connections-panel.tsx",
         "apps/web-client/src/app/connections/page.tsx",
-        "apps/web-client/src/app/connections.module.css"
+        "apps/web-client/src/app/connections.module.css",
+        "apps/web-client/src/app/top-bar.tsx",
+        "apps/web-client/src/app/top-bar.module.css",
+        "apps/web-client/src/app/welcome.tsx",
+        "apps/web-client/src/app/welcome.module.css",
+        "apps/web-client/src/app/notifications.module.css",
+        "apps/web-client/src/app/theme.ts",
+        "apps/web-client/src/app/use-person.ts",
+        "apps/web-client/src/app/settings/page.tsx",
+        "apps/web-client/src/app/settings/settings-panel.tsx",
+        "apps/web-client/src/app/settings/settings.module.css"
       ],
       "rules": [
         "Check node_modules/next/dist/docs/ before writing Next code.",
@@ -599,7 +609,10 @@
         "compress is off so the rewrite does not gzip the SSE reply stream. Streaming through the tunnel is not confirmed yet; check it on the server.",
         "The connector accepts a relative base URL such as /api and resolves it against the page origin.",
         "The typing indicator (TypingIndicator in chat.tsx) shows three CSS-animated dots from send until the first reply text, with the tool, acknowledgement or thinking label beside them, and in the answering placeholder after a refresh. It has role=status and aria-label=\"Ved is typing\", and reduced motion swaps the bounce for an opacity pulse.",
-        "The Connections page (/connections) is linked from the home screen. It calls connector.* only, shows a per-connection on/off switch, Test and Remove, and offers the Plan and MyFinances presets or a custom server."
+        "Connections lives in Settings (/settings#integrations); /connections redirects there. It calls connector.* only, shows a per-connection on/off switch, Test and Remove, and offers the Plan and MyFinances presets or a custom server.",
+        "The home top bar holds conversations, new conversation and a gear to /settings, plus a backend status dot whose tooltip and aria-label carry the full status text. The reminder banner appears only while reminders are off or failed and links to /settings#notifications.",
+        "Settings (/settings) has sections Integrations, Notifications, Install app, Appearance and About, in that order; each section id is a hash target.",
+        "The theme is stored under localStorage key ved.theme (system, light or dark). THEME_INIT_SCRIPT in the layout head sets data-theme before paint; globals.css lets data-theme override prefers-color-scheme."
       ],
       "symbols": [
         "InstallBanner",
@@ -615,7 +628,21 @@
         "TypingIndicator",
         "VedEmblem",
         "EmblemState",
-        "PendingReply"
+        "PendingReply",
+        "TopBar",
+        "Welcome",
+        "ReminderBanner",
+        "Notifications",
+        "SettingsPanel",
+        "BackendStatusLine",
+        "useBackendProbe",
+        "summarizeBackend",
+        "usePerson",
+        "firstNameOf",
+        "readThemeChoice",
+        "writeThemeChoice",
+        "THEME_INIT_SCRIPT",
+        "promptInstall"
       ],
       "settings": [
         "NEXT_PUBLIC_VED_API_URL",
@@ -782,7 +809,7 @@
         "apps/backend/src/ved_backend/tools/toolbox.py",
         "apps/backend/migrations/versions/3f7a1c2d9b64_add_users_and_per_user_ownership.py",
         "packages/ved-db/src/ved_db/models.py",
-        "apps/web-client/src/app/signed-in-as.tsx",
+        "apps/web-client/src/app/use-person.ts",
         "apps/backend/src/ved_backend/connections.py",
         "apps/backend/tests/test_connections.py"
       ],

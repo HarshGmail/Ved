@@ -1,74 +1,71 @@
 .workspace {
+  flex: 1;
+  min-width: 0;
   width: 100%;
-  max-width: 34rem;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-}
-
-.toggle {
-  align-self: flex-start;
-  margin-top: 1.5rem;
-  padding: 0.25rem 0.625rem;
-  border-radius: 0.5rem;
-  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 0.75rem;
-  cursor: pointer;
-}
-
-.toggle:focus-visible {
-  outline: 2px solid color-mix(in srgb, currentColor 45%, transparent);
-  outline-offset: 1px;
 }
 
 .panel {
-  display: none;
-  margin-top: 0.75rem;
-  padding: 0.75rem;
-  max-height: 50dvh;
-  border-radius: 0.75rem;
-  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 30;
+  width: min(20rem, calc(100% - 3rem));
+  display: flex;
+  flex-direction: column;
+  padding: calc(var(--safe-top) + 1rem) calc(var(--safe-right) + 0.75rem) calc(var(--safe-bottom) + 1rem)
+    calc(var(--safe-left) + 0.75rem);
+  border-right: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  background: var(--background);
   overflow-y: auto;
+  transform: translateX(-100%);
+  visibility: hidden;
+  transition:
+    transform 200ms ease,
+    visibility 200ms ease;
 }
 
 .panel[data-open="true"] {
-  display: block;
+  transform: none;
+  visibility: visible;
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  border: 0;
+  background: color-mix(in srgb, #000 40%, transparent);
+  cursor: pointer;
 }
 
 .notice {
-  margin: 1.5rem 0 0;
+  width: min(44rem, calc(100% - 2rem));
+  margin: 0.75rem auto 0;
   font-size: 0.8125rem;
   text-align: left;
+  overflow-wrap: anywhere;
   opacity: 0.6;
 }
 
 .notice[data-tone="error"] {
-  color: #f85149;
+  color: var(--danger);
   opacity: 1;
 }
 
 @media (min-width: 72rem) {
-  .toggle {
-    display: none;
-  }
-
   .panel,
   .panel[data-open="true"] {
-    display: block;
-    position: fixed;
-    top: 0;
-    left: 0;
     width: 16rem;
-    height: 100dvh;
-    max-height: none;
-    margin: 0;
     padding: calc(var(--safe-top) + 1.5rem) 0.875rem 1.5rem calc(var(--safe-left) + 0.875rem);
-    border: 0;
     border-right: 1px solid color-mix(in srgb, currentColor 12%, transparent);
-    border-radius: 0;
-    background: var(--background);
+    transform: none;
+    visibility: visible;
+  }
+
+  .scrim {
+    display: none;
   }
 }
