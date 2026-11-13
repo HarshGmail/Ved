@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -28,6 +29,11 @@ SSE_DATA_PREFIX = "data:"
 SSE_DONE_SENTINEL = "[DONE]"
 ERROR_BODY_PREVIEW_CHARS = 400
 REASONING_FIELDS = ("reasoning", "reasoning_content")
+STREAM_OPTIONS = {"include_usage": True}
+LLM_CALL_LOG_FORMAT = (
+    "llm_call model=%s messages=%s tools=%s prompt_tokens=%s "
+    "completion_tokens=%s first_token_s=%s total_s=%s"
+)
 
 
 def _describe(error: Exception) -> str:
@@ -197,6 +203,36 @@ def _first_delta(payload: dict[str, Any]) -> dict[str, Any]:
     return choices[0].get("delta") or {}
 
 
+def _carries_output(delta: dict[str, Any]) -> bool:
+    return bool(
+        delta.get("content") or delta.get("tool_calls") or carries_reasoning(delta)
+    )
+
+
+def _elapsed_seconds(since: float, until: float | None) -> float | None:
+    return None if until is None else round(until - since, 1)
+
+
+def _log_model_call(
+    *,
+    model: str,
+    body: dict[str, Any],
+    usage: dict[str, Any],
+    started_at: float,
+    first_token_at: float | None,
+) -> None:
+    logger.info(
+        LLM_CALL_LOG_FORMAT,
+        model,
+        len(body["messages"]),
+        len(body.get("tools", [])),
+        usage.get("prompt_tokens"),
+        usage.get("completion_tokens"),
+        _elapsed_seconds(started_at, first_token_at),
+        _elapsed_seconds(started_at, time.monotonic()),
+    )
+
+
 class OpenAICompatibleProvider:
     def __init__(
         self,
@@ -242,11 +278,10 @@ class OpenAICompatibleProvider:
         messages: Sequence[Message],
         tools: Sequence[ToolSpec],
     ) -> AssistantMessage:
+        body = self._build_body(system, messages, tools)
+        started_at = time.monotonic()
         try:
-            response = await self._client.post(
-                CHAT_COMPLETIONS_PATH,
-                json=self._build_body(system, messages, tools),
-            )
+            response = await self._client.post(CHAT_COMPLETIONS_PATH, json=body)
         except httpx2.HTTPError as error:
             raise LLMRequestError(_describe(error)) from error
 
@@ -261,6 +296,13 @@ class OpenAICompatibleProvider:
         if not choices:
             raise LLMRequestError(f"Model returned no choices: {payload}")
 
+        _log_model_call(
+            model=self._model,
+            body=body,
+            usage=payload.get("usage") or {},
+            started_at=started_at,
+            first_token_at=None,
+        )
         return from_wire_message(choices[0].get("message") or {})
 
     async def stream(
@@ -270,8 +312,15 @@ class OpenAICompatibleProvider:
         messages: Sequence[Message],
         tools: Sequence[ToolSpec],
     ) -> AsyncIterator[StreamChunk]:
-        body = {**self._build_body(system, messages, tools), "stream": True}
+        body = {
+            **self._build_body(system, messages, tools),
+            "stream": True,
+            "stream_options": STREAM_OPTIONS,
+        }
         assembler = StreamAssembler()
+        started_at = time.monotonic()
+        first_token_at: float | None = None
+        usage: dict[str, Any] = {}
         try:
             async with self._client.stream(
                 "POST", CHAT_COMPLETIONS_PATH, json=body
@@ -285,7 +334,11 @@ class OpenAICompatibleProvider:
                 async for data in iter_sse_data(response.aiter_lines()):
                     if data.strip() == SSE_DONE_SENTINEL:
                         break
-                    delta = _first_delta(json.loads(data))
+                    event = json.loads(data)
+                    usage = event.get("usage") or usage
+                    delta = _first_delta(event)
+                    if first_token_at is None and _carries_output(delta):
+                        first_token_at = time.monotonic()
                     if carries_reasoning(delta):
                         yield ReasoningDelta()
                     text = assembler.absorb(delta)
@@ -296,4 +349,11 @@ class OpenAICompatibleProvider:
         except json.JSONDecodeError as error:
             raise LLMRequestError(f"Model sent a malformed stream: {error}") from error
 
+        _log_model_call(
+            model=self._model,
+            body=body,
+            usage=usage,
+            started_at=started_at,
+            first_token_at=first_token_at,
+        )
         yield assembler.message()

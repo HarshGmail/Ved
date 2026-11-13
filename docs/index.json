@@ -556,6 +556,7 @@
         "OLLAMA_KEEP_ALIVE",
         "OLLAMA_NUM_PARALLEL",
         "OLLAMA_KV_CACHE_TYPE",
+        "OLLAMA_CONTEXT_LENGTH",
         "WEB_PORT",
         "VED_LLM_BASE_URL",
         "VED_VAPID_PRIVATE_KEY",
