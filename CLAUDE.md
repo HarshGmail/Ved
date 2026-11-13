@@ -25,8 +25,10 @@ Web Push, remembers people and plans birthday reminders and check-ins, searches
 past conversations and uploaded documents by meaning, and searches and reads
 the web. Everything runs locally; nothing needs an API key.
 
-Every person has their own chats, memory, documents, people, reminders and push
-devices (Cloudflare Access email picks the user; the owner is `VED_OWNER_EMAIL`).
+Every person has their own chats, memory, documents, people, reminders, push
+devices and MCP connections (Cloudflare Access email picks the user; the owner is
+`VED_OWNER_EMAIL`). Each person links Plan, MyFinances or a custom MCP server on
+the Connections page; tokens are encrypted with `VED_SECRET_KEY`.
 
 Not yet: the permission layer, voice. Phone access (`./ved phone`) is
 wired but unverified until Tailscale is installed. A home server (Ubuntu, DDR3,

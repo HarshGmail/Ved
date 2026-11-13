@@ -132,14 +132,44 @@ it costs in tokens.
 ## Plan (family planner)
 
 Plan, the family planner on the home server, is reached over its MCP endpoint
-(`VED_PLAN_MCP_URL`, default `http://family-planner:3456/api/mcp`). Its tools
-appear as `plan.<tool>`, and `delete_*` tools are never exposed.
+and its tools appear as `plan.<tool>`; `delete_*` tools are never exposed. Each
+person links their own Plan token on the Connections page (see below). The
+owner can keep the older global setup: `./ved set-plan-token <file>` writes
+`VED_PLAN_MCP_TOKEN`, which is used for the owner only while the owner has no
+`plan` connection of their own. Without either, Plan is skipped and Ved runs as
+before.
 
-To connect it, make a token in Plan under Settings, API tokens, save the token
-to a file, then run `./ved set-plan-token <file>`. That writes
-`VED_PLAN_MCP_TOKEN` into `infra/.env` and restarts the backend. While the token
-is set, Ved's own reminders server is not started and Plan's reminder tools take
-its place. Without a token, Plan is skipped and Ved runs as before.
+## Connections
+
+Each signed-in person links their own MCP servers from the Connections page
+(the link under the Ved title, `/connections`). The presets are Plan
+(`http://family-planner:3456/api/mcp`, token from Plan → Settings → API tokens)
+and MyFinances (`https://mcp.my-finances.site/mcp`, token from MyFinances →
+Integrations → MCP → ingest token). A custom MCP server takes any name, URL and
+token.
+
+- A connection's name is its tool prefix: a name of `finances` exposes
+  `finances.<tool>`. Names are 2 to 20 lowercase letters or digits with single
+  dashes, and the built-in prefixes (`memory`, `documents`, `web`, `people`,
+  `reminders`) are reserved.
+- Tokens are encrypted with Fernet under `VED_SECRET_KEY` and never returned by
+  the API; responses carry `has_token` only. Without the key, connections are
+  refused with 503 and nothing else changes. `./ved server` generates the key in
+  `infra/.env`; `./ved setup` generates it in `apps/backend/.env`.
+- `plan` keeps the `VED_EXPOSED_TOOLS` allowlist. Other connections expose every
+  non-destructive tool, in name order, capped at 15 per connection.
+- A user with an enabled `plan` connection (or the owner's fallback) does not see
+  Ved's own `reminders.*` tools, so the model has one reminder path. Ved's
+  reminders server still runs; the filter is per user.
+- Remote sessions are kept per user and connection for five minutes, then
+  reopened. Changing a connection's URL or token reconnects at once, and a
+  connection that fails to open is skipped for that turn only.
+
+API, all scoped to the signed-in user (another person's id is a 404):
+`GET /connections`, `POST /connections` `{name, url, token}`,
+`PATCH /connections/{id}` `{enabled, url?, token?}`, `DELETE /connections/{id}`,
+`POST /connections/{id}/test` returning `{ok, tool_count, error}`, and
+`GET /connections/presets`.
 
 ## Reminders actually firing
 
@@ -326,7 +356,8 @@ Settings read `VED_`-prefixed env vars, or a local `.env`. See `.env.example`.
 | `VED_REMINDERS_SERVER_DIR` | repo path | Where to launch the reminders MCP server |
 | `VED_PEOPLE_SERVER_DIR` | repo path | Where to launch the people MCP server |
 | `VED_PLAN_MCP_URL` | `http://family-planner:3456/api/mcp` | Plan's MCP endpoint |
-| `VED_PLAN_MCP_TOKEN` | unset | Plan API token; setting it swaps Ved's reminders for Plan's |
+| `VED_PLAN_MCP_TOKEN` | unset | Plan token for the owner when the owner has no `plan` connection |
+| `VED_SECRET_KEY` | unset | Fernet key that encrypts connection tokens; `./ved server` and `./ved setup` generate it |
 | `VED_EXPOSED_TOOLS` | 12 tools (memory, documents, web, people, Plan reminders and tasks) | Comma list or JSON list of tool names the model sees; empty exposes all |
 
 `VED_TIMEZONE` is not cosmetic. The reminders server rejects timestamps without

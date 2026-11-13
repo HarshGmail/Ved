@@ -103,3 +103,46 @@ export interface DocumentSummary {
 export interface DocumentList {
   documents: DocumentSummary[];
 }
+
+export interface McpConnection {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  has_token: boolean;
+  created_at: string;
+}
+
+export interface McpConnectionList {
+  connections: McpConnection[];
+}
+
+export interface McpConnectionDraft {
+  name: string;
+  url: string;
+  token: string;
+}
+
+export interface McpConnectionUpdate {
+  enabled?: boolean;
+  url?: string;
+  token?: string;
+}
+
+export interface McpConnectionTest {
+  ok: boolean;
+  tool_count: number;
+  error: string | null;
+}
+
+export interface McpConnectionPreset {
+  id: string;
+  label: string;
+  name: string;
+  url: string;
+  help: string;
+}
+
+export interface McpConnectionPresetList {
+  presets: McpConnectionPreset[];
+}

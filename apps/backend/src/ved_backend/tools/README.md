@@ -9,10 +9,13 @@ at runtime.
 
 ## How it works
 
-`MCPToolbox` opens every configured server once, during the FastAPI lifespan,
+`MCPToolbox` opens every built-in stdio server once, during the FastAPI lifespan,
 and keeps the connections open for the process. Each stdio server is a
 subprocess, so spawning one per request would add hundreds of milliseconds to
-every message for no benefit.
+every message for no benefit. A person's remote MCP connections are opened on
+demand by `tools_for(user_id)`, cached for five minutes per user and connection,
+and never shared with another person (see the Connections section of the backend
+README).
 
 At startup it calls `list_tools()` on each server and builds a name → server
 routing table. The tool list handed to the model is therefore whatever the
