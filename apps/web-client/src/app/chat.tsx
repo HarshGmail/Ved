@@ -37,6 +37,7 @@ type StreamingReply = {
 };
 
 const PLACEHOLDER = "Ved, remind me at 8 PM to call Mom";
+export const COMPOSER_INPUT_ID = "ved-composer";
 const THINKING_LABEL = "thinking…";
 const BACKGROUND_PLACEHOLDER = "Ved is still answering…";
 const ANSWER_POLL_MS = 3000;
@@ -339,6 +340,7 @@ export function Chat({
           )}
           <input
             ref={inputRef}
+            id={COMPOSER_INPUT_ID}
             className={styles.input}
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}

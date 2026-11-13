@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type ConversationSummary, connector, HttpError } from "@/connector";
-import { Chat } from "./chat";
+import { Chat, COMPOSER_INPUT_ID } from "./chat";
 import { ConversationList } from "./conversation-list";
 import { useConversationParam } from "./conversation-url";
 import styles from "./conversations.module.css";
@@ -37,6 +37,12 @@ function sessionFor(conversationId: string | null, key: number): Session {
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : "Request failed";
+}
+
+function focusComposerAfterRender() {
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => document.getElementById(COMPOSER_INPUT_ID)?.focus()),
+  );
 }
 
 function isUnusableId(error: unknown): boolean {
@@ -125,6 +131,7 @@ export function Conversations() {
 
   function open(conversationId: string | null) {
     setPanelOpen(false);
+    if (conversationId === null) focusComposerAfterRender();
     const alreadyShowing =
       conversationId !== null &&
       conversationId === session.conversationId &&
