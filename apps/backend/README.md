@@ -121,6 +121,14 @@ MCP servers are started once in the FastAPI lifespan and held open, not spawned
 per request — see `tools/`. A server that fails to start is logged and skipped;
 the rest still work.
 
+The model sees only the tools named in `VED_EXPOSED_TOOLS` (about a dozen by
+default), sorted by name, and the system prompt is a short constant. Ollama
+reuses its cache only when the system prompt and tools are byte-identical from
+one request to the next, so the tool list never changes per message: a small
+model slows down and ignores tools when it is handed 25 of them. Run
+`uv run python scripts/prompt_size.py` to see what the model is sent and what
+it costs in tokens.
+
 ## Plan (family planner)
 
 Plan, the family planner on the home server, is reached over its MCP endpoint
@@ -319,6 +327,7 @@ Settings read `VED_`-prefixed env vars, or a local `.env`. See `.env.example`.
 | `VED_PEOPLE_SERVER_DIR` | repo path | Where to launch the people MCP server |
 | `VED_PLAN_MCP_URL` | `http://family-planner:3456/api/mcp` | Plan's MCP endpoint |
 | `VED_PLAN_MCP_TOKEN` | unset | Plan API token; setting it swaps Ved's reminders for Plan's |
+| `VED_EXPOSED_TOOLS` | 12 tools (memory, documents, web, people, Plan reminders and tasks) | Comma list or JSON list of tool names the model sees; empty exposes all |
 
 `VED_TIMEZONE` is not cosmetic. The reminders server rejects timestamps without
 a UTC offset, so this is what turns "8 PM" into `20:00+05:30` rather than a

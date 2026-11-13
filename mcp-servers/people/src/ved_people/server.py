@@ -102,19 +102,15 @@ async def remember(
     birthday: str | None = None,
     birthday_notice_days: int | None = None,
 ) -> PersonRecord:
-    """Save a person, or update what is known about someone already saved.
+    """Save a person, or update someone already saved. Only passed fields change.
 
-    Only the fields you pass are changed. Ved sends a reminder on the birthday
-    itself, plus one birthday_notice_days earlier when that is above zero, every
-    year, on its own. Do not also call reminders.create for a birthday.
+    Birthday reminders are automatic, so never create one separately.
 
     Args:
-        name: How the user refers to them, e.g. "Mom" or "Rahul". Matching an
-            existing person ignores case.
-        relation: Who they are to the user, e.g. "mother" or "college friend".
-        birthday: YYYY-MM-DD, or MM-DD when the user does not give the year.
-        birthday_notice_days: Days before the birthday to remind the user, so
-            they have time to plan or buy a gift. 0 means only on the day.
+        name: How the user refers to them, e.g. "Mom" or "Rahul".
+        relation: Who they are, e.g. "mother" or "college friend".
+        birthday: YYYY-MM-DD, or MM-DD when the year is unknown.
+        birthday_notice_days: Days before the birthday to warn, 0 for the day only.
     """
     parsed_birthday = None if birthday is None else parse_birthday(birthday)
     parsed_notice = (

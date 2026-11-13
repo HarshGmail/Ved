@@ -31,14 +31,16 @@
       ],
       "settings": [
         "VED_AGENT_MAX_TOOL_ROUNDS",
-        "VED_TIMEZONE"
+        "VED_TIMEZONE",
+        "VED_EXPOSED_TOOLS"
       ],
       "rules": [
         "Both endpoints go through Agent._events; never fork the loop.",
         "Tool failures return to the model as is_error, never raised.",
-        "The system prompt is a constant; the current time and timezone ride on the latest user message, never in history.",
+        "The system prompt is a constant, kept short; the current time, timezone and the signed-in user's name ride on the latest user message, never in history.",
         "Tool calls in one round run concurrently; outcomes go back in call order.",
-        "Agent.run and Agent.stream require user_id, passed to toolbox calls and never put in prompts or stored tool arguments."
+        "Agent.run and Agent.stream require user_id and user_label; user_id goes to toolbox calls and never into prompts or stored tool arguments, user_label only into the latest user line.",
+        "The model sees a fixed tool list (VED_EXPOSED_TOOLS, sorted by name), never a per-message choice: Ollama reuses its cache only for an identical system prompt plus tools prefix."
       ],
       "tests": [
         "apps/backend/tests/test_agent.py",
@@ -424,7 +426,8 @@
         "apps/backend/src/ved_backend/tools/toolbox.py",
         "apps/backend/src/ved_backend/tools/servers.py",
         "mcp-servers/CLAUDE.md",
-        "apps/backend/src/ved_backend/config.py"
+        "apps/backend/src/ved_backend/config.py",
+        "apps/backend/scripts/prompt_size.py"
       ],
       "symbols": [
         "MCPToolbox",
@@ -442,9 +445,11 @@
         "Plan is a remote streamable HTTP server at VED_PLAN_MCP_URL, authenticated with Authorization: Bearer; its tools appear as plan.<tool>.",
         "Tools whose names start with delete_ are never exposed to the model; sensitive actions need the permission layer first.",
         "A remote server that fails to connect is logged as a warning and skipped, so startup continues without its tools.",
-        "people, memory and reminders tools take user_id; MCPToolbox.call(name, args, user_id=) injects it on stdio tools that declare it, overwriting anything the model sent, and removes it from the model-facing schema. Remote servers get nothing."
+        "people, memory and reminders tools take user_id; MCPToolbox.call(name, args, user_id=) injects it on stdio tools that declare it, overwriting anything the model sent, and removes it from the model-facing schema. Remote servers get nothing.",
+        "Toolbox lists only the exposed tools, sorted by name, and refuses calls to any other tool as not available. An empty allowlist exposes everything."
       ],
       "settings": [
+        "VED_EXPOSED_TOOLS",
         "VED_PLAN_MCP_URL",
         "VED_PLAN_MCP_TOKEN"
       ],

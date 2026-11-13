@@ -36,6 +36,10 @@ class UserDirectory:
         return await session.scalar(select(User).where(User.email == email))
 
 
+def speaker_label(user: User) -> str:
+    return user.name or user.email
+
+
 def users_directory(request: Request) -> UserDirectory:
     return request.app.state.users
 

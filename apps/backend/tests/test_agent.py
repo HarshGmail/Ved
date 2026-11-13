@@ -1,3 +1,4 @@
+import json
 import time
 import uuid
 from datetime import UTC, datetime
@@ -31,6 +32,7 @@ from ved_backend.schemas import (
 from ved_backend.tools.toolbox import ToolNotAvailableError
 
 USER_ID = uuid.uuid4()
+USER_LABEL = "Harsh"
 CREATE = ToolSpec(name="reminders.create", description="", input_schema={})
 LIST = ToolSpec(name="reminders.list", description="", input_schema={})
 SEARCH = ToolSpec(name="memory.search", description="", input_schema={})
@@ -58,10 +60,12 @@ class ScriptedProvider:
         self._replies = list(replies)
         self.seen: list[list[Message]] = []
         self.systems: list[str] = []
+        self.toolsets: list[list[ToolSpec]] = []
 
     async def complete(self, *, system, messages, tools):
         self.seen.append(list(messages))
         self.systems.append(system)
+        self.toolsets.append(list(tools))
         return self._replies.pop(0)
 
     async def stream(self, *, system, messages, tools):
@@ -99,7 +103,7 @@ async def test_plain_reply_skips_the_toolbox(toolbox):
         timezone="Asia/Kolkata",
     )
 
-    reply = await agent.run("hi", (), user_id=USER_ID)
+    reply = await agent.run("hi", (), user_id=USER_ID, user_label=USER_LABEL)
 
     assert reply.text == "hello"
     assert reply.tool_calls == []
@@ -112,7 +116,9 @@ async def test_tool_call_is_executed_then_summarised(toolbox):
     )
     agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
-    reply = await agent.run("remind me to call Mom", (), user_id=USER_ID)
+    reply = await agent.run(
+        "remind me to call Mom", (), user_id=USER_ID, user_label=USER_LABEL
+    )
 
     assert reply.text == "Reminder set."
     assert toolbox.calls == [("reminders.create", {"text": "call Mom"})]
@@ -127,7 +133,7 @@ async def test_the_model_sees_the_tool_result(toolbox):
     )
     agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
-    await agent.run("remind me to call Mom", (), user_id=USER_ID)
+    await agent.run("remind me to call Mom", (), user_id=USER_ID, user_label=USER_LABEL)
 
     final_turn = provider.seen[-1]
     assert final_turn[-1].outcomes[0].content == '{"id":"r1"}'
@@ -142,7 +148,9 @@ async def test_tool_errors_are_returned_to_the_model_not_raised():
     )
     agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
-    reply = await agent.run("remind me at 8pm", (), user_id=USER_ID)
+    reply = await agent.run(
+        "remind me at 8pm", (), user_id=USER_ID, user_label=USER_LABEL
+    )
 
     assert reply.tool_calls[0].failed is True
     assert provider.seen[-1][-1].outcomes[0].is_error is True
@@ -153,7 +161,7 @@ async def test_unknown_tools_do_not_crash_the_turn():
     provider = ScriptedProvider([create_call(), AssistantMessage(text="sorry")])
     agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
-    reply = await agent.run("remind me", (), user_id=USER_ID)
+    reply = await agent.run("remind me", (), user_id=USER_ID, user_label=USER_LABEL)
 
     assert reply.text == "sorry"
     assert reply.tool_calls[0].failed is True
@@ -163,7 +171,7 @@ async def test_a_looping_model_is_cut_off(toolbox):
     provider = ScriptedProvider([create_call(text="again") for _ in range(4)])
     agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
-    reply = await agent.run("remind me", (), user_id=USER_ID)
+    reply = await agent.run("remind me", (), user_id=USER_ID, user_label=USER_LABEL)
 
     assert reply.text == TOOL_LIMIT_MESSAGE
     assert len(toolbox.calls) == 4
@@ -188,13 +196,41 @@ async def test_system_prompt_is_identical_across_turns_at_different_times(
     monkeypatch.setattr(
         agent_module, "datetime", FixedClock(datetime(2026, 1, 1, 8, 0, tzinfo=UTC))
     )
-    await agent.run("hello", (), user_id=USER_ID)
+    await agent.run("hello", (), user_id=USER_ID, user_label=USER_LABEL)
     monkeypatch.setattr(
         agent_module, "datetime", FixedClock(datetime(2026, 6, 1, 20, 30, tzinfo=UTC))
     )
-    await agent.run("hello again", (), user_id=USER_ID)
+    await agent.run("hello again", (), user_id=USER_ID, user_label=USER_LABEL)
 
     assert provider.systems == [SYSTEM_PROMPT, SYSTEM_PROMPT]
+
+
+async def test_system_prompt_and_tools_are_byte_identical_across_turns(
+    toolbox, monkeypatch
+):
+    provider = ScriptedProvider(
+        [AssistantMessage(text="first"), AssistantMessage(text="second")]
+    )
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    await agent.run("hello", (), user_id=USER_ID, user_label=USER_LABEL)
+    await agent.run("who am I", (), user_id=USER_ID, user_label=USER_LABEL)
+
+    first, second = (
+        json.dumps([tool.model_dump() for tool in toolset])
+        for toolset in provider.toolsets
+    )
+    assert first == second
+    assert provider.systems[0] == provider.systems[1]
+
+
+async def test_the_user_line_names_the_signed_in_user(toolbox, monkeypatch):
+    provider = ScriptedProvider([AssistantMessage(text="hi")])
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    await agent.run("who am I", (), user_id=USER_ID, user_label="asha@example.com")
+
+    assert "You are talking with asha@example.com." in provider.seen[0][-1].text
 
 
 async def test_latest_user_message_starts_with_the_current_time(toolbox, monkeypatch):
@@ -204,12 +240,12 @@ async def test_latest_user_message_starts_with_the_current_time(toolbox, monkeyp
     provider = ScriptedProvider([AssistantMessage(text="hi")])
     agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
-    await agent.run("remind me at 8 PM", (), user_id=USER_ID)
+    await agent.run("remind me at 8 PM", (), user_id=USER_ID, user_label=USER_LABEL)
 
     last_message = provider.seen[0][-1]
     assert last_message.text == (
-        "Current time: Thursday 01 January 2026, 13:30 +0530, timezone Asia/Kolkata."
-        "\n\nremind me at 8 PM"
+        "Current time: Thursday 01 January 2026, 13:30 +0530, timezone Asia/Kolkata. "
+        "You are talking with Harsh.\n\nremind me at 8 PM"
     )
 
 
@@ -218,7 +254,7 @@ async def test_history_and_the_saved_turn_never_carry_the_time_line(toolbox):
     provider = ScriptedProvider([AssistantMessage(text="reply")])
     agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
-    reply = await agent.run("now", history, user_id=USER_ID)
+    reply = await agent.run("now", history, user_id=USER_ID, user_label=USER_LABEL)
 
     assert provider.seen[0][:2] == history
     assert "Current time:" not in reply.text
@@ -227,7 +263,12 @@ async def test_history_and_the_saved_turn_never_carry_the_time_line(toolbox):
 
 
 async def collect(agent, prompt):
-    return [event async for event in agent.stream(prompt, (), user_id=USER_ID)]
+    return [
+        event
+        async for event in agent.stream(
+            prompt, (), user_id=USER_ID, user_label=USER_LABEL
+        )
+    ]
 
 
 async def test_stream_yields_tokens_in_order_then_the_turn(toolbox):
@@ -296,7 +337,9 @@ async def test_stream_raises_when_the_model_fails_mid_reply(toolbox):
     received = []
 
     with pytest.raises(LLMRequestError, match="connection dropped"):
-        async for event in agent.stream("hi", (), user_id=USER_ID):
+        async for event in agent.stream(
+            "hi", (), user_id=USER_ID, user_label=USER_LABEL
+        ):
             received.append(event)
 
     assert received == [TokenEvent(text="Partial ")]
@@ -336,7 +379,9 @@ async def test_a_cancelled_stream_lets_a_running_tool_finish():
     received = []
 
     async def consume():
-        async for event in agent.stream("remind me", (), user_id=USER_ID):
+        async for event in agent.stream(
+            "remind me", (), user_id=USER_ID, user_label=USER_LABEL
+        ):
             received.append(event)
 
     async with anyio.create_task_group() as group:
@@ -392,7 +437,7 @@ async def test_run_ignores_thinking_and_returns_only_the_answer(toolbox):
     provider = ReasoningProvider([AssistantMessage(text="hello")])
     agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
-    reply = await agent.run("hi", (), user_id=USER_ID)
+    reply = await agent.run("hi", (), user_id=USER_ID, user_label=USER_LABEL)
 
     assert reply.text == "hello"
 
@@ -626,7 +671,9 @@ async def test_a_cancelled_stream_lets_every_running_call_finish():
     agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
     async def consume():
-        async for _ in agent.stream("two things", (), user_id=USER_ID):
+        async for _ in agent.stream(
+            "two things", (), user_id=USER_ID, user_label=USER_LABEL
+        ):
             pass
 
     async with anyio.create_task_group() as group:

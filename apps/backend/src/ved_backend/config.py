@@ -21,6 +21,20 @@ NOMIC_DOCUMENT_PREFIX = "search_document: "
 NOMIC_QUERY_PREFIX = "search_query: "
 DEFAULT_PLAN_MCP_URL = "http://family-planner:3456/api/mcp"
 DEFAULT_OWNER_EMAIL = "owner@ved.local"
+DEFAULT_EXPOSED_TOOLS = [
+    "memory.search",
+    "documents.search",
+    "web.search",
+    "web.fetch",
+    "people.list",
+    "people.remember",
+    "plan.create_reminder",
+    "plan.my_due_reminders",
+    "plan.list_my_tasks",
+    "plan.search_tasks",
+    "plan.add_checklist_items",
+    "plan.create_task",
+]
 
 
 class Settings(BaseSettings):
@@ -86,6 +100,8 @@ class Settings(BaseSettings):
     plan_mcp_url: str = DEFAULT_PLAN_MCP_URL
     plan_mcp_token: str = ""
 
+    exposed_tools: Annotated[list[str], NoDecode] = DEFAULT_EXPOSED_TOOLS
+
     @property
     def plan_configured(self) -> bool:
         return bool(self.plan_mcp_token)
@@ -94,6 +110,16 @@ class Settings(BaseSettings):
     @classmethod
     def normalise_owner_email(cls, value: str) -> str:
         return value.strip().lower() or DEFAULT_OWNER_EMAIL
+
+    @field_validator("exposed_tools", mode="before")
+    @classmethod
+    def split_exposed_tools(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        if text.startswith("["):
+            return json.loads(text)
+        return [name.strip() for name in text.split(",") if name.strip()]
 
     @field_validator("admin_emails", mode="before")
     @classmethod

@@ -37,13 +37,13 @@ class FakeAgent:
         self.histories: list[list] = []
         self.user_ids: list[uuid.UUID] = []
 
-    async def run(self, prompt: str, history=(), *, user_id):
+    async def run(self, prompt: str, history=(), *, user_id, user_label):
         self.prompts.append(prompt)
         self.user_ids.append(user_id)
         self.histories.append(list(history))
         return self._turn
 
-    async def stream(self, prompt: str, history=(), *, user_id):
+    async def stream(self, prompt: str, history=(), *, user_id, user_label):
         self.prompts.append(prompt)
         self.user_ids.append(user_id)
         self.histories.append(list(history))
@@ -229,7 +229,7 @@ def test_a_malformed_conversation_id_is_rejected(wired):
 
 def test_a_failed_turn_leaves_no_empty_conversation(wired):
     class FailingAgent:
-        async def run(self, prompt, history=(), *, user_id):
+        async def run(self, prompt, history=(), *, user_id, user_label):
             raise LLMRequestError("model is down")
 
     _, store = wired()
@@ -347,7 +347,7 @@ def test_stream_without_tools_is_service_unavailable(wired):
 
 
 class FailingMidStreamAgent:
-    async def stream(self, prompt, history=(), *, user_id):
+    async def stream(self, prompt, history=(), *, user_id, user_label):
         yield TokenEvent(text="Partial ")
         raise LLMRequestError("model is down")
 
@@ -385,7 +385,7 @@ class GatedAgent:
         self.running = 0
         self.max_running = 0
 
-    async def stream(self, prompt, history=(), *, user_id):
+    async def stream(self, prompt, history=(), *, user_id, user_label):
         self.prompts.append(prompt)
         self.running += 1
         self.max_running = max(self.max_running, self.running)
@@ -472,7 +472,7 @@ async def test_turns_in_one_conversation_run_one_after_another(wired):
 
 
 class ThinkingAgent:
-    async def stream(self, prompt, history=(), *, user_id):
+    async def stream(self, prompt, history=(), *, user_id, user_label):
         yield ThinkingEvent()
         yield AcknowledgementEvent(text="Setting that up…")
         yield ToolStartedEvent(name="reminders.create", arguments={})
