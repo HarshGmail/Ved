@@ -288,13 +288,18 @@ cmd_server() {
     say "creating the home network the Cloudflare tunnel joins"
     docker network create home >/dev/null
   fi
-  say "building and starting Ved in containers"
-  server_compose up -d --build --remove-orphans
+  say "building Ved's images"
+  server_compose build
+  say "starting the database, search and model runner"
+  server_compose up -d --wait db
+  server_compose up -d search ollama
+  say "applying database migrations"
+  server_compose run --rm --no-deps backend alembic upgrade head
   wait_for_ollama
   pull_model "$(infra_env_value "$INFRA/.env" VED_LLM_MODEL)"
   pull_model "$(embedding_model)"
-  say "applying database migrations"
-  server_compose run --rm --no-deps backend alembic upgrade head
+  say "starting Ved"
+  server_compose up -d --remove-orphans
   wait_for_url backend "http://127.0.0.1:$BACKEND_PORT/health"
   wait_for_url web "http://127.0.0.1:$WEB_PORT"
   server_compose ps
