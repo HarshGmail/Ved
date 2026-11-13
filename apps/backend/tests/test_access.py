@@ -179,3 +179,17 @@ def test_app_routes_refuse_requests_without_sign_in(monkeypatch, admin_settings)
     response = TestClient(main.app).get("/conversations")
 
     assert response.status_code == 401
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("", []),
+        ("a@x.com", ["a@x.com"]),
+        ("a@x.com, b@x.com", ["a@x.com", "b@x.com"]),
+        ('["a@x.com"]', ["a@x.com"]),
+    ],
+)
+def test_admin_emails_accept_empty_comma_and_json(monkeypatch, raw, expected):
+    monkeypatch.setenv("VED_ADMIN_EMAILS", raw)
+    assert Settings().admin_emails == expected
