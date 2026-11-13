@@ -65,7 +65,7 @@
     height: 100dvh;
     max-height: none;
     margin: 0;
-    padding: 1.5rem 0.875rem;
+    padding: calc(var(--safe-top) + 1.5rem) 0.875rem 1.5rem calc(var(--safe-left) + 0.875rem);
     border: 0;
     border-right: 1px solid color-mix(in srgb, currentColor 12%, transparent);
     border-radius: 0;

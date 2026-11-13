@@ -30,6 +30,33 @@
   opacity: 0.5;
 }
 
+.toolbarActions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.plug {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  color: inherit;
+}
+
+.plug:focus-visible {
+  outline: 2px solid color-mix(in srgb, currentColor 45%, transparent);
+  outline-offset: 2px;
+}
+
+.plugIcon {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
 .reset {
   padding: 0.25rem 0.625rem;
   border-radius: 0.5rem;

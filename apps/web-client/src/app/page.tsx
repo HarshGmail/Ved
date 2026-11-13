@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { BackendStatus } from "./backend-status";
 import { Conversations } from "./conversations";
+import { PlugIcon } from "./icons";
 import { Notifications } from "./notifications";
 import styles from "./page.module.css";
 import { SignedInAs } from "./signed-in-as";
@@ -18,6 +19,7 @@ export default function Home() {
       <p className={styles.phase}>Phase 2 — memory and reminders</p>
       <SignedInAs />
       <Link href="/connections" className={styles.connections}>
+        <PlugIcon className={styles.connectionsIcon} />
         Connections
       </Link>
       <BackendStatus />

@@ -2,13 +2,14 @@
   border-bottom: 1px solid color-mix(in srgb, var(--foreground) 15%, transparent);
   background: color-mix(in srgb, var(--foreground) 6%, var(--background));
   color: var(--foreground);
+  padding-top: var(--safe-top);
 }
 
 .inner {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.5rem 1rem;
+  padding: 0.5rem calc(var(--safe-right) + 1rem) 0.5rem calc(var(--safe-left) + 1rem);
   font-size: 0.875rem;
 }
 

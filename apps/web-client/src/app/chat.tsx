@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import Link from "next/link";
 import {
   type AgentReply,
   connector,
@@ -16,6 +17,7 @@ import {
 } from "@/connector";
 import styles from "./chat.module.css";
 import { DocumentPicker } from "./documents";
+import { PlugIcon } from "./icons";
 import { MarkdownReply } from "./markdown-reply";
 import { type TranscriptTurn, transcriptToTurns } from "./transcript";
 import { type EmblemState, VedEmblem } from "./ved-emblem";
@@ -292,14 +294,19 @@ export function Chat({
           <span className={styles.thread}>
             {conversationId ? "remembering this thread" : "new thread"}
           </span>
-          <button
-            className={styles.reset}
-            type="button"
-            onClick={startNewConversation}
-            disabled={busy}
-          >
-            New conversation
-          </button>
+          <div className={styles.toolbarActions}>
+            <button
+              className={styles.reset}
+              type="button"
+              onClick={startNewConversation}
+              disabled={busy}
+            >
+              New conversation
+            </button>
+            <Link href="/connections" className={styles.plug} aria-label="Connections">
+              <PlugIcon className={styles.plugIcon} />
+            </Link>
+          </div>
         </div>
       )}
 
