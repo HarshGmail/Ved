@@ -16,6 +16,7 @@ import {
   writeThemeChoice,
 } from "../theme";
 import { usePerson } from "../use-person";
+import { ClaudeUsageCard } from "./claude-usage";
 import styles from "./settings.module.css";
 
 const THEME_LABELS: Record<ThemeChoice, string> = {
@@ -131,6 +132,10 @@ export function SettingsPanel() {
 
       <SettingsSection id="integrations" title="Integrations" plain>
         <ConnectionsPanel />
+      </SettingsSection>
+
+      <SettingsSection id="claude-usage" title="Claude usage">
+        <ClaudeUsageCard />
       </SettingsSection>
 
       <SettingsSection id="notifications" title="Notifications">

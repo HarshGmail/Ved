@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -14,6 +15,7 @@ from ved_backend.connections import (
 ServiceState = Literal["ok", "degraded", "down"]
 
 MAX_PROMPT_LENGTH = 2000
+MAX_CLAUDE_BALANCE_USD = 10_000
 
 
 class HealthStatus(BaseModel):
@@ -232,3 +234,22 @@ class ConnectionPresetSummary(BaseModel):
 
 class ConnectionPresetList(BaseModel):
     presets: list[ConnectionPresetSummary]
+
+
+class ClaudeUsage(BaseModel):
+    provider: str
+    model: str
+    tracking: bool
+    balance_usd: float | None
+    balance_set_at: datetime | None
+    spent_since_balance_usd: float
+    remaining_usd: float | None
+    today_usd: float
+    today_messages: int
+    month_usd: float
+    last_30_days_usd: float
+    can_edit: bool
+
+
+class ClaudeBalanceUpdate(BaseModel):
+    balance_usd: Decimal = Field(ge=0, le=MAX_CLAUDE_BALANCE_USD)

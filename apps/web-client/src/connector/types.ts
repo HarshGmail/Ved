@@ -146,3 +146,18 @@ export interface McpConnectionPreset {
 export interface McpConnectionPresetList {
   presets: McpConnectionPreset[];
 }
+
+export interface ClaudeUsage {
+  provider: string;
+  model: string;
+  tracking: boolean;
+  balance_usd: number | null;
+  balance_set_at: string | null;
+  spent_since_balance_usd: number;
+  remaining_usd: number | null;
+  today_usd: number;
+  today_messages: number;
+  month_usd: number;
+  last_30_days_usd: number;
+  can_edit: boolean;
+}

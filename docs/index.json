@@ -13,7 +13,7 @@
     ],
     "home_server": "noddy: containerised setup via ./ved server written, not yet run there; Cloudflare tunnel hostname and streaming through it unconfirmed; auth, unattended running and backups not built yet",
     "per_user_data": "done: users table, Access email picks the user, chats, memory, documents, people, reminders and push are per person; owner from VED_OWNER_EMAIL",
-    "claude_provider": "done: Claude Haiku 5.5 through Anthropic's SDK behind VED_LLM_PROVIDER=anthropic, with the person's MCP connections exposed to it; Ved's connection-aware stamp and no-email labels."
+    "claude_provider": "done: Claude Haiku 5.5 through Anthropic's SDK behind VED_LLM_PROVIDER=anthropic, with the person's MCP connections exposed to it; Ved's connection-aware stamp and no-email labels; Settings shows Claude credit left, counted from each response's usage against an owner-entered balance."
   },
   "topics": {
     "agent-loop": {
@@ -114,6 +114,7 @@
         "apps/backend/src/ved_backend/llm/README.md",
         "apps/backend/src/ved_backend/llm/__init__.py",
         "apps/backend/src/ved_backend/llm/base.py",
+        "apps/backend/src/ved_backend/llm/pricing.py",
         "apps/backend/src/ved_backend/llm/openai_compatible.py",
         "apps/backend/src/ved_backend/llm/stub.py",
         "apps/backend/tests/test_model_eval.py",
@@ -134,7 +135,11 @@
         "to_assistant_message",
         "AssistantMessage.provider_content",
         "MissingAnthropicKeyError",
-        "ANTHROPIC"
+        "ANTHROPIC",
+        "ModelUsage",
+        "UsageReporter",
+        "cost_usd",
+        "PRICING_PER_MILLION_TOKENS"
       ],
       "settings": [
         "VED_LLM_PROVIDER",
@@ -157,12 +162,14 @@
         "AssistantMessage.provider_content carries Anthropic's raw content blocks (thinking included) across tool rounds of one turn; it is excluded from model_dump and never stored, since history keeps only text and tool calls.",
         "Anthropic requests send no temperature or thinking field; the system prompt is one cached text block.",
         "VED_LLM_PROVIDER=anthropic without VED_ANTHROPIC_API_KEY fails at startup; the key is never sent to the embedder, which stays on VED_LLM_BASE_URL (Ollama).",
-        "Anthropic errors become LLMRequestError with a plain message: a 401 names VED_ANTHROPIC_API_KEY, a credit-balance 400 says the balance ran out, timeouts and unreachable hosts are named as such."
+        "Anthropic errors become LLMRequestError with a plain message: a 401 names VED_ANTHROPIC_API_KEY, a credit-balance 400 says the balance ran out, timeouts and unreachable hosts are named as such.",
+        "Each final Anthropic message reports its usage through on_usage (a UsageReporter passed to build_provider); a failing reporter logs a warning and never changes the reply. The llm package never imports the database: UsageStore.record is injected."
       ],
       "tests": [
         "apps/backend/tests/test_openai_compatible.py",
         "apps/backend/tests/test_stub_provider.py",
-        "apps/backend/tests/test_anthropic_provider.py"
+        "apps/backend/tests/test_anthropic_provider.py",
+        "apps/backend/tests/test_pricing.py"
       ]
     },
     "conversations": {
@@ -498,7 +505,8 @@
         "packages/ved-db/src/ved_db/testing.py",
         "packages/ved-db/src/ved_db/__init__.py",
         "apps/backend/src/ved_backend/models.py",
-        "apps/backend/migrations/"
+        "apps/backend/migrations/",
+        "apps/backend/migrations/versions/b41e7c9d2a6f_add_llm_usage_and_balance.py"
       ],
       "symbols": [
         "Base",
@@ -507,7 +515,9 @@
         "CONVERSATION_MESSAGE_SEQUENCE",
         "EMBEDDING_DIMENSIONS",
         "User",
-        "owner_column"
+        "owner_column",
+        "LlmUsage",
+        "LlmBalance"
       ],
       "settings": [
         "VED_DATABASE_URL",
@@ -545,7 +555,9 @@
         "updateConnection",
         "deleteConnection",
         "testConnection",
-        "listConnectionPresets"
+        "listConnectionPresets",
+        "claudeUsage",
+        "setClaudeBalance"
       ],
       "settings": [
         "NEXT_PUBLIC_VED_API_URL"
@@ -562,7 +574,9 @@
         "PATCH /connections/{id}",
         "DELETE /connections/{id}",
         "POST /connections/{id}/test",
-        "GET /connections/presets"
+        "GET /connections/presets",
+        "GET /usage/claude",
+        "PUT /usage/claude/balance"
       ]
     },
     "web-ui": {
@@ -596,7 +610,9 @@
         "apps/web-client/src/app/use-person.ts",
         "apps/web-client/src/app/settings/page.tsx",
         "apps/web-client/src/app/settings/settings-panel.tsx",
-        "apps/web-client/src/app/settings/settings.module.css"
+        "apps/web-client/src/app/settings/settings.module.css",
+        "apps/web-client/src/app/settings/claude-usage.tsx",
+        "apps/web-client/src/app/settings/claude-usage.module.css"
       ],
       "rules": [
         "Check node_modules/next/dist/docs/ before writing Next code.",
@@ -611,7 +627,7 @@
         "The typing indicator (TypingIndicator in chat.tsx) shows three CSS-animated dots from send until the first reply text, with the tool, acknowledgement or thinking label beside them, and in the answering placeholder after a refresh. It has role=status and aria-label=\"Ved is typing\", and reduced motion swaps the bounce for an opacity pulse.",
         "Connections lives in Settings (/settings#integrations); /connections redirects there. It calls connector.* only, shows a per-connection on/off switch, Test and Remove, and offers the Plan and MyFinances presets or a custom server.",
         "The home top bar holds conversations, new conversation and a gear to /settings, plus a backend status dot whose tooltip and aria-label carry the full status text. The reminder banner appears only while reminders are off or failed and links to /settings#notifications.",
-        "Settings (/settings) has sections Integrations, Notifications, Install app, Appearance and About, in that order; each section id is a hash target.",
+        "Settings (/settings) has sections Integrations, Claude usage, Notifications, Install app, Appearance and About, in that order; each section id is a hash target.",
         "The theme is stored under localStorage key ved.theme (system, light or dark). THEME_INIT_SCRIPT in the layout head sets data-theme before paint; globals.css lets data-theme override prefers-color-scheme."
       ],
       "symbols": [
@@ -827,7 +843,8 @@
         "require_owned",
         "add_user",
         "speaker_label",
-        "UNKNOWN_NAME_LINE"
+        "UNKNOWN_NAME_LINE",
+        "is_owner"
       ],
       "endpoints": [
         "GET /me"
@@ -914,6 +931,60 @@
       "tests": [
         "apps/backend/tests/test_connections.py",
         "apps/backend/tests/test_toolbox.py"
+      ]
+    },
+    "claude-usage": {
+      "summary": "Claude credit left: Ved counts its own spend from each response's usage and subtracts it from the balance the owner types in.",
+      "files": [
+        "apps/backend/src/ved_backend/usage.py",
+        "apps/backend/src/ved_backend/llm/pricing.py",
+        "apps/backend/src/ved_backend/llm/base.py",
+        "apps/backend/src/ved_backend/llm/anthropic_provider.py",
+        "apps/backend/src/ved_backend/main.py",
+        "apps/backend/src/ved_backend/schemas.py",
+        "apps/backend/src/ved_backend/users.py",
+        "packages/ved-db/src/ved_db/models.py",
+        "apps/web-client/src/app/settings/claude-usage.tsx",
+        "apps/web-client/src/app/settings/claude-usage.module.css",
+        "apps/web-client/src/app/settings/settings-panel.tsx"
+      ],
+      "symbols": [
+        "UsageStore",
+        "UsageStore.record",
+        "UsageStore.set_balance",
+        "UsageStore.summary",
+        "UsageSummary",
+        "UsageSummary.remaining_usd",
+        "money",
+        "money_or_none",
+        "claude_usage_for",
+        "ClaudeUsage",
+        "ClaudeBalanceUpdate",
+        "ClaudeUsageCard",
+        "LlmUsage",
+        "LlmBalance"
+      ],
+      "endpoints": [
+        "GET /usage/claude",
+        "PUT /usage/claude/balance"
+      ],
+      "settings": [
+        "VED_LLM_PROVIDER",
+        "VED_TIMEZONE"
+      ],
+      "rules": [
+        "Anthropic has no balance API for this key: spend is counted from each final message's usage (input, cache write, cache read, output) and priced by llm/pricing.py, per million tokens, with the higher rates above 100,000 prompt tokens.",
+        "The balance is typed in by the owner (PUT /usage/claude/balance, 0 to 10,000, copied from the Anthropic Console). Remaining is the balance minus spend since the balance was set, floored at 0. Without a balance the card shows spend from the beginning.",
+        "Only the owner can set the balance (403 otherwise); every signed-in user can read it.",
+        "llm_usage is shared, not per user, because Ved is the only client of its API key. Today and this month use VED_TIMEZONE, so the day starts at local midnight.",
+        "Usage is tracked only for VED_LLM_PROVIDER=anthropic; the card says the local model costs nothing otherwise.",
+        "A model missing from the pricing table is recorded with no cost, so it adds nothing to the totals."
+      ],
+      "tests": [
+        "apps/backend/tests/test_pricing.py",
+        "apps/backend/tests/test_usage.py",
+        "apps/backend/tests/test_usage_endpoint.py",
+        "apps/backend/tests/test_anthropic_provider.py"
       ]
     },
     "snappy": {

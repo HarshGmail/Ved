@@ -47,6 +47,10 @@ def speaker_label(user: User) -> str:
     return UNKNOWN_NAME_LINE
 
 
+def is_owner(user: User) -> bool:
+    return user.email == settings.owner_email
+
+
 def users_directory(request: Request) -> UserDirectory:
     return request.app.state.users
 

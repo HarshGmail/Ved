@@ -1,6 +1,7 @@
 import calendar
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Literal
 
 from pgvector.sqlalchemy import Vector
@@ -13,6 +14,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Numeric,
     Sequence,
     SmallInteger,
     String,
@@ -350,3 +352,29 @@ class DocumentChunk(Base):
     )
 
     document: Mapped[Document] = relationship(back_populates="chunks")
+
+
+class LlmUsage(Base):
+    __tablename__ = "llm_usage"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    model: Mapped[str] = mapped_column(String(100))
+    input_tokens: Mapped[int] = mapped_column(Integer)
+    cache_creation_input_tokens: Mapped[int] = mapped_column(Integer)
+    cache_read_input_tokens: Mapped[int] = mapped_column(Integer)
+    output_tokens: Mapped[int] = mapped_column(Integer)
+    cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), default=None)
+
+
+class LlmBalance(Base):
+    __tablename__ = "llm_balance"
+    __table_args__ = (CheckConstraint("id = 1", name="ck_llm_balance_single_row"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    balance_usd: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    set_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

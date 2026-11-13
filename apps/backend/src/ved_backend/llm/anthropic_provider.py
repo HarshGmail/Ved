@@ -17,12 +17,14 @@ from ved_backend.llm.base import (
     AssistantMessage,
     LLMRequestError,
     Message,
+    ModelUsage,
     ReasoningDelta,
     StreamChunk,
     TextDelta,
     ToolCall,
     ToolResultMessage,
     ToolSpec,
+    UsageReporter,
     UserMessage,
 )
 
@@ -43,6 +45,7 @@ BAD_REQUEST_STATUS = 400
 CREDIT_HINT = "credit"
 ERROR_MESSAGE_PREVIEW_CHARS = 400
 NO_REPLY_MESSAGE = "Anthropic returned no reply."
+USAGE_RECORD_FAILED_MESSAGE = "Could not record Claude usage; the reply is unaffected."
 LLM_CALL_LOG_FORMAT = (
     "llm_call model=%s messages=%s tools=%s input_tokens=%s "
     "output_tokens=%s cache_read_input_tokens=%s first_token_s=%s total_s=%s"
@@ -244,9 +247,11 @@ class AnthropicProvider:
         model: str,
         max_tokens: int,
         timeout_seconds: float = 120.0,
+        on_usage: UsageReporter | None = None,
     ) -> None:
         self._model = model
         self._max_tokens = max_tokens
+        self._on_usage = on_usage
         self._client = AsyncAnthropic(
             api_key=api_key, timeout=timeout_seconds, max_retries=MAX_RETRIES
         )
@@ -323,4 +328,21 @@ class AnthropicProvider:
             started_at=started_at,
             first_token_at=first_token_at,
         )
+        await self._report_usage(final)
         yield to_assistant_message(final, names)
+
+    async def _report_usage(self, final: AnthropicMessage) -> None:
+        if self._on_usage is None:
+            return
+        try:
+            await self._on_usage(
+                ModelUsage(
+                    model=self._model,
+                    input_tokens=final.usage.input_tokens,
+                    cache_creation_input_tokens=final.usage.cache_creation_input_tokens,
+                    cache_read_input_tokens=final.usage.cache_read_input_tokens,
+                    output_tokens=final.usage.output_tokens,
+                )
+            )
+        except Exception:
+            logger.warning(USAGE_RECORD_FAILED_MESSAGE, exc_info=True)

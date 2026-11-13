@@ -1,7 +1,7 @@
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from typing import Any, Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class LLMRequestError(RuntimeError):
@@ -52,6 +52,30 @@ class TextDelta(BaseModel):
 
 class ReasoningDelta(BaseModel):
     pass
+
+
+TOKEN_COUNT_FIELDS = (
+    "input_tokens",
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens",
+    "output_tokens",
+)
+
+
+class ModelUsage(BaseModel):
+    model: str
+    input_tokens: int = 0
+    cache_creation_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    output_tokens: int = 0
+
+    @field_validator(*TOKEN_COUNT_FIELDS, mode="before")
+    @classmethod
+    def missing_count_is_zero(cls, value: int | None) -> int:
+        return 0 if value is None else value
+
+
+UsageReporter = Callable[[ModelUsage], Awaitable[None]]
 
 
 StreamChunk = TextDelta | ReasoningDelta | AssistantMessage
