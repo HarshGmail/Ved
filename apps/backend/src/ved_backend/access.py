@@ -12,6 +12,7 @@ ACCESS_HEADER = "cf-access-jwt-assertion"
 ACCESS_ALGORITHM = "RS256"
 PUBLIC_PATHS = frozenset({"/health"})
 NO_AUDIENCE_REASON = "Ved has no Access AUD tag yet (set VED_ACCESS_AUD)."
+ANYONE_SIGNED_IN = "*"
 NO_ADMINS_REASON = "No admin emails are set (set VED_ADMIN_EMAILS)."
 NO_TOKEN_REASON = (
     "No Cloudflare Access sign-in reached Ved. "
@@ -68,7 +69,7 @@ def check_access(
 
     email = str(claims.get("email") or "").lower()
     admin_emails = {admin.lower() for admin in settings.admin_emails}
-    if email and email in admin_emails:
+    if email and (ANYONE_SIGNED_IN in admin_emails or email in admin_emails):
         return AccessResult(email=email, reason=None)
     return denied(
         f"Signed in as {email or NO_EMAIL_LABEL}, which is not on the admin list."
