@@ -312,7 +312,7 @@ cmd_set_plan_token() {
   token="$(tr -d '[:space:]' <"$token_file")"
   [ -n "$token" ] || fail "$token_file is empty. Make a token in Plan under Settings, API tokens"
   is_macos && fail "set-plan-token restarts the backend container on the home server. On the Mac set VED_PLAN_MCP_TOKEN in apps/backend/.env"
-  ensure_env_files
+  [ -f "$INFRA/.env" ] || fail "infra/.env missing. Run ./ved server first."
   say "writing VED_PLAN_MCP_TOKEN into infra/.env"
   set_env_value "$INFRA/.env" VED_PLAN_MCP_TOKEN "$token"
   say "restarting the backend so it picks up the token"
