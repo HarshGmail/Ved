@@ -28,9 +28,9 @@ class RecordingEmbedder:
         return [VECTOR for _ in texts]
 
 
-async def add_messages(session_factory, texts: list[str]) -> uuid.UUID:
+async def add_messages(session_factory, user, texts: list[str]) -> uuid.UUID:
     async with session_factory() as session:
-        conversation = Conversation(title="thread")
+        conversation = Conversation(user_id=user.id, title="thread")
         session.add(conversation)
         await session.flush()
         conversation_id = conversation.id
@@ -54,8 +54,8 @@ async def embedded_texts(session_factory) -> list[str]:
         return sorted(rows)
 
 
-async def test_pending_messages_are_embedded(session_factory):
-    await add_messages(session_factory, ["first", "second"])
+async def test_pending_messages_are_embedded(session_factory, user):
+    await add_messages(session_factory, user, ["first", "second"])
     embedder = RecordingEmbedder()
 
     embedded = await MessageIndexer(session_factory, embedder).embed_pending()
@@ -64,8 +64,8 @@ async def test_pending_messages_are_embedded(session_factory):
     assert await embedded_texts(session_factory) == ["first", "second"]
 
 
-async def test_already_embedded_messages_are_left_alone(session_factory):
-    await add_messages(session_factory, ["first"])
+async def test_already_embedded_messages_are_left_alone(session_factory, user):
+    await add_messages(session_factory, user, ["first"])
     embedder = RecordingEmbedder()
     indexer = MessageIndexer(session_factory, embedder)
     await indexer.embed_pending()
@@ -74,8 +74,8 @@ async def test_already_embedded_messages_are_left_alone(session_factory):
     assert len(embedder.calls) == 1
 
 
-async def test_work_is_done_in_batches(session_factory):
-    await add_messages(session_factory, [f"message {n}" for n in range(5)])
+async def test_work_is_done_in_batches(session_factory, user):
+    await add_messages(session_factory, user, [f"message {n}" for n in range(5)])
     embedder = RecordingEmbedder()
 
     embedded = await MessageIndexer(
@@ -86,8 +86,8 @@ async def test_work_is_done_in_batches(session_factory):
     assert [len(call) for call in embedder.calls] == [2, 2, 1]
 
 
-async def test_max_batches_bounds_one_pass(session_factory):
-    await add_messages(session_factory, [f"message {n}" for n in range(5)])
+async def test_max_batches_bounds_one_pass(session_factory, user):
+    await add_messages(session_factory, user, [f"message {n}" for n in range(5)])
     indexer = MessageIndexer(
         session_factory, RecordingEmbedder(), batch_size=2, max_batches=2
     )
@@ -96,8 +96,8 @@ async def test_max_batches_bounds_one_pass(session_factory):
     assert await indexer.embed_pending() == 1
 
 
-async def test_a_failing_model_leaves_messages_for_the_next_pass(session_factory):
-    await add_messages(session_factory, ["first"])
+async def test_a_failing_model_leaves_messages_for_the_next_pass(session_factory, user):
+    await add_messages(session_factory, user, ["first"])
     embedder = RecordingEmbedder(failing=True)
     indexer = MessageIndexer(session_factory, embedder)
 
@@ -109,8 +109,8 @@ async def test_a_failing_model_leaves_messages_for_the_next_pass(session_factory
     assert await embedded_texts(session_factory) == ["first"]
 
 
-async def test_blank_messages_are_never_sent_to_the_model(session_factory):
-    await add_messages(session_factory, ["   ", "real"])
+async def test_blank_messages_are_never_sent_to_the_model(session_factory, user):
+    await add_messages(session_factory, user, ["   ", "real"])
     embedder = RecordingEmbedder()
 
     await MessageIndexer(session_factory, embedder).embed_pending()
@@ -118,8 +118,8 @@ async def test_blank_messages_are_never_sent_to_the_model(session_factory):
     assert embedder.calls == [["real"]]
 
 
-async def test_long_messages_are_truncated(session_factory):
-    await add_messages(session_factory, ["x" * 10_000])
+async def test_long_messages_are_truncated(session_factory, user):
+    await add_messages(session_factory, user, ["x" * 10_000])
     embedder = RecordingEmbedder()
 
     await MessageIndexer(session_factory, embedder).embed_pending()
@@ -127,8 +127,8 @@ async def test_long_messages_are_truncated(session_factory):
     assert len(embedder.calls[0][0]) < 10_000
 
 
-async def test_trigger_embeds_in_the_background(session_factory):
-    await add_messages(session_factory, ["first"])
+async def test_trigger_embeds_in_the_background(session_factory, user):
+    await add_messages(session_factory, user, ["first"])
     indexer = MessageIndexer(session_factory, RecordingEmbedder())
 
     indexer.trigger()
@@ -138,12 +138,12 @@ async def test_trigger_embeds_in_the_background(session_factory):
     assert await embedded_texts(session_factory) == ["first"]
 
 
-async def test_a_crashing_background_pass_does_not_raise(session_factory):
+async def test_a_crashing_background_pass_does_not_raise(session_factory, user):
     class ExplodingEmbedder:
         async def embed_documents(self, texts):
             raise RuntimeError("boom")
 
-    await add_messages(session_factory, ["first"])
+    await add_messages(session_factory, user, ["first"])
     indexer = MessageIndexer(session_factory, ExplodingEmbedder())
 
     indexer.trigger()

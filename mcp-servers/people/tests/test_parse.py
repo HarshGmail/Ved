@@ -1,7 +1,9 @@
+import uuid
+
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
-from ved_people.server import parse_birthday, parse_notice_days
+from ved_people.server import parse_birthday, parse_notice_days, parse_user_id
 from ved_people.storage import Birthday
 
 
@@ -44,3 +46,11 @@ def test_notice_days_must_be_in_range():
         parse_notice_days(-1)
     with pytest.raises(ToolError, match="between 0 and"):
         parse_notice_days(400)
+
+
+def test_a_user_id_must_be_a_uuid():
+    known = uuid.uuid4()
+
+    assert parse_user_id(str(known)) == known
+    with pytest.raises(ToolError, match="user_id must be a UUID"):
+        parse_user_id("not-a-uuid")

@@ -103,7 +103,7 @@ async def open_check_in(
     if draft is None:
         return None
 
-    conversation = Conversation(title=draft.title)
+    conversation = Conversation(user_id=reminder.user_id, title=draft.title)
     conversation.messages.append(
         ConversationMessage(role="assistant", text=draft.opening, model=CHECK_IN_AUTHOR)
     )

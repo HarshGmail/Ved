@@ -1,7 +1,7 @@
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from ved_db.models import Base
+from ved_db.models import Base, User
 
 REQUIRED_EXTENSIONS = ("vector",)
 REQUIRED_NAME_MARKER = "test"
@@ -35,3 +35,10 @@ async def recreate_schema(engine: AsyncEngine) -> None:
 async def drop_schema(engine: AsyncEngine) -> None:
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.drop_all)
+
+
+async def add_user(session: AsyncSession, email: str = "owner@example.com") -> User:
+    user = User(email=email)
+    session.add(user)
+    await session.commit()
+    return user

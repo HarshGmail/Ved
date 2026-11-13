@@ -12,6 +12,7 @@ from ved_db.models import (
     Person,
     PushSubscription,
     Reminder,
+    User,
     birthday_in,
 )
 
@@ -28,6 +29,7 @@ __all__ = [
     "Person",
     "PushSubscription",
     "Reminder",
+    "User",
     "birthday_in",
     "create_engine",
     "create_session_factory",

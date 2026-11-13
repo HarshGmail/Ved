@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 
 from pydantic import BaseModel, Field
@@ -55,13 +56,16 @@ class DocumentListResult(BaseModel):
 
 
 async def search_passages(
-    session: AsyncSession, query_vector: list[float], *, limit: int
+    session: AsyncSession, user_id: uuid.UUID, query_vector: list[float], *, limit: int
 ) -> list[DocumentPassage]:
     distance = DocumentChunk.embedding.cosine_distance(query_vector)
     rows = await session.execute(
         select(DocumentChunk, Document.filename, distance)
         .join(Document, Document.id == DocumentChunk.document_id)
-        .where(DocumentChunk.embedding.is_not(None))
+        .where(
+            Document.user_id == user_id,
+            DocumentChunk.embedding.is_not(None),
+        )
         .order_by(distance)
         .limit(limit)
     )
@@ -77,7 +81,9 @@ async def search_passages(
     ]
 
 
-async def list_documents(session: AsyncSession, *, limit: int) -> list[DocumentEntry]:
+async def list_documents(
+    session: AsyncSession, user_id: uuid.UUID, *, limit: int
+) -> list[DocumentEntry]:
     passage_count = (
         select(func.count(DocumentChunk.id))
         .where(DocumentChunk.document_id == Document.id)
@@ -86,6 +92,7 @@ async def list_documents(session: AsyncSession, *, limit: int) -> list[DocumentE
     )
     rows = await session.execute(
         select(Document, passage_count)
+        .where(Document.user_id == user_id)
         .order_by(Document.created_at.desc(), Document.id)
         .limit(limit)
     )

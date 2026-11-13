@@ -27,6 +27,7 @@ MessageRole = Literal["user", "assistant"]
 DocumentStatus = Literal["pending", "indexed", "failed"]
 DOCUMENT_STATUSES: tuple[DocumentStatus, ...] = ("pending", "indexed", "failed")
 SHA256_HEX_LENGTH = 64
+EMAIL_MAX_LENGTH = 320
 
 CONVERSATION_MESSAGE_SEQUENCE = Sequence("conversation_messages_sequence_seq")
 
@@ -48,10 +49,39 @@ class Base(DeclarativeBase):
     pass
 
 
+def owner_column(table_name: str) -> Mapped[uuid.UUID]:
+    return mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+            name=f"fk_{table_name}_user_id_users",
+        ),
+        index=True,
+        nullable=False,
+    )
+
+
+class User(Base):
+    __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint("email = lower(email)", name="ck_users_email_lowercase"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    email: Mapped[str] = mapped_column(String(EMAIL_MAX_LENGTH), unique=True)
+    name: Mapped[str | None] = mapped_column(String(200), default=None)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class Person(Base):
     __tablename__ = "people"
     __table_args__ = (
-        Index("uq_people_name_lower", text("lower(name)"), unique=True),
+        Index("uq_people_user_name_lower", "user_id", text("lower(name)"), unique=True),
         CheckConstraint(
             "(birth_month IS NULL) = (birth_day IS NULL)",
             name="ck_people_birthday_month_and_day_together",
@@ -68,6 +98,7 @@ class Person(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    user_id: Mapped[uuid.UUID] = owner_column("people")
     name: Mapped[str] = mapped_column(String(200))
     relation: Mapped[str | None] = mapped_column(String(100), default=None)
     birth_month: Mapped[int | None] = mapped_column(SmallInteger, default=None)
@@ -108,6 +139,7 @@ class Reminder(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    user_id: Mapped[uuid.UUID] = owner_column("reminders")
     text: Mapped[str] = mapped_column(String(500))
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     completed_at: Mapped[datetime | None] = mapped_column(
@@ -145,6 +177,7 @@ class PushSubscription(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    user_id: Mapped[uuid.UUID] = owner_column("push_subscriptions")
     endpoint: Mapped[str] = mapped_column(Text, unique=True)
     keys: Mapped[dict[str, Any]] = mapped_column(JSONB)
     label: Mapped[str | None] = mapped_column(String(200), default=None)
@@ -162,6 +195,7 @@ class Conversation(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    user_id: Mapped[uuid.UUID] = owner_column("conversations")
     title: Mapped[str | None] = mapped_column(String(200), default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -223,6 +257,7 @@ class ConversationMessage(Base):
 class Document(Base):
     __tablename__ = "documents"
     __table_args__ = (
+        UniqueConstraint("user_id", "sha256", name="uq_documents_user_sha256"),
         CheckConstraint(
             "status IN ('pending', 'indexed', 'failed')",
             name="ck_documents_status_known",
@@ -232,10 +267,11 @@ class Document(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    user_id: Mapped[uuid.UUID] = owner_column("documents")
     filename: Mapped[str] = mapped_column(String(255))
     media_type: Mapped[str] = mapped_column(String(100))
     size_bytes: Mapped[int] = mapped_column(BigInteger)
-    sha256: Mapped[str] = mapped_column(String(SHA256_HEX_LENGTH), unique=True)
+    sha256: Mapped[str] = mapped_column(String(SHA256_HEX_LENGTH))
     page_count: Mapped[int | None] = mapped_column(Integer, default=None)
     status: Mapped[DocumentStatus] = mapped_column(
         String(16), default="pending", server_default="pending", index=True

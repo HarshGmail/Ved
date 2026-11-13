@@ -17,6 +17,7 @@ import type {
   DocumentList,
   DocumentSummary,
   HealthStatus,
+  Me,
   PushStatus,
   PushTestResult,
   ReplyStreamHandlers,
@@ -44,6 +45,8 @@ export function createConnector(overrides: Partial<ConnectorConfig> = {}) {
     postEventStream,
     health: (options: Pick<RequestOptions, "signal"> = {}) =>
       request<HealthStatus>({ path: "/health", ...options }),
+    me: (options: Pick<RequestOptions, "signal"> = {}) =>
+      request<Me>({ path: "/me", ...options }),
     sendMessage: (
       prompt: string,
       conversationId?: string,
@@ -171,6 +174,7 @@ export type {
   DocumentStatus,
   DocumentSummary,
   HealthStatus,
+  Me,
   PushStatus,
   PushTestResult,
   ReplyStreamHandlers,

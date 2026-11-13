@@ -1,4 +1,5 @@
 import re
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -48,6 +49,13 @@ def today() -> date:
     return datetime.now(ZoneInfo(settings.timezone)).date()
 
 
+def parse_user_id(value: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(value)
+    except ValueError as error:
+        raise ToolError(f"user_id must be a UUID, got {value!r}") from error
+
+
 def parse_name(value: str) -> str:
     name = value.strip()
     if not name:
@@ -87,6 +95,7 @@ def parse_notice_days(value: int) -> int:
 
 @mcp.tool(name="people.remember")
 async def remember(
+    user_id: str,
     name: str,
     ctx: Context,
     relation: str | None = None,
@@ -119,6 +128,7 @@ async def remember(
     async with context.session_factory() as session:
         return await storage.save_person(
             session,
+            parse_user_id(user_id),
             parse_name(name),
             today=today(),
             relation=cleaned_relation,
@@ -128,16 +138,18 @@ async def remember(
 
 
 @mcp.tool(name="people.list")
-async def list_all(ctx: Context) -> PersonList:
+async def list_all(user_id: str, ctx: Context) -> PersonList:
     """List everyone Ved knows about, soonest birthday first."""
     context: ServerContext = ctx.request_context.lifespan_context
     async with context.session_factory() as session:
-        records = await storage.list_people(session, today=today())
+        records = await storage.list_people(
+            session, parse_user_id(user_id), today=today()
+        )
     return PersonList(people=records)
 
 
 @mcp.tool(name="people.forget")
-async def forget(name: str, ctx: Context) -> Forgotten:
+async def forget(user_id: str, name: str, ctx: Context) -> Forgotten:
     """Remove a person and stop their birthday reminders.
 
     Args:
@@ -146,7 +158,9 @@ async def forget(name: str, ctx: Context) -> Forgotten:
     context: ServerContext = ctx.request_context.lifespan_context
     async with context.session_factory() as session:
         try:
-            return await storage.forget_person(session, parse_name(name))
+            return await storage.forget_person(
+                session, parse_user_id(user_id), parse_name(name)
+            )
         except storage.PersonNotFoundError as error:
             raise ToolError(str(error)) from error
 

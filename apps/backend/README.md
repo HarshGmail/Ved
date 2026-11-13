@@ -346,3 +346,19 @@ a `detail` naming the cause.
 | `VED_ACCESS_TEAM_DOMAIN` | Team domain whose certs and issuer are used |
 | `VED_ACCESS_AUD` | The Access application's AUD tag (required when auth is on) |
 | `VED_ADMIN_EMAILS` | JSON list of admin emails, e.g. `["you@example.com"]` |
+| `VED_OWNER_EMAIL` | The owner: who existing data is assigned to by the migration, and who every request acts as when `VED_AUTH=off`. Defaults to `owner@ved.local` |
+
+## People and per-user data
+
+Every person gets their own chats, memory, documents, people, reminders and
+push devices. The signed-in Access email picks the `users` row (created on first
+sign-in, stored lowercase); with `VED_AUTH=off` every request acts as the
+owner. Another person's conversation or document is a `404`.
+
+The migration that introduced users creates the owner from `VED_OWNER_EMAIL`
+(read from the process environment, not `.env`: export it before `./ved migrate`;
+`./ved server` passes it through compose) and assigns every existing row to it.
+Set it before the first upgrade; later changes do not rename the owner.
+
+The `people`, `memory` and `reminders` MCP servers take a `user_id` argument that
+`MCPToolbox` injects on every call and strips from the schemas the model sees.

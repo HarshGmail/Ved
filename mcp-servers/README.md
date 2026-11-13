@@ -34,6 +34,9 @@ implemented.
 ## Conventions
 
 - One capability per server; no cross-domain tools.
+- Servers that store personal data (`people`, `memory`, `reminders`) take a
+  `user_id` argument and filter every query and insert by it. The backend
+  injects it on each call and hides it from the model.
 - Actions that are destructive or sensitive (unlocking a door, deleting photos,
   moving money) are gated by the permission layer — the LLM requests, the
   permission layer decides. The server should never assume a call is authorized

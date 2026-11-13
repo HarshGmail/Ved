@@ -34,6 +34,7 @@ from ved_backend.schemas import (
     DocumentList,
     DocumentSummary,
     HealthStatus,
+    MeResponse,
     PushStatus,
     PushSubscribeRequest,
     PushTestResult,
@@ -53,6 +54,7 @@ from ved_backend.uploads import (
     MalformedUploadError,
     UploadTooLargeError,
 )
+from ved_backend.users import CurrentUser, UserDirectory
 
 logging.basicConfig(
     level=logging.INFO,
@@ -82,6 +84,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     provider = build_provider(settings)
 
     application.state.toolbox = toolbox
+    application.state.users = UserDirectory(session_factory)
     application.state.conversations = ConversationStore(
         session_factory, history_limit=settings.conversation_history_limit
     )
@@ -180,7 +183,14 @@ async def health() -> HealthStatus:
     )
 
 
-async def conversation_history(request: AgentRequest) -> list[Message]:
+@app.get("/me")
+async def read_me(user: CurrentUser) -> MeResponse:
+    return MeResponse(email=user.email, name=user.name)
+
+
+async def conversation_history(
+    request: AgentRequest, user: CurrentUser
+) -> list[Message]:
     toolbox: MCPToolbox = app.state.toolbox
     if not toolbox.tools:
         raise HTTPException(
@@ -192,7 +202,7 @@ async def conversation_history(request: AgentRequest) -> list[Message]:
         return []
     store: ConversationStore = app.state.conversations
     try:
-        return await store.history(request.conversation_id)
+        return await store.history(user.id, request.conversation_id)
     except ConversationNotFoundError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
@@ -203,10 +213,11 @@ History = Annotated[list[Message], Depends(conversation_history)]
 
 
 async def save_turn(
-    conversation_id: uuid.UUID, prompt: str, turn: AgentTurn
+    user_id: uuid.UUID, conversation_id: uuid.UUID, prompt: str, turn: AgentTurn
 ) -> AgentReply:
     store: ConversationStore = app.state.conversations
     await store.record_turn(
+        user_id,
         conversation_id,
         prompt=prompt,
         answer=turn.text,
@@ -224,17 +235,23 @@ async def save_turn(
     )
 
 
-async def record_reply(request: AgentRequest, turn: AgentTurn) -> AgentReply:
+async def record_reply(
+    user_id: uuid.UUID, request: AgentRequest, turn: AgentTurn
+) -> AgentReply:
     store: ConversationStore = app.state.conversations
-    conversation_id = request.conversation_id or await store.start(request.prompt)
-    return await save_turn(conversation_id, request.prompt, turn)
+    conversation_id = request.conversation_id or await store.start(
+        user_id, request.prompt
+    )
+    return await save_turn(user_id, conversation_id, request.prompt, turn)
 
 
 @app.post("/agent/message")
-async def agent_message(request: AgentRequest, history: History) -> AgentReply:
+async def agent_message(
+    request: AgentRequest, history: History, user: CurrentUser
+) -> AgentReply:
     agent: Agent = app.state.agent
     try:
-        turn = await agent.run(request.prompt, history)
+        turn = await agent.run(request.prompt, history, user_id=user.id)
     except LLMRequestError as error:
         logger.warning("LLM unreachable: %s", error)
         raise HTTPException(
@@ -242,29 +259,33 @@ async def agent_message(request: AgentRequest, history: History) -> AgentReply:
             detail=str(error),
         ) from error
 
-    return await record_reply(request, turn)
+    return await record_reply(user.id, request, turn)
 
 
-async def ensure_turn_can_run(request: AgentRequest) -> None:
-    await conversation_history(request)
+async def ensure_turn_can_run(request: AgentRequest, user: CurrentUser) -> None:
+    await conversation_history(request, user)
 
 
 TurnGuard = Annotated[None, Depends(ensure_turn_can_run)]
 
 
-async def stream_turn(request: AgentRequest) -> AsyncIterator[TurnItem]:
+async def stream_turn(
+    user_id: uuid.UUID, request: AgentRequest
+) -> AsyncIterator[TurnItem]:
     agent: Agent = app.state.agent
     store: ConversationStore = app.state.conversations
     try:
         history = (
             []
             if request.conversation_id is None
-            else await store.history(request.conversation_id)
+            else await store.history(user_id, request.conversation_id)
         )
-        async with aclosing(agent.stream(request.prompt, history)) as events:
+        async with aclosing(
+            agent.stream(request.prompt, history, user_id=user_id)
+        ) as events:
             async for event in events:
                 if isinstance(event, AgentTurn):
-                    yield await record_reply(request, event)
+                    yield await record_reply(user_id, request, event)
                 else:
                     yield event
     except LLMRequestError as error:
@@ -285,62 +306,71 @@ def server_sent_event(item: TurnItem) -> ServerSentEvent:
 
 @app.post("/agent/message/stream", response_class=EventSourceResponse)
 async def agent_message_stream(
-    request: AgentRequest, _: TurnGuard
+    request: AgentRequest, user: CurrentUser, _: TurnGuard
 ) -> AsyncIterable[ServerSentEvent]:
     turns: TurnRegistry = app.state.turns
-    turn_key = request.conversation_id or uuid.uuid4()
-    items = turns.start(turn_key, lambda: stream_turn(request))
+    conversation_key = request.conversation_id or uuid.uuid4()
+    items = turns.start(
+        user.id, conversation_key, lambda: stream_turn(user.id, request)
+    )
     while (item := await items.get()) is not None:
         yield server_sent_event(item)
 
 
 @app.get("/push/status")
-async def push_status() -> PushStatus:
+async def push_status(user: CurrentUser) -> PushStatus:
     push: PushService = app.state.push
     return PushStatus(
         configured=push.configured,
         public_key=push.public_key,
-        subscriptions=await push.subscription_count(),
+        subscriptions=await push.subscription_count(user.id),
     )
 
 
 @app.post("/push/subscribe", status_code=status.HTTP_201_CREATED)
-async def push_subscribe(request: PushSubscribeRequest) -> PushStatus:
+async def push_subscribe(
+    request: PushSubscribeRequest, user: CurrentUser
+) -> PushStatus:
     push: PushService = app.state.push
     if not push.configured:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(PushNotConfiguredError()),
         )
-    await push.subscribe(request.endpoint, request.keys.model_dump(), request.label)
+    await push.subscribe(
+        user.id, request.endpoint, request.keys.model_dump(), request.label
+    )
     return PushStatus(
         configured=True,
         public_key=push.public_key,
-        subscriptions=await push.subscription_count(),
+        subscriptions=await push.subscription_count(user.id),
     )
 
 
 @app.post("/push/unsubscribe")
-async def push_unsubscribe(request: PushUnsubscribeRequest) -> PushStatus:
+async def push_unsubscribe(
+    request: PushUnsubscribeRequest, user: CurrentUser
+) -> PushStatus:
     push: PushService = app.state.push
-    await push.unsubscribe(request.endpoint)
+    await push.unsubscribe(user.id, request.endpoint)
     return PushStatus(
         configured=push.configured,
         public_key=push.public_key,
-        subscriptions=await push.subscription_count(),
+        subscriptions=await push.subscription_count(user.id),
     )
 
 
 @app.post("/push/test")
-async def push_test() -> PushTestResult:
+async def push_test(user: CurrentUser) -> PushTestResult:
     push: PushService = app.state.push
     try:
         report = await push.send(
+            user.id,
             Notification(
                 title="Ved",
                 body="Push is working. Reminders will arrive here.",
                 tag="push-test",
-            )
+            ),
         )
     except PushNotConfiguredError as error:
         raise HTTPException(
@@ -350,25 +380,36 @@ async def push_test() -> PushTestResult:
 
 
 @app.get("/conversations")
-async def list_conversations() -> ConversationList:
+async def list_conversations(user: CurrentUser) -> ConversationList:
     store: ConversationStore = app.state.conversations
-    rows = await store.recent_conversations(settings.conversation_list_limit)
+    rows = await store.recent_conversations(user.id, settings.conversation_list_limit)
     return ConversationList(
         conversations=[ConversationSummary.model_validate(row) for row in rows]
     )
 
 
 @app.get("/conversations/{conversation_id}/status")
-async def conversation_status(conversation_id: uuid.UUID) -> ConversationStatus:
+async def conversation_status(
+    conversation_id: uuid.UUID, user: CurrentUser
+) -> ConversationStatus:
+    store: ConversationStore = app.state.conversations
     turns: TurnRegistry = app.state.turns
-    return ConversationStatus(answering=turns.is_answering(conversation_id))
+    try:
+        await store.require_owned(user.id, conversation_id)
+    except ConversationNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
+        ) from error
+    return ConversationStatus(answering=turns.is_answering(user.id, conversation_id))
 
 
 @app.get("/conversations/{conversation_id}")
-async def read_conversation(conversation_id: uuid.UUID) -> ConversationTranscript:
+async def read_conversation(
+    conversation_id: uuid.UUID, user: CurrentUser
+) -> ConversationTranscript:
     store: ConversationStore = app.state.conversations
     try:
-        conversation = await store.transcript(conversation_id)
+        conversation = await store.transcript(user.id, conversation_id)
     except ConversationNotFoundError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
@@ -395,12 +436,14 @@ def reject_oversized_upload(request: Request, max_bytes: int) -> None:
     status_code=status.HTTP_201_CREATED,
     responses={status.HTTP_200_OK: {"description": "Already uploaded"}},
 )
-async def upload_document(request: Request, response: Response) -> DocumentSummary:
+async def upload_document(
+    request: Request, response: Response, user: CurrentUser
+) -> DocumentSummary:
     library: DocumentLibrary = app.state.documents
     reject_oversized_upload(request, settings.documents_max_upload_bytes)
     try:
         stored = await library.upload(
-            request.stream(), request.headers.get("content-type")
+            user.id, request.stream(), request.headers.get("content-type")
         )
     except UploadTooLargeError as error:
         raise HTTPException(
@@ -424,17 +467,17 @@ async def upload_document(request: Request, response: Response) -> DocumentSumma
 
 
 @app.get("/documents")
-async def list_documents() -> DocumentList:
+async def list_documents(user: CurrentUser) -> DocumentList:
     library: DocumentLibrary = app.state.documents
-    rows = await library.list()
+    rows = await library.list(user.id)
     return DocumentList(documents=[DocumentSummary.model_validate(row) for row in rows])
 
 
 @app.get("/documents/{document_id}")
-async def read_document(document_id: uuid.UUID) -> DocumentSummary:
+async def read_document(document_id: uuid.UUID, user: CurrentUser) -> DocumentSummary:
     library: DocumentLibrary = app.state.documents
     try:
-        document = await library.get(document_id)
+        document = await library.get(user.id, document_id)
     except DocumentNotFoundError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
@@ -443,10 +486,10 @@ async def read_document(document_id: uuid.UUID) -> DocumentSummary:
 
 
 @app.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_document(document_id: uuid.UUID) -> None:
+async def delete_document(document_id: uuid.UUID, user: CurrentUser) -> None:
     library: DocumentLibrary = app.state.documents
     try:
-        await library.delete(document_id)
+        await library.delete(user.id, document_id)
     except DocumentNotFoundError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(error)

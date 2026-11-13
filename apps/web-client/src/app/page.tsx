@@ -3,6 +3,7 @@ import { BackendStatus } from "./backend-status";
 import { Conversations } from "./conversations";
 import { Notifications } from "./notifications";
 import styles from "./page.module.css";
+import { SignedInAs } from "./signed-in-as";
 
 export default function Home() {
   return (
@@ -10,6 +11,7 @@ export default function Home() {
       <h1 className={styles.title}>Ved</h1>
       <p className={styles.subtitle}>Personal AI operating layer</p>
       <p className={styles.phase}>Phase 2 — memory and reminders</p>
+      <SignedInAs />
       <BackendStatus />
       <Notifications />
       <Suspense>

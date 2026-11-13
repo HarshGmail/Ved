@@ -20,8 +20,9 @@ def blend(first_axis: int, second_axis: int, second_weight: float) -> list[float
     return vector
 
 
-async def add_document(session, filename, chunks, status="indexed", sha="a"):
+async def add_document(session, user, filename, chunks, status="indexed", sha="a"):
     document = Document(
+        user_id=user.id,
         filename=filename,
         media_type="application/pdf",
         size_bytes=100,
@@ -46,9 +47,10 @@ async def add_document(session, filename, chunks, status="indexed", sha="a"):
     return document_id
 
 
-async def test_the_closest_passage_comes_first_with_file_and_page(session):
+async def test_the_closest_passage_comes_first_with_file_and_page(session, user):
     await add_document(
         session,
+        user,
         "lease.pdf",
         [
             ("unrelated", 1, direction(2)),
@@ -57,7 +59,7 @@ async def test_the_closest_passage_comes_first_with_file_and_page(session):
         ],
     )
 
-    passages = await documents.search_passages(session, direction(0), limit=3)
+    passages = await documents.search_passages(session, user.id, direction(0), limit=3)
 
     assert [passage.text for passage in passages] == [
         "deposit clause",
@@ -69,34 +71,38 @@ async def test_the_closest_passage_comes_first_with_file_and_page(session):
     assert passages[0].similarity > passages[1].similarity > passages[2].similarity
 
 
-async def test_limit_caps_the_passages(session):
+async def test_limit_caps_the_passages(session, user):
     await add_document(
-        session, "notes.pdf", [(f"p{axis}", 1, direction(axis)) for axis in range(5)]
+        session,
+        user,
+        "notes.pdf",
+        [(f"p{axis}", 1, direction(axis)) for axis in range(5)],
     )
 
-    passages = await documents.search_passages(session, direction(0), limit=2)
+    passages = await documents.search_passages(session, user.id, direction(0), limit=2)
 
     assert len(passages) == 2
 
 
-async def test_passages_without_an_embedding_are_skipped(session):
+async def test_passages_without_an_embedding_are_skipped(session, user):
     await add_document(
         session,
+        user,
         "notes.pdf",
         [("not yet embedded", 1, None), ("embedded", 1, direction(1))],
         status="pending",
     )
 
-    passages = await documents.search_passages(session, direction(0), limit=5)
+    passages = await documents.search_passages(session, user.id, direction(0), limit=5)
 
     assert [passage.text for passage in passages] == ["embedded"]
 
 
-async def test_search_spans_every_document(session):
-    await add_document(session, "a.pdf", [("from a", 1, direction(1))], sha="a")
-    await add_document(session, "b.pdf", [("from b", 4, direction(0))], sha="b")
+async def test_search_spans_every_document(session, user):
+    await add_document(session, user, "a.pdf", [("from a", 1, direction(1))], sha="a")
+    await add_document(session, user, "b.pdf", [("from b", 4, direction(0))], sha="b")
 
-    passages = await documents.search_passages(session, direction(0), limit=5)
+    passages = await documents.search_passages(session, user.id, direction(0), limit=5)
 
     assert [(passage.filename, passage.page) for passage in passages] == [
         ("b.pdf", 4),
@@ -104,13 +110,13 @@ async def test_search_spans_every_document(session):
     ]
 
 
-async def test_list_counts_passages_and_shows_failures(session):
+async def test_list_counts_passages_and_shows_failures(session, user):
     await add_document(
-        session, "lease.pdf", [("one", 1, None), ("two", 2, None)], sha="a"
+        session, user, "lease.pdf", [("one", 1, None), ("two", 2, None)], sha="a"
     )
-    await add_document(session, "scan.pdf", [], status="failed", sha="b")
+    await add_document(session, user, "scan.pdf", [], status="failed", sha="b")
 
-    entries = await documents.list_documents(session, limit=10)
+    entries = await documents.list_documents(session, user.id, limit=10)
 
     by_name = {entry.filename: entry for entry in entries}
     assert by_name["lease.pdf"].passages == 2
@@ -123,3 +129,24 @@ def test_search_results_are_marked_untrusted():
 
     assert result.untrusted is True
     assert result.notice == UNTRUSTED_NOTICE
+
+
+async def test_search_and_list_never_cross_users(session, user, other_user):
+    await add_document(
+        session, user, "mine.pdf", [("my clause", 1, direction(0))], sha="a"
+    )
+    await add_document(
+        session, other_user, "theirs.pdf", [("their clause", 1, direction(0))], sha="b"
+    )
+
+    my_passages = await documents.search_passages(
+        session, user.id, direction(0), limit=5
+    )
+    their_passages = await documents.search_passages(
+        session, other_user.id, direction(0), limit=5
+    )
+    my_entries = await documents.list_documents(session, user.id, limit=10)
+
+    assert [p.filename for p in my_passages] == ["mine.pdf"]
+    assert [p.filename for p in their_passages] == ["theirs.pdf"]
+    assert [e.filename for e in my_entries] == ["mine.pdf"]

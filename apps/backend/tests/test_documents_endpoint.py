@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from ved_backend.documents import DocumentLibrary
 from ved_backend.main import app
+from ved_backend.users import current_user
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("VED_TEST_DATABASE_URL"),
@@ -23,13 +24,15 @@ class RecordingIndexer:
 
 
 @pytest.fixture
-def client(session_factory, tmp_path):
+def client(session_factory, tmp_path, user):
     indexer = RecordingIndexer()
     app.state.documents = DocumentLibrary(
         session_factory, tmp_path, max_upload_bytes=MAX_UPLOAD_BYTES
     )
     app.state.document_indexer = indexer
+    app.dependency_overrides[current_user] = lambda: user
     yield TestClient(app), indexer, tmp_path
+    app.dependency_overrides.pop(current_user, None)
     app.state.documents = None
     app.state.document_indexer = None
 
@@ -99,3 +102,21 @@ def test_list_read_and_delete(client):
     assert test_client.get(f"/documents/{created['id']}").status_code == 404
     assert test_client.delete(f"/documents/{created['id']}").status_code == 404
     assert list(directory.iterdir()) == []
+
+
+def test_another_users_document_is_a_404_and_stays_intact(client, other_user):
+    test_client, _, directory = client
+    created = send(test_client, b"private notes").json()
+
+    app.dependency_overrides[current_user] = lambda: other_user
+    try:
+        assert test_client.get("/documents").json() == {"documents": []}
+        assert test_client.get(f"/documents/{created['id']}").status_code == 404
+        assert test_client.delete(f"/documents/{created['id']}").status_code == 404
+        reupload = send(test_client, b"private notes")
+        assert reupload.status_code == 201
+        assert reupload.json()["id"] != created["id"]
+    finally:
+        app.dependency_overrides.pop(current_user, None)
+
+    assert len(list(directory.iterdir())) == 1

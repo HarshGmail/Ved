@@ -79,15 +79,19 @@ class PushService:
         return self._public_key
 
     async def subscribe(
-        self, endpoint: str, keys: dict[str, Any], label: str | None
+        self,
+        user_id: uuid.UUID,
+        endpoint: str,
+        keys: dict[str, Any],
+        label: str | None,
     ) -> uuid.UUID:
         async with self._session_factory() as session:
             statement = (
                 insert(PushSubscription)
-                .values(endpoint=endpoint, keys=keys, label=label)
+                .values(user_id=user_id, endpoint=endpoint, keys=keys, label=label)
                 .on_conflict_do_update(
                     index_elements=[PushSubscription.endpoint],
-                    set_={"keys": keys, "label": label},
+                    set_={"user_id": user_id, "keys": keys, "label": label},
                 )
                 .returning(PushSubscription.id)
             )
@@ -95,26 +99,37 @@ class PushService:
             await session.commit()
             return subscription_id
 
-    async def unsubscribe(self, endpoint: str) -> bool:
+    async def unsubscribe(self, user_id: uuid.UUID, endpoint: str) -> bool:
         async with self._session_factory() as session:
             result = await session.execute(
-                delete(PushSubscription).where(PushSubscription.endpoint == endpoint)
+                delete(PushSubscription).where(
+                    PushSubscription.endpoint == endpoint,
+                    PushSubscription.user_id == user_id,
+                )
             )
             await session.commit()
             return result.rowcount > 0
 
-    async def subscription_count(self) -> int:
+    async def subscription_count(self, user_id: uuid.UUID) -> int:
         async with self._session_factory() as session:
             return await session.scalar(
-                select(func.count()).select_from(PushSubscription)
+                select(func.count())
+                .select_from(PushSubscription)
+                .where(PushSubscription.user_id == user_id)
             )
 
-    async def send(self, notification: Notification) -> DeliveryReport:
+    async def send(
+        self, user_id: uuid.UUID, notification: Notification
+    ) -> DeliveryReport:
         if not self.configured:
             raise PushNotConfiguredError()
 
         async with self._session_factory() as session:
-            subscriptions = list(await session.scalars(select(PushSubscription)))
+            subscriptions = list(
+                await session.scalars(
+                    select(PushSubscription).where(PushSubscription.user_id == user_id)
+                )
+            )
 
         if not subscriptions:
             return DeliveryReport(sent=0, expired=0)

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import uuid
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import aclosing
 from datetime import datetime
@@ -88,17 +89,21 @@ class Agent:
         now = datetime.now(self._zone).strftime(TIME_FORMAT)
         return f"Current time: {now}, timezone {self._timezone}.\n\n{prompt}"
 
-    async def run(self, prompt: str, history: Sequence[Message] = ()) -> AgentTurn:
-        async with aclosing(self._events(prompt, history, self._complete)) as events:
+    async def run(
+        self, prompt: str, history: Sequence[Message], *, user_id: uuid.UUID
+    ) -> AgentTurn:
+        async with aclosing(
+            self._events(prompt, history, user_id, self._complete)
+        ) as events:
             async for event in events:
                 if isinstance(event, AgentTurn):
                     return event
         raise LLMRequestError(NO_REPLY_MESSAGE)
 
     def stream(
-        self, prompt: str, history: Sequence[Message] = ()
+        self, prompt: str, history: Sequence[Message], *, user_id: uuid.UUID
     ) -> AsyncIterator[AgentEvent]:
-        return self._events(prompt, history, self._provider.stream)
+        return self._events(prompt, history, user_id, self._provider.stream)
 
     async def _complete(
         self,
@@ -112,7 +117,11 @@ class Agent:
         )
 
     async def _events(
-        self, prompt: str, history: Sequence[Message], model_round: ModelRound
+        self,
+        prompt: str,
+        history: Sequence[Message],
+        user_id: uuid.UUID,
+        model_round: ModelRound,
     ) -> AsyncIterator[AgentEvent]:
         messages: list[Message] = [*history, UserMessage(text=self._stamped(prompt))]
         invocations: list[ToolInvocation] = []
@@ -163,7 +172,7 @@ class Agent:
                 yield ToolStartedEvent(name=call.name, arguments=call.arguments)
 
             results: dict[int, tuple[str, bool]] = {}
-            async with aclosing(self._invoke_concurrently(calls)) as finished:
+            async with aclosing(self._invoke_concurrently(calls, user_id)) as finished:
                 async for index, content, is_error in finished:
                     results[index] = (content, is_error)
                     yield ToolFinishedEvent(name=calls[index].name, failed=is_error)
@@ -189,10 +198,10 @@ class Agent:
         )
 
     async def _invoke_concurrently(
-        self, calls: Sequence[ToolCall]
+        self, calls: Sequence[ToolCall], user_id: uuid.UUID
     ) -> AsyncIterator[FinishedCall]:
         running = {
-            asyncio.ensure_future(self._invoke_shielded(call)): index
+            asyncio.ensure_future(self._invoke_shielded(call, user_id)): index
             for index, call in enumerate(calls)
         }
         try:
@@ -203,13 +212,15 @@ class Agent:
             with anyio.CancelScope(shield=True):
                 await asyncio.gather(*running, return_exceptions=True)
 
-    async def _invoke_shielded(self, call: ToolCall) -> tuple[str, bool]:
+    async def _invoke_shielded(
+        self, call: ToolCall, user_id: uuid.UUID
+    ) -> tuple[str, bool]:
         with anyio.CancelScope(shield=True):
-            return await self._invoke(call)
+            return await self._invoke(call, user_id)
 
-    async def _invoke(self, call: ToolCall) -> tuple[str, bool]:
+    async def _invoke(self, call: ToolCall, user_id: uuid.UUID) -> tuple[str, bool]:
         try:
-            return await self._toolbox.call(call.name, call.arguments)
+            return await self._toolbox.call(call.name, call.arguments, user_id=user_id)
         except ToolNotAvailableError as error:
             return str(error), True
         except Exception:

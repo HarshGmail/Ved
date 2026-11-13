@@ -28,8 +28,8 @@ async def add_message(session, conversation_id, text, embedding, role="user"):
     await session.commit()
 
 
-async def new_conversation(session, title):
-    conversation = Conversation(title=title)
+async def new_conversation(session, user, title):
+    conversation = Conversation(user_id=user.id, title=title)
     session.add(conversation)
     await session.flush()
     conversation_id = conversation.id
@@ -37,55 +37,70 @@ async def new_conversation(session, title):
     return conversation_id
 
 
-async def test_the_closest_message_comes_first(session):
-    thread = await new_conversation(session, "Home lab")
+async def test_the_closest_message_comes_first(session, user):
+    thread = await new_conversation(session, user, "Home lab")
     await add_message(session, thread, "unrelated", direction(2))
     await add_message(session, thread, "close", blend(0, 1, 0.3))
     await add_message(session, thread, "exact", direction(0))
 
-    hits = await storage.search_messages(session, direction(0), limit=3)
+    hits = await storage.search_messages(session, user.id, direction(0), limit=3)
 
     assert [hit.text for hit in hits] == ["exact", "close", "unrelated"]
     assert hits[0].similarity > hits[1].similarity > hits[2].similarity
 
 
-async def test_similarity_is_one_for_an_identical_vector(session):
-    thread = await new_conversation(session, "Home lab")
+async def test_similarity_is_one_for_an_identical_vector(session, user):
+    thread = await new_conversation(session, user, "Home lab")
     await add_message(session, thread, "exact", direction(0))
 
-    hits = await storage.search_messages(session, direction(0), limit=1)
+    hits = await storage.search_messages(session, user.id, direction(0), limit=1)
 
     assert round(hits[0].similarity, 6) == 1.0
 
 
-async def test_limit_caps_the_results(session):
-    thread = await new_conversation(session, "Home lab")
+async def test_limit_caps_the_results(session, user):
+    thread = await new_conversation(session, user, "Home lab")
     for axis in range(4):
         await add_message(session, thread, f"message {axis}", direction(axis))
 
-    hits = await storage.search_messages(session, direction(0), limit=2)
+    hits = await storage.search_messages(session, user.id, direction(0), limit=2)
 
     assert len(hits) == 2
 
 
-async def test_messages_without_an_embedding_are_skipped(session):
-    thread = await new_conversation(session, "Home lab")
+async def test_messages_without_an_embedding_are_skipped(session, user):
+    thread = await new_conversation(session, user, "Home lab")
     await add_message(session, thread, "not yet embedded", None)
     await add_message(session, thread, "embedded", direction(1))
 
-    hits = await storage.search_messages(session, direction(0), limit=5)
+    hits = await storage.search_messages(session, user.id, direction(0), limit=5)
 
     assert [hit.text for hit in hits] == ["embedded"]
 
 
-async def test_hits_carry_title_role_and_time(session):
-    thread = await new_conversation(session, "Home lab")
+async def test_hits_carry_title_role_and_time(session, user):
+    thread = await new_conversation(session, user, "Home lab")
     await add_message(
         session, thread, "I will run it on an N100", direction(0), role="assistant"
     )
 
-    hit = (await storage.search_messages(session, direction(0), limit=1))[0]
+    hit = (await storage.search_messages(session, user.id, direction(0), limit=1))[0]
 
     assert hit.conversation_title == "Home lab"
     assert hit.role == "assistant"
     assert hit.created_at is not None
+
+
+async def test_search_never_returns_another_users_messages(session, user, other_user):
+    mine = await new_conversation(session, user, "Mine")
+    theirs = await new_conversation(session, other_user, "Theirs")
+    await add_message(session, mine, "my note", direction(0))
+    await add_message(session, theirs, "their note", direction(0))
+
+    my_hits = await storage.search_messages(session, user.id, direction(0), limit=5)
+    their_hits = await storage.search_messages(
+        session, other_user.id, direction(0), limit=5
+    )
+
+    assert [hit.text for hit in my_hits] == ["my note"]
+    assert [hit.text for hit in their_hits] == ["their note"]

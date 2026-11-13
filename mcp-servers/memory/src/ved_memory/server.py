@@ -1,3 +1,4 @@
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -53,6 +54,13 @@ mcp = MCPServer(
 )
 
 
+def parse_user_id(value: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(value)
+    except ValueError as error:
+        raise ToolError(f"user_id must be a UUID, got {value!r}") from error
+
+
 def parse_query(value: str) -> str:
     query = value.strip()
     if not query:
@@ -70,7 +78,10 @@ def parse_limit(value: int) -> int:
 
 @mcp.tool(name="memory.search")
 async def search(
-    query: str, ctx: Context, limit: int = settings.search_default_limit
+    user_id: str,
+    query: str,
+    ctx: Context,
+    limit: int = settings.search_default_limit,
 ) -> MemorySearchResult:
     """Search past conversations by meaning and return the closest messages.
 
@@ -89,13 +100,18 @@ async def search(
     context: ServerContext = ctx.request_context.lifespan_context
     query_vector = await embed_query(context, parsed_query)
     async with context.session_factory() as session:
-        hits = await storage.search_messages(session, query_vector, limit=parsed_limit)
+        hits = await storage.search_messages(
+            session, parse_user_id(user_id), query_vector, limit=parsed_limit
+        )
     return MemorySearchResult(hits=hits)
 
 
 @mcp.tool(name="documents.search")
 async def search_documents(
-    query: str, ctx: Context, limit: int = settings.search_default_limit
+    user_id: str,
+    query: str,
+    ctx: Context,
+    limit: int = settings.search_default_limit,
 ) -> DocumentSearchResult:
     """Search the user's uploaded documents (PDFs, text, markdown) by meaning.
 
@@ -116,13 +132,13 @@ async def search_documents(
     query_vector = await embed_query(context, parsed_query)
     async with context.session_factory() as session:
         passages = await documents.search_passages(
-            session, query_vector, limit=parsed_limit
+            session, parse_user_id(user_id), query_vector, limit=parsed_limit
         )
     return DocumentSearchResult(passages=passages)
 
 
 @mcp.tool(name="documents.list")
-async def list_documents(ctx: Context) -> DocumentListResult:
+async def list_documents(user_id: str, ctx: Context) -> DocumentListResult:
     """List the documents the user has uploaded, newest first, with their status.
 
     Use this when the user asks which files Ved has, or when documents.search
@@ -132,7 +148,7 @@ async def list_documents(ctx: Context) -> DocumentListResult:
     context: ServerContext = ctx.request_context.lifespan_context
     async with context.session_factory() as session:
         entries = await documents.list_documents(
-            session, limit=settings.documents_list_limit
+            session, parse_user_id(user_id), limit=settings.documents_list_limit
         )
     return DocumentListResult(documents=entries)
 

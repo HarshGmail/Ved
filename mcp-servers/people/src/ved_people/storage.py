@@ -1,3 +1,4 @@
+import uuid
 from dataclasses import dataclass
 from datetime import date
 
@@ -76,14 +77,20 @@ def soonest_birthday_first(record: PersonRecord) -> tuple[bool, int, str]:
     return no_birthday, record.days_until_birthday or 0, record.name.lower()
 
 
-async def find_person(session: AsyncSession, name: str) -> Person | None:
+async def find_person(
+    session: AsyncSession, user_id: uuid.UUID, name: str
+) -> Person | None:
     return await session.scalar(
-        select(Person).where(func.lower(Person.name) == name.lower())
+        select(Person).where(
+            Person.user_id == user_id, func.lower(Person.name) == name.lower()
+        )
     )
 
 
-async def known_names(session: AsyncSession) -> list[str]:
-    rows = await session.scalars(select(Person.name).order_by(Person.name))
+async def known_names(session: AsyncSession, user_id: uuid.UUID) -> list[str]:
+    rows = await session.scalars(
+        select(Person.name).where(Person.user_id == user_id).order_by(Person.name)
+    )
     return list(rows)
 
 
@@ -101,6 +108,7 @@ async def discard_pending_birthday_reminders(
 
 async def save_person(
     session: AsyncSession,
+    user_id: uuid.UUID,
     name: str,
     *,
     today: date,
@@ -108,9 +116,9 @@ async def save_person(
     birthday: Birthday | None = UNCHANGED,
     birthday_notice_days: int | None = UNCHANGED,
 ) -> PersonRecord:
-    person = await find_person(session, name)
+    person = await find_person(session, user_id, name)
     if person is None:
-        person = Person(name=name, birthday_notice_days=0)
+        person = Person(user_id=user_id, name=name, birthday_notice_days=0)
         session.add(person)
 
     if relation is not UNCHANGED:
@@ -143,16 +151,20 @@ async def save_person(
     return PersonRecord.from_row(person, today)
 
 
-async def list_people(session: AsyncSession, *, today: date) -> list[PersonRecord]:
-    rows = await session.scalars(select(Person))
+async def list_people(
+    session: AsyncSession, user_id: uuid.UUID, *, today: date
+) -> list[PersonRecord]:
+    rows = await session.scalars(select(Person).where(Person.user_id == user_id))
     records = [PersonRecord.from_row(row, today) for row in rows]
     return sorted(records, key=soonest_birthday_first)
 
 
-async def forget_person(session: AsyncSession, name: str) -> Forgotten:
-    person = await find_person(session, name)
+async def forget_person(
+    session: AsyncSession, user_id: uuid.UUID, name: str
+) -> Forgotten:
+    person = await find_person(session, user_id, name)
     if person is None:
-        raise PersonNotFoundError(name, await known_names(session))
+        raise PersonNotFoundError(name, await known_names(session, user_id))
 
     forgotten = Forgotten(name=person.name)
     await session.delete(person)

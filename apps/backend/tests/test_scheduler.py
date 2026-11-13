@@ -1,4 +1,6 @@
+import json
 import os
+import uuid
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -6,7 +8,7 @@ import pytest
 from sqlalchemy import select
 from ved_db import Reminder
 
-from ved_backend.push import DeliveryReport, Notification
+from ved_backend.push import DeliveryReport, Notification, PushService
 from ved_backend.scheduler import ReminderScheduler, claim_due_reminders, describe
 
 pytestmark = pytest.mark.skipif(
@@ -26,9 +28,13 @@ class RecordingPush:
     def __init__(self, configured: bool = True, sent: int = 1) -> None:
         self.configured = configured
         self.sent: list[Notification] = []
+        self.recipients: list[uuid.UUID] = []
         self._sent_count = sent
 
-    async def send(self, notification: Notification) -> DeliveryReport:
+    async def send(
+        self, user_id: uuid.UUID, notification: Notification
+    ) -> DeliveryReport:
+        self.recipients.append(user_id)
         self.sent.append(notification)
         return DeliveryReport(sent=self._sent_count, expired=0)
 
@@ -46,9 +52,9 @@ def test_description_renders_local_time():
     assert describe(reminder, ZONE) == "call Mom — 8:00 PM"
 
 
-async def test_a_due_reminder_is_announced(session_factory):
+async def test_a_due_reminder_is_announced(session_factory, user):
     async with session_factory() as session:
-        session.add(Reminder(text="call Mom", due_at=at(-1)))
+        session.add(Reminder(user_id=user.id, text="call Mom", due_at=at(-1)))
         await session.commit()
 
     push = RecordingPush()
@@ -59,9 +65,9 @@ async def test_a_due_reminder_is_announced(session_factory):
     assert push.sent[0].tag == "reminder"
 
 
-async def test_a_future_reminder_is_left_alone(session_factory):
+async def test_a_future_reminder_is_left_alone(session_factory, user):
     async with session_factory() as session:
-        session.add(Reminder(text="later", due_at=at(60)))
+        session.add(Reminder(user_id=user.id, text="later", due_at=at(60)))
         await session.commit()
 
     push = RecordingPush()
@@ -70,9 +76,9 @@ async def test_a_future_reminder_is_left_alone(session_factory):
     assert push.sent == []
 
 
-async def test_a_reminder_fires_only_once(session_factory):
+async def test_a_reminder_fires_only_once(session_factory, user):
     async with session_factory() as session:
-        session.add(Reminder(text="call Mom", due_at=at(-1)))
+        session.add(Reminder(user_id=user.id, text="call Mom", due_at=at(-1)))
         await session.commit()
 
     push = RecordingPush()
@@ -83,10 +89,15 @@ async def test_a_reminder_fires_only_once(session_factory):
     assert len(push.sent) == 1
 
 
-async def test_completed_reminders_never_fire(session_factory):
+async def test_completed_reminders_never_fire(session_factory, user):
     async with session_factory() as session:
         session.add(
-            Reminder(text="done", due_at=at(-1), completed_at=datetime.now(UTC))
+            Reminder(
+                user_id=user.id,
+                text="done",
+                due_at=at(-1),
+                completed_at=datetime.now(UTC),
+            )
         )
         await session.commit()
 
@@ -96,9 +107,9 @@ async def test_completed_reminders_never_fire(session_factory):
     assert push.sent == []
 
 
-async def test_firing_stamps_notified_at(session_factory):
+async def test_firing_stamps_notified_at(session_factory, user):
     async with session_factory() as session:
-        session.add(Reminder(text="call Mom", due_at=at(-1)))
+        session.add(Reminder(user_id=user.id, text="call Mom", due_at=at(-1)))
         await session.commit()
 
     await build(session_factory, RecordingPush()).tick()
@@ -108,10 +119,12 @@ async def test_firing_stamps_notified_at(session_factory):
         assert stored.notified_at is not None
 
 
-async def test_several_due_reminders_all_fire(session_factory):
+async def test_several_due_reminders_all_fire(session_factory, user):
     async with session_factory() as session:
         for index in range(3):
-            session.add(Reminder(text=f"task {index}", due_at=at(-index - 1)))
+            session.add(
+                Reminder(user_id=user.id, text=f"task {index}", due_at=at(-index - 1))
+            )
         await session.commit()
 
     push = RecordingPush()
@@ -120,9 +133,9 @@ async def test_several_due_reminders_all_fire(session_factory):
     assert len(push.sent) == 3
 
 
-async def test_reminders_still_fire_without_push_configured(session_factory):
+async def test_reminders_still_fire_without_push_configured(session_factory, user):
     async with session_factory() as session:
-        session.add(Reminder(text="call Mom", due_at=at(-1)))
+        session.add(Reminder(user_id=user.id, text="call Mom", due_at=at(-1)))
         await session.commit()
 
     push = RecordingPush(configured=False)
@@ -135,9 +148,9 @@ async def test_reminders_still_fire_without_push_configured(session_factory):
         assert stored.notified_at is not None
 
 
-async def test_claim_marks_rows_in_one_transaction(session_factory):
+async def test_claim_marks_rows_in_one_transaction(session_factory, user):
     async with session_factory() as session:
-        session.add(Reminder(text="call Mom", due_at=at(-1)))
+        session.add(Reminder(user_id=user.id, text="call Mom", due_at=at(-1)))
         await session.commit()
 
     async with session_factory() as session:
@@ -155,9 +168,9 @@ async def test_claim_marks_rows_in_one_transaction(session_factory):
     assert again == []
 
 
-async def test_an_undelivered_reminder_is_retried_not_lost(session_factory):
+async def test_an_undelivered_reminder_is_retried_not_lost(session_factory, user):
     async with session_factory() as session:
-        session.add(Reminder(text="call Mom", due_at=at(-1)))
+        session.add(Reminder(user_id=user.id, text="call Mom", due_at=at(-1)))
         await session.commit()
 
     unreachable = RecordingPush(sent=0)
@@ -174,9 +187,9 @@ async def test_an_undelivered_reminder_is_retried_not_lost(session_factory):
     assert len(reachable.sent) == 1
 
 
-async def test_a_long_undeliverable_reminder_is_given_up_on(session_factory):
+async def test_a_long_undeliverable_reminder_is_given_up_on(session_factory, user):
     async with session_factory() as session:
-        session.add(Reminder(text="ancient", due_at=at(-60 * 48)))
+        session.add(Reminder(user_id=user.id, text="ancient", due_at=at(-60 * 48)))
         await session.commit()
 
     scheduler = ReminderScheduler(
@@ -202,7 +215,7 @@ class CountingIndexer:
         self.triggered += 1
 
 
-async def test_every_tick_nudges_every_indexer(session_factory):
+async def test_every_tick_nudges_every_indexer(session_factory, user):
     messages, documents = CountingIndexer(), CountingIndexer()
     scheduler = ReminderScheduler(
         session_factory,
@@ -217,3 +230,48 @@ async def test_every_tick_nudges_every_indexer(session_factory):
 
     assert messages.triggered == 2
     assert documents.triggered == 2
+
+
+async def test_a_reminder_is_pushed_only_to_its_owner(
+    session_factory, user, other_user, monkeypatch
+):
+    async with session_factory() as session:
+        session.add(Reminder(user_id=user.id, text="mine", due_at=at(-1)))
+        session.add(Reminder(user_id=other_user.id, text="theirs", due_at=at(-1)))
+        await session.commit()
+
+    service = PushService(
+        session_factory,
+        public_key="public",
+        private_key="private",
+        subject="mailto:ved@example.com",
+    )
+    await service.subscribe(user.id, "https://push.example/mine", {}, None)
+    await service.subscribe(other_user.id, "https://push.example/theirs", {}, None)
+    delivered: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        service,
+        "_send_blocking",
+        lambda row, payload: delivered.append((row.endpoint, payload)),
+    )
+
+    assert await build(session_factory, service).tick() == 2
+
+    by_endpoint = {endpoint: json.loads(payload) for endpoint, payload in delivered}
+    assert set(by_endpoint) == {
+        "https://push.example/mine",
+        "https://push.example/theirs",
+    }
+    assert by_endpoint["https://push.example/mine"]["body"].startswith("mine")
+    assert by_endpoint["https://push.example/theirs"]["body"].startswith("theirs")
+
+
+async def test_the_scheduler_hands_the_owner_to_push(session_factory, user, other_user):
+    async with session_factory() as session:
+        session.add(Reminder(user_id=other_user.id, text="theirs", due_at=at(-1)))
+        await session.commit()
+
+    push = RecordingPush()
+    await build(session_factory, push).tick()
+
+    assert push.recipients == [other_user.id]

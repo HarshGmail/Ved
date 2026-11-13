@@ -30,6 +30,7 @@ KeyResolver = Callable[[str], Any]
 class AccessResult:
     email: str | None
     reason: str | None
+    name: str | None = None
 
 
 @lru_cache
@@ -70,15 +71,17 @@ def check_access(
     email = str(claims.get("email") or "").lower()
     admin_emails = {admin.lower() for admin in settings.admin_emails}
     if email and (ANYONE_SIGNED_IN in admin_emails or email in admin_emails):
-        return AccessResult(email=email, reason=None)
+        return AccessResult(
+            email=email, reason=None, name=str(claims.get("name") or "") or None
+        )
     return denied(
         f"Signed in as {email or NO_EMAIL_LABEL}, which is not on the admin list."
     )
 
 
-def require_access(request: Request) -> None:
+def require_access(request: Request) -> AccessResult | None:
     if settings.auth == "off" or request.url.path in PUBLIC_PATHS:
-        return
+        return None
     result = check_access(
         request.headers.get(ACCESS_HEADER), settings, cloudflare_signing_key
     )
@@ -86,3 +89,4 @@ def require_access(request: Request) -> None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=result.reason
         )
+    return result

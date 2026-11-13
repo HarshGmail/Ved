@@ -34,19 +34,39 @@ class ReminderList(BaseModel):
 
 
 async def create_reminder(
-    session: AsyncSession, text: str, due_at: datetime
+    session: AsyncSession, user_id: uuid.UUID, text: str, due_at: datetime
 ) -> ReminderRecord:
-    reminder = Reminder(text=text, due_at=due_at)
+    reminder = Reminder(user_id=user_id, text=text, due_at=due_at)
     session.add(reminder)
     await session.commit()
     await session.refresh(reminder)
     return ReminderRecord.from_row(reminder)
 
 
+async def find_reminder(
+    session: AsyncSession, user_id: uuid.UUID, reminder_id: uuid.UUID
+) -> Reminder:
+    reminder = await session.scalar(
+        select(Reminder).where(Reminder.id == reminder_id, Reminder.user_id == user_id)
+    )
+    if reminder is None:
+        raise ReminderNotFoundError(reminder_id)
+    return reminder
+
+
 async def list_reminders(
-    session: AsyncSession, *, include_completed: bool, limit: int
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    *,
+    include_completed: bool,
+    limit: int,
 ) -> list[ReminderRecord]:
-    query = select(Reminder).order_by(Reminder.due_at).limit(limit)
+    query = (
+        select(Reminder)
+        .where(Reminder.user_id == user_id)
+        .order_by(Reminder.due_at)
+        .limit(limit)
+    )
     if not include_completed:
         query = query.where(Reminder.completed_at.is_(None))
 
@@ -55,11 +75,9 @@ async def list_reminders(
 
 
 async def complete_reminder(
-    session: AsyncSession, reminder_id: uuid.UUID
+    session: AsyncSession, user_id: uuid.UUID, reminder_id: uuid.UUID
 ) -> ReminderRecord:
-    reminder = await session.get(Reminder, reminder_id)
-    if reminder is None:
-        raise ReminderNotFoundError(reminder_id)
+    reminder = await find_reminder(session, user_id, reminder_id)
 
     if reminder.completed_at is None:
         reminder.completed_at = datetime.now(UTC)
@@ -70,11 +88,12 @@ async def complete_reminder(
 
 
 async def reschedule_reminder(
-    session: AsyncSession, reminder_id: uuid.UUID, due_at: datetime
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    reminder_id: uuid.UUID,
+    due_at: datetime,
 ) -> ReminderRecord:
-    reminder = await session.get(Reminder, reminder_id)
-    if reminder is None:
-        raise ReminderNotFoundError(reminder_id)
+    reminder = await find_reminder(session, user_id, reminder_id)
 
     reminder.due_at = due_at
     reminder.notified_at = None

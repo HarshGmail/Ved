@@ -47,6 +47,12 @@ FastAPI, Python 3.13, managed by **uv** — `uv run` handles the venv; never
 - **Access is one app-level dependency** (`require_access`), so new routes are
   guarded by default. `/health` is the only exempt path, and `VED_AUTH=off` is
   the only way to skip the check.
+- **Every row has an owner.** Routes take `CurrentUser` (`users.py`) and every
+  store method takes `user_id` first and filters by it; another person's
+  conversation or document is a 404, never a 403. `TurnRegistry` keys on
+  `(user_id, conversation_id)`. Background jobs run across all users but a
+  reminder's push goes only to its owner's subscriptions. The user id reaches
+  tools through `Agent` to `MCPToolbox.call(..., user_id=)`, never the prompt.
 - MCP servers start once in the lifespan and stay open; one that fails to start
   is logged and skipped. The package is `tools/`, not `mcp/` (that would shadow
   the SDK).

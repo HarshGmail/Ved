@@ -1,4 +1,5 @@
 import os
+import uuid
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -8,7 +9,7 @@ from ved_db import Conversation, ConversationMessage, Person, Reminder
 
 from ved_backend.checkins import CHECK_IN_AUTHOR, draft_check_in
 from ved_backend.llm.base import AssistantMessage, UserMessage
-from ved_backend.memory import ConversationStore
+from ved_backend.memory import ConversationNotFoundError, ConversationStore
 from ved_backend.push import DeliveryReport, Notification
 from ved_backend.scheduler import ReminderScheduler
 
@@ -25,9 +26,13 @@ class RecordingPush:
     def __init__(self, sent: int = 1) -> None:
         self.configured = True
         self.sent: list[Notification] = []
+        self.recipients: list[uuid.UUID] = []
         self._sent_count = sent
 
-    async def send(self, notification: Notification) -> DeliveryReport:
+    async def send(
+        self, user_id: uuid.UUID, notification: Notification
+    ) -> DeliveryReport:
+        self.recipients.append(user_id)
         self.sent.append(notification)
         return DeliveryReport(sent=self._sent_count, expired=0)
 
@@ -56,9 +61,10 @@ def today() -> date:
     return datetime.now(ZONE).date()
 
 
-async def add_due_birthday_reminder(session_factory, *, lead_days: int) -> Person:
+async def add_due_birthday_reminder(session_factory, user, *, lead_days: int) -> Person:
     birthday_on = today() + timedelta(days=lead_days)
     person = Person(
+        user_id=user.id,
         name="Mom",
         birth_month=birthday_on.month,
         birth_day=birthday_on.day,
@@ -70,6 +76,7 @@ async def add_due_birthday_reminder(session_factory, *, lead_days: int) -> Perso
         await session.flush()
         session.add(
             Reminder(
+                user_id=user.id,
                 text="Mom's birthday",
                 due_at=datetime.now(UTC) - timedelta(minutes=1),
                 person_id=person.id,
@@ -116,8 +123,8 @@ def test_no_check_in_once_the_day_has_come():
 
 
 @requires_database
-async def test_an_early_notice_opens_a_conversation(session_factory):
-    await add_due_birthday_reminder(session_factory, lead_days=NOTICE_DAYS)
+async def test_an_early_notice_opens_a_conversation(session_factory, user):
+    await add_due_birthday_reminder(session_factory, user, lead_days=NOTICE_DAYS)
     push = RecordingPush()
 
     assert await scheduler_for(session_factory, push).tick() == 1
@@ -142,8 +149,8 @@ async def test_an_early_notice_opens_a_conversation(session_factory):
 
 
 @requires_database
-async def test_on_the_day_stays_a_plain_push(session_factory):
-    await add_due_birthday_reminder(session_factory, lead_days=0)
+async def test_on_the_day_stays_a_plain_push(session_factory, user):
+    await add_due_birthday_reminder(session_factory, user, lead_days=0)
     push = RecordingPush()
 
     await scheduler_for(session_factory, push).tick()
@@ -154,8 +161,8 @@ async def test_on_the_day_stays_a_plain_push(session_factory):
 
 
 @requires_database
-async def test_ticking_again_does_not_open_another(session_factory):
-    await add_due_birthday_reminder(session_factory, lead_days=NOTICE_DAYS)
+async def test_ticking_again_does_not_open_another(session_factory, user):
+    await add_due_birthday_reminder(session_factory, user, lead_days=NOTICE_DAYS)
     push = RecordingPush()
     scheduler = scheduler_for(session_factory, push)
 
@@ -167,8 +174,8 @@ async def test_ticking_again_does_not_open_another(session_factory):
 
 
 @requires_database
-async def test_a_push_retry_reuses_the_same_conversation(session_factory):
-    await add_due_birthday_reminder(session_factory, lead_days=NOTICE_DAYS)
+async def test_a_push_retry_reuses_the_same_conversation(session_factory, user):
+    await add_due_birthday_reminder(session_factory, user, lead_days=NOTICE_DAYS)
     unreachable = RecordingPush(sent=0)
     await scheduler_for(session_factory, unreachable).tick()
 
@@ -187,11 +194,15 @@ async def test_a_push_retry_reuses_the_same_conversation(session_factory):
 @requires_database
 async def test_one_check_in_per_birthday_even_with_two_early_notices(
     session_factory,
+    user,
 ):
-    person = await add_due_birthday_reminder(session_factory, lead_days=NOTICE_DAYS)
+    person = await add_due_birthday_reminder(
+        session_factory, user, lead_days=NOTICE_DAYS
+    )
     async with session_factory() as session:
         session.add(
             Reminder(
+                user_id=user.id,
                 text="Mom's birthday",
                 due_at=datetime.now(UTC) - timedelta(minutes=1),
                 person_id=person.id,
@@ -209,8 +220,8 @@ async def test_one_check_in_per_birthday_even_with_two_early_notices(
 
 
 @requires_database
-async def test_a_check_in_replays_with_ved_speaking_first(session_factory):
-    await add_due_birthday_reminder(session_factory, lead_days=NOTICE_DAYS)
+async def test_a_check_in_replays_with_ved_speaking_first(session_factory, user):
+    await add_due_birthday_reminder(session_factory, user, lead_days=NOTICE_DAYS)
     await scheduler_for(session_factory, RecordingPush()).tick()
     async with session_factory() as session:
         conversation_id = await session.scalar(
@@ -219,6 +230,7 @@ async def test_a_check_in_replays_with_ved_speaking_first(session_factory):
 
     store = ConversationStore(session_factory, history_limit=20)
     await store.record_turn(
+        user.id,
         conversation_id,
         prompt="remind me to order a cake a week before",
         answer="Done.",
@@ -226,8 +238,8 @@ async def test_a_check_in_replays_with_ved_speaking_first(session_factory):
         tool_calls=[],
     )
 
-    history = await store.history(conversation_id)
-    transcript = await store.transcript(conversation_id)
+    history = await store.history(user.id, conversation_id)
+    transcript = await store.transcript(user.id, conversation_id)
 
     assert [type(m) for m in history] == [
         AssistantMessage,
@@ -237,3 +249,21 @@ async def test_a_check_in_replays_with_ved_speaking_first(session_factory):
     assert history[0].text.startswith("Mom's birthday is in")
     assert [m.role for m in transcript.messages] == ["assistant", "user", "assistant"]
     assert transcript.messages[0].tool_calls == []
+
+
+@requires_database
+async def test_a_check_in_belongs_to_the_owner_and_goes_only_to_them(
+    session_factory, user, other_user
+):
+    await add_due_birthday_reminder(session_factory, user, lead_days=NOTICE_DAYS)
+    push = RecordingPush()
+
+    await scheduler_for(session_factory, push).tick()
+
+    async with session_factory() as session:
+        conversation = await session.scalar(select(Conversation))
+    assert conversation.user_id == user.id
+    assert push.recipients == [user.id]
+    store = ConversationStore(session_factory, history_limit=20)
+    with pytest.raises(ConversationNotFoundError):
+        await store.transcript(other_user.id, conversation.id)
