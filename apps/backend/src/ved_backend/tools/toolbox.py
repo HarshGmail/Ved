@@ -182,10 +182,12 @@ class MCPToolbox:
         exposed_tools: Collection[str] = (),
         *,
         connections: ConnectionSource = no_connections,
+        connection_tool_limit: int = CONNECTION_TOOL_LIMIT,
     ) -> None:
         self._servers = servers
         self._exposed_tools = frozenset(exposed_tools)
         self._connections = connections
+        self._connection_tool_limit = connection_tool_limit
         self._stack = AsyncExitStack()
         self._clients: dict[str, Client] = {}
         self._routes: dict[str, Route] = {}
@@ -290,7 +292,9 @@ class MCPToolbox:
                 for tool in visible
                 if self._is_exposed(f"{PLAN}{DOMAIN_SEPARATOR}{tool.name}")
             ]
-        return sorted(visible, key=lambda tool: tool.name)[:CONNECTION_TOOL_LIMIT]
+        return sorted(visible, key=lambda tool: tool.name)[
+            : self._connection_tool_limit
+        ]
 
     async def _session(
         self, user_id: uuid.UUID, connection: RemoteConnection

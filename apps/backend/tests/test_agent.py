@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 import anyio
 import anyio.lowlevel
 import pytest
+from ved_db import User
 
 from ved_backend import agent as agent_module
 from ved_backend.acknowledgements import DEFAULT_ACKNOWLEDGEMENT, acknowledgement_for
@@ -30,9 +31,10 @@ from ved_backend.schemas import (
     ToolStartedEvent,
 )
 from ved_backend.tools.toolbox import ToolNotAvailableError
+from ved_backend.users import speaker_label
 
 USER_ID = uuid.uuid4()
-USER_LABEL = "Harsh"
+USER_LINE = "You are talking with Harsh."
 CREATE = ToolSpec(name="reminders.create", description="", input_schema={})
 LIST = ToolSpec(name="reminders.list", description="", input_schema={})
 SEARCH = ToolSpec(name="memory.search", description="", input_schema={})
@@ -106,7 +108,7 @@ async def test_plain_reply_skips_the_toolbox(toolbox):
         timezone="Asia/Kolkata",
     )
 
-    reply = await agent.run("hi", (), user_id=USER_ID, user_label=USER_LABEL)
+    reply = await agent.run("hi", (), user_id=USER_ID, user_line=USER_LINE)
 
     assert reply.text == "hello"
     assert reply.tool_calls == []
@@ -120,7 +122,7 @@ async def test_tool_call_is_executed_then_summarised(toolbox):
     agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
     reply = await agent.run(
-        "remind me to call Mom", (), user_id=USER_ID, user_label=USER_LABEL
+        "remind me to call Mom", (), user_id=USER_ID, user_line=USER_LINE
     )
 
     assert reply.text == "Reminder set."
@@ -136,7 +138,7 @@ async def test_the_model_sees_the_tool_result(toolbox):
     )
     agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
-    await agent.run("remind me to call Mom", (), user_id=USER_ID, user_label=USER_LABEL)
+    await agent.run("remind me to call Mom", (), user_id=USER_ID, user_line=USER_LINE)
 
     final_turn = provider.seen[-1]
     assert final_turn[-1].outcomes[0].content == '{"id":"r1"}'
@@ -152,7 +154,7 @@ async def test_tool_errors_are_returned_to_the_model_not_raised():
     agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
     reply = await agent.run(
-        "remind me at 8pm", (), user_id=USER_ID, user_label=USER_LABEL
+        "remind me at 8pm", (), user_id=USER_ID, user_line=USER_LINE
     )
 
     assert reply.tool_calls[0].failed is True
@@ -164,7 +166,7 @@ async def test_unknown_tools_do_not_crash_the_turn():
     provider = ScriptedProvider([create_call(), AssistantMessage(text="sorry")])
     agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
-    reply = await agent.run("remind me", (), user_id=USER_ID, user_label=USER_LABEL)
+    reply = await agent.run("remind me", (), user_id=USER_ID, user_line=USER_LINE)
 
     assert reply.text == "sorry"
     assert reply.tool_calls[0].failed is True
@@ -174,7 +176,7 @@ async def test_a_looping_model_is_cut_off(toolbox):
     provider = ScriptedProvider([create_call(text="again") for _ in range(4)])
     agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
-    reply = await agent.run("remind me", (), user_id=USER_ID, user_label=USER_LABEL)
+    reply = await agent.run("remind me", (), user_id=USER_ID, user_line=USER_LINE)
 
     assert reply.text == TOOL_LIMIT_MESSAGE
     assert len(toolbox.calls) == 4
@@ -199,11 +201,11 @@ async def test_system_prompt_is_identical_across_turns_at_different_times(
     monkeypatch.setattr(
         agent_module, "datetime", FixedClock(datetime(2026, 1, 1, 8, 0, tzinfo=UTC))
     )
-    await agent.run("hello", (), user_id=USER_ID, user_label=USER_LABEL)
+    await agent.run("hello", (), user_id=USER_ID, user_line=USER_LINE)
     monkeypatch.setattr(
         agent_module, "datetime", FixedClock(datetime(2026, 6, 1, 20, 30, tzinfo=UTC))
     )
-    await agent.run("hello again", (), user_id=USER_ID, user_label=USER_LABEL)
+    await agent.run("hello again", (), user_id=USER_ID, user_line=USER_LINE)
 
     assert provider.systems == [SYSTEM_PROMPT, SYSTEM_PROMPT]
 
@@ -216,8 +218,8 @@ async def test_system_prompt_and_tools_are_byte_identical_across_turns(
     )
     agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
-    await agent.run("hello", (), user_id=USER_ID, user_label=USER_LABEL)
-    await agent.run("who am I", (), user_id=USER_ID, user_label=USER_LABEL)
+    await agent.run("hello", (), user_id=USER_ID, user_line=USER_LINE)
+    await agent.run("who am I", (), user_id=USER_ID, user_line=USER_LINE)
 
     first, second = (
         json.dumps([tool.model_dump() for tool in toolset])
@@ -231,9 +233,14 @@ async def test_the_user_line_names_the_signed_in_user(toolbox, monkeypatch):
     provider = ScriptedProvider([AssistantMessage(text="hi")])
     agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
-    await agent.run("who am I", (), user_id=USER_ID, user_label="asha@example.com")
+    await agent.run(
+        "who am I",
+        (),
+        user_id=USER_ID,
+        user_line="You are talking with Asha.",
+    )
 
-    assert "You are talking with asha@example.com." in provider.seen[0][-1].text
+    assert "You are talking with Asha." in provider.seen[0][-1].text
 
 
 async def test_latest_user_message_starts_with_the_current_time(toolbox, monkeypatch):
@@ -243,12 +250,14 @@ async def test_latest_user_message_starts_with_the_current_time(toolbox, monkeyp
     provider = ScriptedProvider([AssistantMessage(text="hi")])
     agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
-    await agent.run("remind me at 8 PM", (), user_id=USER_ID, user_label=USER_LABEL)
+    await agent.run("remind me at 8 PM", (), user_id=USER_ID, user_line=USER_LINE)
 
     last_message = provider.seen[0][-1]
     assert last_message.text == (
-        "Current time: Thursday 01 January 2026, 13:30 +0530, timezone Asia/Kolkata. "
-        "You are talking with Harsh.\n\nremind me at 8 PM"
+        "Current time: Thursday 01 January 2026, 13:30 +0530, timezone Asia/Kolkata.\n"
+        "You are talking with Harsh.\n"
+        "No apps are connected; the user can add them on the Connections page.\n\n"
+        "remind me at 8 PM"
     )
 
 
@@ -257,7 +266,7 @@ async def test_history_and_the_saved_turn_never_carry_the_time_line(toolbox):
     provider = ScriptedProvider([AssistantMessage(text="reply")])
     agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
-    reply = await agent.run("now", history, user_id=USER_ID, user_label=USER_LABEL)
+    reply = await agent.run("now", history, user_id=USER_ID, user_line=USER_LINE)
 
     assert provider.seen[0][:2] == history
     assert "Current time:" not in reply.text
@@ -269,7 +278,7 @@ async def collect(agent, prompt):
     return [
         event
         async for event in agent.stream(
-            prompt, (), user_id=USER_ID, user_label=USER_LABEL
+            prompt, (), user_id=USER_ID, user_line=USER_LINE
         )
     ]
 
@@ -340,9 +349,7 @@ async def test_stream_raises_when_the_model_fails_mid_reply(toolbox):
     received = []
 
     with pytest.raises(LLMRequestError, match="connection dropped"):
-        async for event in agent.stream(
-            "hi", (), user_id=USER_ID, user_label=USER_LABEL
-        ):
+        async for event in agent.stream("hi", (), user_id=USER_ID, user_line=USER_LINE):
             received.append(event)
 
     assert received == [TokenEvent(text="Partial ")]
@@ -383,7 +390,7 @@ async def test_a_cancelled_stream_lets_a_running_tool_finish():
 
     async def consume():
         async for event in agent.stream(
-            "remind me", (), user_id=USER_ID, user_label=USER_LABEL
+            "remind me", (), user_id=USER_ID, user_line=USER_LINE
         ):
             received.append(event)
 
@@ -440,7 +447,7 @@ async def test_run_ignores_thinking_and_returns_only_the_answer(toolbox):
     provider = ReasoningProvider([AssistantMessage(text="hello")])
     agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
 
-    reply = await agent.run("hi", (), user_id=USER_ID, user_label=USER_LABEL)
+    reply = await agent.run("hi", (), user_id=USER_ID, user_line=USER_LINE)
 
     assert reply.text == "hello"
 
@@ -675,7 +682,7 @@ async def test_a_cancelled_stream_lets_every_running_call_finish():
 
     async def consume():
         async for _ in agent.stream(
-            "two things", (), user_id=USER_ID, user_label=USER_LABEL
+            "two things", (), user_id=USER_ID, user_line=USER_LINE
         ):
             pass
 
@@ -711,3 +718,43 @@ async def test_the_stub_exercises_thinking_and_acknowledgement():
     kinds = [type(event) for event in events]
     assert kinds[:3] == [ThinkingEvent, AcknowledgementEvent, ToolStartedEvent]
     assert "Reminder set" in events[-1].text
+
+
+async def test_the_stamp_lists_connected_apps_and_never_the_email():
+    toolbox = FakeToolbox(
+        tools=(
+            CREATE,
+            ToolSpec(name="plan.create_task", description="", input_schema={}),
+            ToolSpec(name="finances.list_accounts", description="", input_schema={}),
+        )
+    )
+    provider = ScriptedProvider([AssistantMessage(text="hi")])
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+    user = User(email="asha@example.com", name=None)
+
+    await agent.run("hello", (), user_id=USER_ID, user_line=speaker_label(user))
+
+    stamped = provider.seen[0][-1].text
+    assert "Connected apps: finances, plan. These are the user's connections" in stamped
+    assert "asha@example.com" not in stamped
+    assert "You don't know this person's name yet." in stamped
+
+
+def test_a_named_user_is_addressed_by_name_and_never_by_email():
+    user = User(email="asha@example.com", name="Asha")
+
+    assert speaker_label(user) == "You are talking with Asha."
+
+
+def test_no_connected_apps_says_so_once_in_the_stamp():
+    agent = Agent(
+        ScriptedProvider([]), FakeToolbox(), max_tool_rounds=4, timezone="UTC"
+    )
+
+    stamped = agent._stamped("hi", USER_LINE, [CREATE, SEARCH])
+
+    assert (
+        "No apps are connected; the user can add them on the Connections page."
+        in stamped
+    )
+    assert stamped.endswith("\n\nhi")

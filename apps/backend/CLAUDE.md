@@ -8,8 +8,9 @@ FastAPI, Python 3.13, managed by **uv** — `uv run` handles the venv; never
 
 - **No vendor SDK outside `llm/`.** A new provider implements both `complete()`
   and `stream()` and registers in `build_provider`; the agent loop doesn't
-  change. Never build a client at import time. Moving the model is a URL change
-  (`VED_LLM_BASE_URL`): the provider speaks the OpenAI `/v1` shape.
+  change. Never build a client at import time. Moving the local model is a URL
+  change (`VED_LLM_BASE_URL`): that provider speaks the OpenAI `/v1` shape.
+  Claude goes through `AnthropicProvider` with the official SDK only.
 - **The system prompt carries the current time and timezone**, rebuilt every
   turn. A model has no clock and invents dates otherwise. `VED_TIMEZONE` is what
   turns "8 PM" into `20:00+05:30`.

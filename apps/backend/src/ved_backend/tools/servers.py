@@ -2,11 +2,25 @@ from mcp import StdioServerParameters
 from mcp.client.stdio import get_default_environment
 
 from ved_backend.config import Settings
-from ved_backend.tools.toolbox import REMINDERS
+from ved_backend.llm import ANTHROPIC
+from ved_backend.tools.toolbox import CONNECTION_TOOL_LIMIT, REMINDERS
 
 PEOPLE = "people"
 MEMORY = "memory"
 WEB = "web"
+ANTHROPIC_CONNECTION_TOOL_LIMIT = 40
+
+
+def exposed_tools_for(settings: Settings) -> list[str]:
+    if settings.llm_provider == ANTHROPIC:
+        return []
+    return settings.exposed_tools
+
+
+def connection_tool_limit_for(settings: Settings) -> int:
+    if settings.llm_provider == ANTHROPIC:
+        return ANTHROPIC_CONNECTION_TOOL_LIMIT
+    return CONNECTION_TOOL_LIMIT
 
 
 def configured_servers(settings: Settings) -> dict[str, StdioServerParameters]:
