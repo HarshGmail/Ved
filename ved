@@ -206,17 +206,27 @@ ensure_infra_env_value() {
   fi
 }
 
+base64url() {
+  openssl base64 -A | tr '+/' '-_' | tr -d '='
+}
+
 ensure_push_keys() {
+  local key_file
   if [ -n "$(infra_env_value "$INFRA/.env" VED_VAPID_PRIVATE_KEY)" ]; then
     return
   fi
-  if [ -z "$(infra_env_value "$BACKEND/.env" VED_VAPID_PRIVATE_KEY)" ]; then
-    say "generating push keys"
-    (cd "$BACKEND" && uv run python scripts/generate_vapid_keys.py)
+  if [ -n "$(infra_env_value "$BACKEND/.env" VED_VAPID_PRIVATE_KEY)" ]; then
+    say "copying push keys into infra/.env"
+    set_env_value "$INFRA/.env" VED_VAPID_PUBLIC_KEY "$(infra_env_value "$BACKEND/.env" VED_VAPID_PUBLIC_KEY)"
+    set_env_value "$INFRA/.env" VED_VAPID_PRIVATE_KEY "$(infra_env_value "$BACKEND/.env" VED_VAPID_PRIVATE_KEY)"
+    return
   fi
-  say "copying push keys into infra/.env"
-  set_env_value "$INFRA/.env" VED_VAPID_PUBLIC_KEY "$(infra_env_value "$BACKEND/.env" VED_VAPID_PUBLIC_KEY)"
-  set_env_value "$INFRA/.env" VED_VAPID_PRIVATE_KEY "$(infra_env_value "$BACKEND/.env" VED_VAPID_PRIVATE_KEY)"
+  say "generating push keys"
+  key_file="$(mktemp)"
+  openssl ecparam -name prime256v1 -genkey -noout -out "$key_file"
+  set_env_value "$INFRA/.env" VED_VAPID_PRIVATE_KEY "$(openssl ec -in "$key_file" -outform DER 2>/dev/null | tail -c +8 | head -c 32 | base64url)"
+  set_env_value "$INFRA/.env" VED_VAPID_PUBLIC_KEY "$(openssl ec -in "$key_file" -pubout -outform DER 2>/dev/null | tail -c 65 | base64url)"
+  rm -f "$key_file"
 }
 
 ensure_server_env() {
