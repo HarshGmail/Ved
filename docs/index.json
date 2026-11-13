@@ -7,12 +7,12 @@
     "phase_4_web_fast": "done: web search and fetch, streaming, thinking state, acknowledgements, parallel tools",
     "phase_5_voice": "next",
     "not_yet": [
-      "auth for family members (admin-only Access check done)",
       "permission layer",
       "voice",
       "phone access verified end to end (needs Tailscale)"
     ],
-    "home_server": "noddy: containerised setup via ./ved server written, not yet run there; Cloudflare tunnel hostname and streaming through it unconfirmed; auth, unattended running and backups not built yet"
+    "home_server": "noddy: containerised setup via ./ved server written, not yet run there; Cloudflare tunnel hostname and streaming through it unconfirmed; auth, unattended running and backups not built yet",
+    "per_user_data": "done: users table, Access email picks the user, chats, memory, documents, people, reminders and push are per person; owner from VED_OWNER_EMAIL"
   },
   "topics": {
     "agent-loop": {
@@ -37,7 +37,8 @@
         "Both endpoints go through Agent._events; never fork the loop.",
         "Tool failures return to the model as is_error, never raised.",
         "The system prompt is a constant; the current time and timezone ride on the latest user message, never in history.",
-        "Tool calls in one round run concurrently; outcomes go back in call order."
+        "Tool calls in one round run concurrently; outcomes go back in call order.",
+        "Agent.run and Agent.stream require user_id, passed to toolbox calls and never put in prompts or stored tool arguments."
       ],
       "tests": [
         "apps/backend/tests/test_agent.py",
@@ -155,7 +156,8 @@
         "ConversationMessage",
         "to_llm_messages",
         "summarise_title",
-        "TurnRegistry.is_answering"
+        "TurnRegistry.is_answering",
+        "ConversationStore.require_owned"
       ],
       "endpoints": [
         "GET /conversations",
@@ -171,7 +173,9 @@
         "Replay prompts and final answers only, never tool calls.",
         "The server mints conversation_id, only after the model answers.",
         "The open conversation is ?c=<id> via history.pushState; useSearchParams needs Suspense.",
-        "A conversation opened while answering polls status every 3 s and reloads when it finishes."
+        "A conversation opened while answering polls status every 3 s and reloads when it finishes.",
+        "Every conversation belongs to a user; ConversationStore methods take user_id first and other users get ConversationNotFoundError (404).",
+        "TurnRegistry is keyed by (user_id, conversation_id)."
       ],
       "tests": [
         "apps/backend/tests/test_conversation_store.py",
@@ -202,7 +206,8 @@
         "If nothing was reachable the stamp is cleared and it retries until give_up_after.",
         "Prefer reschedule over complete-then-create.",
         "due_at must carry a UTC offset.",
-        "When VED_PLAN_MCP_TOKEN is set, Ved's reminders server is not started; plan.create_reminder, plan.list_reminders, plan.my_due_reminders and plan.mark_reminder_done replace it."
+        "When VED_PLAN_MCP_TOKEN is set, Ved's reminders server is not started; plan.create_reminder, plan.list_reminders, plan.my_due_reminders and plan.mark_reminder_done replace it.",
+        "Reminders belong to a user; the scheduler runs across all users and pushes each only to its owner."
       ],
       "tests": [
         "mcp-servers/reminders/tests",
@@ -239,7 +244,8 @@
         "Sends carry a socket timeout, an asyncio deadline and a 24h TTL.",
         "404/410 subscriptions are deleted, not retried.",
         "VAPID keys live only in gitignored .env; the generator refuses to overwrite.",
-        "Needs a secure context: localhost or real HTTPS."
+        "Needs a secure context: localhost or real HTTPS.",
+        "Subscriptions belong to a user; send(user_id, notification) reaches only that user's devices."
       ],
       "tests": [
         "apps/backend/tests/test_push.py"
@@ -271,7 +277,8 @@
         "Reminders are planned by the scheduler, never the model; unique on (person_id, birthday_on, lead_days).",
         "Check-ins come from a template, never the model.",
         "A check-in is created in the claim transaction and linked via reminders.conversation_id.",
-        "Feb 29 falls on Feb 28 in non-leap years."
+        "Feb 29 falls on Feb 28 in non-leap years.",
+        "People and their reminders belong to one user; the same name can exist for two users."
       ],
       "tests": [
         "mcp-servers/people/tests",
@@ -306,7 +313,8 @@
       "rules": [
         "Embedding never blocks or fails a turn; the scheduler tick backfills.",
         "Dimension is coupled to vector(768), VED_EMBEDDING_DIMENSIONS and the model.",
-        "nomic-embed-text uses search_document: and search_query: prefixes."
+        "nomic-embed-text uses search_document: and search_query: prefixes.",
+        "memory.search and documents.search only return the calling user's messages and passages."
       ],
       "tests": [
         "apps/backend/tests/test_indexing.py",
@@ -353,7 +361,8 @@
         "The size cap is enforced while streaming.",
         "indexed means every chunk has a vector.",
         "Passages are untrusted content.",
-        "Scanned PDFs fail: no OCR."
+        "Scanned PDFs fail: no OCR.",
+        "Documents are per user: list, get, delete and search never cross users; deleting keeps the stored file while another user's document has the same hash."
       ],
       "tests": [
         "apps/backend/tests/test_documents.py",
@@ -422,7 +431,8 @@
         "configured_servers",
         "RemoteServer",
         "is_destructive",
-        "PLAN"
+        "PLAN",
+        "USER_ID_ARGUMENT"
       ],
       "rules": [
         "SDK v2: MCPServer; bare Context from mcp.server.mcpserver.context.",
@@ -431,7 +441,8 @@
         "A new server needs a Dockerfile stage, a configured_servers entry, a config.py dir, a CI job and a ./ved setup line.",
         "Plan is a remote streamable HTTP server at VED_PLAN_MCP_URL, authenticated with Authorization: Bearer; its tools appear as plan.<tool>.",
         "Tools whose names start with delete_ are never exposed to the model; sensitive actions need the permission layer first.",
-        "A remote server that fails to connect is logged as a warning and skipped, so startup continues without its tools."
+        "A remote server that fails to connect is logged as a warning and skipped, so startup continues without its tools.",
+        "people, memory and reminders tools take user_id; MCPToolbox.call(name, args, user_id=) injects it on stdio tools that declare it, overwriting anything the model sent, and removes it from the model-facing schema. Remote servers get nothing."
       ],
       "settings": [
         "VED_PLAN_MCP_URL",
@@ -455,7 +466,9 @@
         "recreate_schema",
         "guard_test_url",
         "CONVERSATION_MESSAGE_SEQUENCE",
-        "EMBEDDING_DIMENSIONS"
+        "EMBEDDING_DIMENSIONS",
+        "User",
+        "owner_column"
       ],
       "settings": [
         "VED_DATABASE_URL",
@@ -465,7 +478,9 @@
         "Tables are defined only in packages/ved-db.",
         "A new model is re-exported in ved_db/__init__.py and backend models.py, or autogenerate is empty.",
         "Autogenerate misses sequences and the vector extension; read and round-trip every migration.",
-        "Test schema setup goes only through ved_db.testing; it refuses a database without 'test' in its name."
+        "Test schema setup goes only through ved_db.testing; it refuses a database without 'test' in its name.",
+        "users owns people, reminders, push_subscriptions, conversations and documents via non-null indexed user_id; messages and chunks inherit through their parent.",
+        "Person names are unique per (user_id, lower(name)); documents per (user_id, sha256)."
       ]
     },
     "connector": {
@@ -651,7 +666,8 @@
         "apps/backend/src/ved_backend/access.py",
         "apps/backend/src/ved_backend/main.py",
         "apps/backend/src/ved_backend/config.py",
-        "apps/backend/tests/test_access.py"
+        "apps/backend/tests/test_access.py",
+        "apps/backend/src/ved_backend/users.py"
       ],
       "symbols": [
         "require_access",
@@ -659,21 +675,83 @@
         "cloudflare_signing_key",
         "jwks_client",
         "AccessResult",
-        "PUBLIC_PATHS"
+        "PUBLIC_PATHS",
+        "current_user"
       ],
       "settings": [
         "VED_AUTH",
         "VED_ACCESS_TEAM_DOMAIN",
         "VED_ACCESS_AUD",
-        "VED_ADMIN_EMAILS"
+        "VED_ADMIN_EMAILS",
+        "VED_OWNER_EMAIL"
       ],
       "rules": [
         "VED_AUTH defaults to off; with cloudflare-access every route except /health needs a valid Cf-Access-Jwt-Assertion token.",
         "Only RS256 tokens from the team's certs endpoint are accepted; audience and issuer must match, and emails match case-insensitively.",
-        "Refusals are 401 JSON {detail: reason}; the reason names what to fix in settings."
+        "Refusals are 401 JSON {detail: reason}; the reason names what to fix in settings.",
+        "Identity: require_access returns the verified AccessResult (email, name); current_user turns it into a users row, or the owner when auth is off."
       ],
       "tests": [
         "apps/backend/tests/test_access.py"
+      ]
+    },
+    "users": {
+      "summary": "Per-person data: every chat, memory, document, person, reminder and push device belongs to a user picked by the Access email.",
+      "files": [
+        "apps/backend/src/ved_backend/users.py",
+        "apps/backend/src/ved_backend/access.py",
+        "apps/backend/src/ved_backend/main.py",
+        "apps/backend/src/ved_backend/memory.py",
+        "apps/backend/src/ved_backend/documents.py",
+        "apps/backend/src/ved_backend/push.py",
+        "apps/backend/src/ved_backend/turns.py",
+        "apps/backend/src/ved_backend/tools/toolbox.py",
+        "apps/backend/migrations/versions/3f7a1c2d9b64_add_users_and_per_user_ownership.py",
+        "packages/ved-db/src/ved_db/models.py",
+        "apps/web-client/src/app/signed-in-as.tsx"
+      ],
+      "symbols": [
+        "User",
+        "owner_column",
+        "UserDirectory",
+        "current_user",
+        "CurrentUser",
+        "MeResponse",
+        "USER_ID_ARGUMENT",
+        "declares_user_id",
+        "without_user_id",
+        "TurnKey",
+        "require_owned",
+        "add_user"
+      ],
+      "endpoints": [
+        "GET /me"
+      ],
+      "settings": [
+        "VED_OWNER_EMAIL"
+      ],
+      "rules": [
+        "Every route that touches data takes CurrentUser; stores take user_id first and filter by it.",
+        "Another user's conversation or document is a 404, including GET /conversations/{id}/status.",
+        "With VED_AUTH=off every request acts as the owner (VED_OWNER_EMAIL, default owner@ved.local), created if missing.",
+        "Emails are stored lowercase; the user is created on first sign-in.",
+        "The migration creates the owner from VED_OWNER_EMAIL (process env) and backfills every existing row to it.",
+        "Names (people) and file hashes (documents) are unique per user; stored files are shared by hash, so delete unlinks only when no document references it.",
+        "Birthday reminders and check-ins inherit the person's owner; push goes only to the owner's subscriptions.",
+        "A push endpoint belongs to one user; subscribing from another account moves it."
+      ],
+      "tests": [
+        "apps/backend/tests/test_users.py",
+        "apps/backend/tests/test_migration.py",
+        "apps/backend/tests/test_toolbox.py",
+        "apps/backend/tests/test_conversation_store.py",
+        "apps/backend/tests/test_documents.py",
+        "apps/backend/tests/test_documents_endpoint.py",
+        "apps/backend/tests/test_push.py",
+        "apps/backend/tests/test_scheduler.py",
+        "mcp-servers/people/tests",
+        "mcp-servers/reminders/tests",
+        "mcp-servers/memory/tests"
       ]
     }
   }

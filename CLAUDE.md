@@ -25,7 +25,10 @@ Web Push, remembers people and plans birthday reminders and check-ins, searches
 past conversations and uploaded documents by meaning, and searches and reads
 the web. Everything runs locally; nothing needs an API key.
 
-Not yet: auth, the permission layer, voice. Phone access (`./ved phone`) is
+Every person has their own chats, memory, documents, people, reminders and push
+devices (Cloudflare Access email picks the user; the owner is `VED_OWNER_EMAIL`).
+
+Not yet: the permission layer, voice. Phone access (`./ved phone`) is
 wired but unverified until Tailscale is installed. A home server (Ubuntu, DDR3,
 16 GB max) is being set up from `docs/server.md`; `./ved` runs on Linux, but
 unattended running, auto-deploy and backups aren't built yet. Per-phase detail is in
