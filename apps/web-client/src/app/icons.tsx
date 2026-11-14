@@ -79,3 +79,30 @@ export function CloseIcon({ className }: IconProps) {
     </StrokeIcon>
   );
 }
+
+export function SpeakerIcon({ className }: IconProps) {
+  return (
+    <StrokeIcon className={className}>
+      <path d="M11 5 6 9H3v6h3l5 4V5z" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+      <path d="M18.5 5.5a9 9 0 0 1 0 13" />
+    </StrokeIcon>
+  );
+}
+
+export function StopIcon({ className }: IconProps) {
+  return (
+    <StrokeIcon className={className}>
+      <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" />
+    </StrokeIcon>
+  );
+}
+
+export function MicIcon({ className }: IconProps) {
+  return (
+    <StrokeIcon className={className}>
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+    </StrokeIcon>
+  );
+}

@@ -42,7 +42,8 @@ from ved_backend.tools.toolbox import (
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You are Ved, a personal assistant. Answer in two or three short
-sentences unless the user asks for detail.
+sentences unless the user asks for detail. Reply in the language the user
+writes in, including Telugu, Hindi or a mix, using that language's own script.
 
 Act with the tools instead of describing what you would do. When a tool reports
 an error, fix the arguments and try again. Resolve relative times against the
