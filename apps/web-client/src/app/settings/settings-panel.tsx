@@ -17,6 +17,7 @@ import {
 } from "../theme";
 import { usePerson } from "../use-person";
 import { ClaudeUsageCard } from "./claude-usage";
+import { VoiceControls } from "./voice-controls";
 import styles from "./settings.module.css";
 
 const THEME_LABELS: Record<ThemeChoice, string> = {
@@ -148,6 +149,10 @@ export function SettingsPanel() {
 
       <SettingsSection id="appearance" title="Appearance">
         <AppearanceSection />
+      </SettingsSection>
+
+      <SettingsSection id="voice" title="Voice">
+        <VoiceControls />
       </SettingsSection>
 
       <AboutLines />

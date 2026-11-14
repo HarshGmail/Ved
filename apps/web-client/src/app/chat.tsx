@@ -16,15 +16,20 @@ import {
 } from "@/connector";
 import styles from "./chat.module.css";
 import { DocumentPicker } from "./documents";
-import { ArrowUpIcon } from "./icons";
+import { ArrowUpIcon, MicIcon } from "./icons";
 import { MarkdownReply } from "./markdown-reply";
+import { ReadAloudButton } from "./read-aloud-button";
+import { missingVoiceCopy } from "./speech-voice";
 import { type TranscriptTurn, transcriptToTurns } from "./transcript";
 import { type EmblemState, VedEmblem } from "./ved-emblem";
+import { useReadAloud } from "./use-read-aloud";
+import { useSpeechInput } from "./use-speech-input";
+import { readVoiceSettings } from "./voice-settings";
 import { Welcome } from "./welcome";
 
 type Turn =
   | { role: "user"; text: string }
-  | { role: "ved"; reply: AgentReply }
+  | { role: "ved"; reply: AgentReply; readId?: string }
   | { role: "error"; text: string };
 
 type QueuedPrompt = { id: number; text: string };
@@ -42,6 +47,7 @@ const THINKING_LABEL = "thinking…";
 const BACKGROUND_PLACEHOLDER = "Ved is still answering…";
 const ANSWER_POLL_MS = 3000;
 const AVATAR_SIZE = 28;
+const DICTATION_BLOCKED_COPY = "Allow microphone access for Ved in your browser settings";
 const NOTHING_STREAMED: StreamingReply = {
   text: "",
   activeTool: null,
@@ -62,6 +68,22 @@ function waitingLabel(reply: StreamingReply): string | null {
 
 function emblemStateFor(reply: StreamingReply): EmblemState {
   return reply.text ? "speaking" : "thinking";
+}
+
+function joinWords(first: string, second: string): string {
+  return [first.trim(), second.trim()].filter((part) => part.length > 0).join(" ");
+}
+
+function dictationNotice(error: string | null): { text: string; tone: "muted" | "danger" } | null {
+  if (error === null) return null;
+  if (error === "not-allowed" || error === "service-not-allowed") {
+    return { text: DICTATION_BLOCKED_COPY, tone: "muted" };
+  }
+  return { text: `Voice input stopped (${error}).`, tone: "danger" };
+}
+
+function readIdFor(turn: Turn, index: number): string {
+  return (turn.role === "ved" && turn.readId) || `history-${index}`;
 }
 
 function TypingIndicator({ label }: { label?: string | null }) {
@@ -166,8 +188,12 @@ export function Chat({
   const [dragging, setDragging] = useState(false);
   const [queue, setQueue] = useState<QueuedPrompt[]>([]);
   const [awaitingBackground, setAwaitingBackground] = useState(false);
+  const [dictationBase, setDictationBase] = useState("");
   const nextQueuedId = useRef(0);
+  const nextReadId = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const readAloud = useReadAloud();
+  const speakAloud = readAloud.speak;
   const busy = pending || awaitingBackground;
   const showWelcome = turns.length === 0 && !busy && queue.length === 0;
 
@@ -235,8 +261,11 @@ export function Chat({
         const reply = await requestReply(text, conversationId, (update) =>
           setStreaming((current) => update(current ?? NOTHING_STREAMED)),
         );
+        const readId = `reply-${nextReadId.current}`;
+        nextReadId.current += 1;
         setConversationId(reply.conversation_id);
-        setTurns((current) => [...current, { role: "ved", reply }]);
+        setTurns((current) => [...current, { role: "ved", reply, readId }]);
+        if (readVoiceSettings().autoRead) speakAloud(readId, reply.text);
         onReply?.(reply.conversation_id);
       } catch (error: unknown) {
         setTurns((current) => [
@@ -252,7 +281,7 @@ export function Chat({
         inputRef.current?.focus();
       }
     },
-    [conversationId, onReply],
+    [conversationId, onReply, speakAloud],
   );
 
   useEffect(() => {
@@ -267,10 +296,10 @@ export function Chat({
     inputRef.current?.focus();
   }
 
-  function onSubmit(event: FormEvent) {
-    event.preventDefault();
-    const trimmed = prompt.trim();
+  function submitText(text: string) {
+    const trimmed = text.trim();
     if (!trimmed) return;
+    readAloud.stop();
     setPrompt("");
 
     if (busy || queue.length > 0) {
@@ -279,6 +308,39 @@ export function Chat({
       return;
     }
     sendPrompt(trimmed);
+  }
+
+  function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    submitText(prompt);
+  }
+
+  function handleDictationFinal(text: string) {
+    const transcript = joinWords(dictationBase, text);
+    setPrompt(transcript);
+    if (readVoiceSettings().autoSend) submitText(transcript);
+  }
+
+  const speech = useSpeechInput(handleDictationFinal);
+  const notice = dictationNotice(speech.error);
+  const shownPrompt = speech.interim === null ? prompt : joinWords(dictationBase, speech.interim);
+
+  function toggleDictation() {
+    if (speech.listening) {
+      speech.stop();
+      return;
+    }
+    readAloud.stop();
+    setDictationBase(prompt);
+    speech.start();
+  }
+
+  function toggleReadAloud(readId: string, text: string) {
+    if (readAloud.speakingId === readId) {
+      readAloud.stop();
+      return;
+    }
+    readAloud.speak(readId, text);
   }
 
   return (
@@ -293,22 +355,36 @@ export function Chat({
         <Welcome firstName={firstName} onPick={suggest} />
       ) : (
         <ol className={styles.turns}>
-          {turns.map((turn, index) => (
-            <li key={index} className={styles.turn} data-role={turn.role}>
-              {turn.role === "user" && <p className={styles.bubble}>{turn.text}</p>}
-              {turn.role === "error" && (
-                <p className={styles.bubble}>{turn.text}</p>
-              )}
-              {turn.role === "ved" && (
-                <div className={styles.bubble}>
-                  <MarkdownReply text={turn.reply.text} />
-                  {toolLabel(turn.reply) && (
-                    <p className={styles.tools}>{toolLabel(turn.reply)}</p>
-                  )}
-                </div>
-              )}
-            </li>
-          ))}
+          {turns.map((turn, index) => {
+            const readId = readIdFor(turn, index);
+            return (
+              <li key={index} className={styles.turn} data-role={turn.role}>
+                {turn.role === "user" && <p className={styles.bubble}>{turn.text}</p>}
+                {turn.role === "error" && (
+                  <p className={styles.bubble}>{turn.text}</p>
+                )}
+                {turn.role === "ved" && (
+                  <div className={styles.bubble}>
+                    <MarkdownReply text={turn.reply.text} />
+                    {toolLabel(turn.reply) && (
+                      <p className={styles.tools}>{toolLabel(turn.reply)}</p>
+                    )}
+                    {readAloud.supported && turn.reply.text.trim() !== "" && (
+                      <ReadAloudButton
+                        speaking={readAloud.speakingId === readId}
+                        note={
+                          readAloud.unvoicedId === readId && readAloud.unvoicedLanguage
+                            ? missingVoiceCopy(readAloud.unvoicedLanguage)
+                            : null
+                        }
+                        onToggle={() => toggleReadAloud(readId, turn.reply.text)}
+                      />
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
           {awaitingBackground && (
             <PendingReply state="thinking">
               <TypingIndicator label={BACKGROUND_PLACEHOLDER} />
@@ -342,15 +418,33 @@ export function Chat({
             ref={inputRef}
             id={COMPOSER_INPUT_ID}
             className={styles.input}
-            value={prompt}
+            value={shownPrompt}
             onChange={(event) => setPrompt(event.target.value)}
+            readOnly={speech.listening}
+            data-interim={speech.interim !== null || undefined}
             placeholder={PLACEHOLDER}
             aria-label="Message Ved"
           />
+          {speech.supported && (
+            <button
+              type="button"
+              className={styles.mic}
+              data-listening={speech.listening || undefined}
+              aria-label={speech.listening ? "Stop listening" : "Speak"}
+              onClick={toggleDictation}
+            >
+              <MicIcon className={styles.micIcon} />
+            </button>
+          )}
           <button className={styles.send} type="submit" aria-label="Send">
             <ArrowUpIcon className={styles.sendIcon} />
           </button>
         </div>
+        {notice && (
+          <p className={styles.notice} data-tone={notice.tone} role="status">
+            {notice.text}
+          </p>
+        )}
       </form>
     </section>
   );

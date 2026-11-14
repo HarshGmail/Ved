@@ -45,7 +45,8 @@
         "Tool calls in one round run concurrently; outcomes go back in call order.",
         "Agent.run and Agent.stream require user_id and user_line; user_id goes to toolbox calls and never into prompts or stored tool arguments. user_line is speaker_label(user): a name sentence, or an ask-for-the-name sentence, never the email.",
         "The model sees a fixed tool list (VED_EXPOSED_TOOLS, sorted by name), never a per-message choice: Ollama reuses its cache only for an identical system prompt plus tools prefix.",
-        "The latest user line is stamped with the current time, the user line and a Connected apps line (non-built-in tool prefixes, from the same tools_for call the round uses). The system prompt tells the model to use these lines silently."
+        "The latest user line is stamped with the current time, the user line and a Connected apps line (non-built-in tool prefixes, from the same tools_for call the round uses). The system prompt tells the model to use these lines silently.",
+        "SYSTEM_PROMPT asks replies to follow the user's language and script (English, Telugu, Hindi or a mix); keep that sentence when editing the prompt."
       ],
       "tests": [
         "apps/backend/tests/test_agent.py",
@@ -282,6 +283,60 @@
       "tests": [
         "apps/backend/tests/test_push.py"
       ]
+    },
+    "read-aloud": {
+      "summary": "Replies read aloud, and voice dictation, with the device's own speech engines (speechSynthesis and SpeechRecognition). Nothing is sent to Ved's server.",
+      "files": [
+        "apps/web-client/src/app/use-read-aloud.ts",
+        "apps/web-client/src/app/use-speech-input.ts",
+        "apps/web-client/src/app/speech-text.ts",
+        "apps/web-client/src/app/speech-voice.ts",
+        "apps/web-client/src/app/voice-settings.ts",
+        "apps/web-client/src/app/read-aloud-button.tsx",
+        "apps/web-client/src/app/settings/voice-controls.tsx",
+        "apps/web-client/src/app/chat.tsx",
+        "apps/web-client/src/app/chat.module.css",
+        "apps/web-client/src/app/settings/settings-panel.tsx",
+        "apps/web-client/src/app/settings/settings.module.css",
+        "apps/web-client/src/app/icons.tsx",
+        "apps/backend/src/ved_backend/agent.py"
+      ],
+      "symbols": [
+        "useReadAloud",
+        "useSpeechSupport",
+        "useSpeechVoices",
+        "useSpeechInput",
+        "useSpeechInputSupport",
+        "prepareSpeechChunks",
+        "voiceLanguageFor",
+        "planVoice",
+        "pickVoice",
+        "missingVoiceCopy",
+        "parseVoiceSettings",
+        "readVoiceSettings",
+        "updateVoiceSettings",
+        "useVoiceSettings",
+        "ReadAloudButton",
+        "VoiceControls",
+        "SpeakerIcon",
+        "StopIcon",
+        "MicIcon",
+        "SYSTEM_PROMPT"
+      ],
+      "settings": [
+        "ved.voice (localStorage): autoRead, voiceName, teluguVoiceName, hindiVoiceName, rate (0.8-1.4), pitch (0.8-1.3), listenLang (en-IN, te-IN, hi-IN, en-US), autoSend"
+      ],
+      "rules": [
+        "Speech stays on device. speechSynthesis and SpeechRecognition are the browser's or OS's engines; Ved's server never receives speech audio or speech text. Recognition may still go to Apple or Google, as the Voice card says.",
+        "Read-aloud and dictation are optional: a browser without the API shows no speaker or mic control, and Settings → Voice says so.",
+        "iOS allows speech only after a user gesture. The first pointerdown or keydown in the app speaks an empty utterance to unlock it; the Voice card's hint tells people to tap once.",
+        "Auto-read speaks only replies that arrive in a live send, once, when streaming finishes. History loads, conversation switches and background answers are never read.",
+        "Speech stops on a new send, a new or switched conversation (Chat remounts), and when the page is hidden.",
+        "Telugu or Hindi script in a reply picks a voice of that language. With none installed, nothing is read in English; the reply's button says so.",
+        "Dictation auto-sends only when autoSend is on; otherwise the transcript stays in the input for editing. Dictation stops read-aloud speech first.",
+        "Helpers in speech-text.ts and speech-voice.ts are pure. The web client has no test runner yet, so they are checked by running them directly."
+      ],
+      "tests": []
     },
     "people-birthdays": {
       "summary": "People with birthdays and notice; the scheduler plans yearly reminders and early check-ins.",
@@ -627,8 +682,9 @@
         "The typing indicator (TypingIndicator in chat.tsx) shows three CSS-animated dots from send until the first reply text, with the tool, acknowledgement or thinking label beside them, and in the answering placeholder after a refresh. It has role=status and aria-label=\"Ved is typing\", and reduced motion swaps the bounce for an opacity pulse.",
         "Connections lives in Settings (/settings#integrations); /connections redirects there. It calls connector.* only, shows a per-connection on/off switch, Test and Remove, and offers the Plan and MyFinances presets or a custom server.",
         "The home top bar holds conversations, new conversation and a gear to /settings, plus a backend status dot whose tooltip and aria-label carry the full status text. The reminder banner appears only while reminders are off or failed and links to /settings#notifications.",
-        "Settings (/settings) has sections Integrations, Claude usage, Notifications, Install app, Appearance and About, in that order; each section id is a hash target.",
-        "The theme is stored under localStorage key ved.theme (system, light or dark). THEME_INIT_SCRIPT in the layout head sets data-theme before paint; globals.css lets data-theme override prefers-color-scheme."
+        "Settings (/settings) has sections Integrations, Claude usage, Notifications, Install app, Appearance, Voice and About, in that order; each section id is a hash target.",
+        "The theme is stored under localStorage key ved.theme (system, light or dark). THEME_INIT_SCRIPT in the layout head sets data-theme before paint; globals.css lets data-theme override prefers-color-scheme.",
+        "The mic and speaker controls exist only when the browser supports them; see the read-aloud topic."
       ],
       "symbols": [
         "InstallBanner",
