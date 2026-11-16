@@ -10,7 +10,12 @@ from ved_db import User
 
 from ved_backend import agent as agent_module
 from ved_backend.acknowledgements import DEFAULT_ACKNOWLEDGEMENT, acknowledgement_for
-from ved_backend.agent import SYSTEM_PROMPT, TOOL_LIMIT_MESSAGE, Agent
+from ved_backend.agent import (
+    SPOKEN_REPLY_LINE,
+    SYSTEM_PROMPT,
+    TOOL_LIMIT_MESSAGE,
+    Agent,
+)
 from ved_backend.llm.base import (
     AssistantMessage,
     LLMRequestError,
@@ -758,3 +763,34 @@ def test_no_connected_apps_says_so_once_in_the_stamp():
         in stamped
     )
     assert stamped.endswith("\n\nhi")
+
+
+async def test_spoken_turns_ask_for_a_short_spoken_reply_in_the_stamp(toolbox):
+    provider = ScriptedProvider([AssistantMessage(text="hi")])
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    await agent.run("hello", (), user_id=USER_ID, user_line=USER_LINE, spoken=True)
+
+    assert provider.seen[0][-1].text.endswith(f"{SPOKEN_REPLY_LINE}\n\nhello")
+    assert SPOKEN_REPLY_LINE not in SYSTEM_PROMPT
+
+
+async def test_written_turns_do_not_ask_for_a_spoken_reply(toolbox):
+    provider = ScriptedProvider([AssistantMessage(text="hi")])
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    await agent.run("hello", (), user_id=USER_ID, user_line=USER_LINE)
+
+    assert SPOKEN_REPLY_LINE not in provider.seen[0][-1].text
+
+
+async def test_streamed_spoken_turns_carry_the_spoken_reply_line(toolbox):
+    provider = ScriptedProvider([AssistantMessage(text="hi")])
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    async for _ in agent.stream(
+        "hello", (), user_id=USER_ID, user_line=USER_LINE, spoken=True
+    ):
+        pass
+
+    assert SPOKEN_REPLY_LINE in provider.seen[0][-1].text

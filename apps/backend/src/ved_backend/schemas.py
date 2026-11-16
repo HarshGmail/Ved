@@ -16,6 +16,9 @@ ServiceState = Literal["ok", "degraded", "down"]
 
 MAX_PROMPT_LENGTH = 2000
 MAX_CLAUDE_BALANCE_USD = 10_000
+VOICE_TEXT_LIMIT = 1500
+VOICE_MIN_SPEED = 0.8
+VOICE_MAX_SPEED = 1.3
 
 
 class HealthStatus(BaseModel):
@@ -36,6 +39,35 @@ class AgentRequest(BaseModel):
         default=None,
         description="Omit to start a new conversation; the reply carries the id.",
     )
+    voice: bool = Field(
+        default=False,
+        description="True when the reply is read aloud, so it should be short.",
+    )
+
+
+class VoiceStatus(BaseModel):
+    stt: bool
+    tts_languages: list[str]
+    default_voice: str | None
+
+
+class VoiceInfo(BaseModel):
+    id: str
+    name: str
+    language: str
+    gender: str
+
+
+class VoiceSpeakRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=VOICE_TEXT_LIMIT)
+    voice: str | None = None
+    speed: float | None = Field(default=None, ge=VOICE_MIN_SPEED, le=VOICE_MAX_SPEED)
+
+
+class VoiceTranscript(BaseModel):
+    text: str
+    language: str
+    duration_seconds: float
 
 
 class AgentTurn(BaseModel):

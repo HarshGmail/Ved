@@ -5,7 +5,7 @@
     "phase_2_memory": "done: conversations, people and birthdays, semantic search, document memory",
     "phase_3_photos": "skipped for now; waits for the home server. Plan: Immich plus a photos MCP server, not a custom build",
     "phase_4_web_fast": "done: web search and fetch, streaming, thinking state, acknowledgements, parallel tools",
-    "phase_5_voice": "next",
+    "phase_5_voice": "in progress: the local voice service (apps/voice: Kokoro text to speech, faster-whisper recognition) and the backend's /voice routes are built; the web client is wired separately",
     "not_yet": [
       "permission layer",
       "voice",
@@ -46,7 +46,8 @@
         "Agent.run and Agent.stream require user_id and user_line; user_id goes to toolbox calls and never into prompts or stored tool arguments. user_line is speaker_label(user): a name sentence, or an ask-for-the-name sentence, never the email.",
         "The model sees a fixed tool list (VED_EXPOSED_TOOLS, sorted by name), never a per-message choice: Ollama reuses its cache only for an identical system prompt plus tools prefix.",
         "The latest user line is stamped with the current time, the user line and a Connected apps line (non-built-in tool prefixes, from the same tools_for call the round uses). The system prompt tells the model to use these lines silently.",
-        "SYSTEM_PROMPT asks replies to follow the user's language and script (English, Telugu, Hindi or a mix); keep that sentence when editing the prompt."
+        "SYSTEM_PROMPT asks replies to follow the user's language and script (English, Telugu, Hindi or a mix); keep that sentence when editing the prompt.",
+        "AgentRequest.voice is the spoken-reply flag. It adds SPOKEN_REPLY_LINE to the per-turn stamp, never to the system prompt, and reaches Agent.run and Agent.stream unchanged."
       ],
       "tests": [
         "apps/backend/tests/test_agent.py",
@@ -837,7 +838,8 @@
         "ved",
         "infra/compose.server.yaml",
         "apps/web-client/Dockerfile",
-        "apps/web-client/.dockerignore"
+        "apps/web-client/.dockerignore",
+        "apps/voice/Dockerfile"
       ],
       "settings": [
         "POSTGRES_PASSWORD",
@@ -853,7 +855,8 @@
         "VED_AUTH",
         "VED_ACCESS_TEAM_DOMAIN",
         "VED_ACCESS_AUD",
-        "VED_ADMIN_EMAILS"
+        "VED_ADMIN_EMAILS",
+        "VED_VOICE_URL"
       ],
       "rules": [
         "Every port binds to 127.0.0.1.",
@@ -863,7 +866,8 @@
         "Corporate-network CA steps are no-ops on a personal machine.",
         "The ollama service is behind the server compose profile, publishes no port and is capped at 4.5 GB.",
         "compose.server.yaml is the only file that attaches services to the external 'home' network; ./ved server passes it, nothing else does.",
-        "The web and backend containers use container_name ved-web and ved-backend; the tunnel reaches ved-web:3000 on home."
+        "The web and backend containers use container_name ved-web and ved-backend; the tunnel reaches ved-web:3000 on home.",
+        "The voice service (ved-voice, apps/voice) publishes no port and is capped at 1536 MB. It is in the default profile, so ./ved server builds and starts it."
       ]
     },
     "server": {
@@ -1177,6 +1181,85 @@
         "mcp-servers/snappy/tests/test_photos.py",
         "mcp-servers/snappy/tests/test_auth.py",
         "mcp-servers/snappy/tests/test_server.py"
+      ]
+    },
+    "voice-service": {
+      "summary": "Local neural voice and speech recognition: Kokoro text to speech and faster-whisper transcription in apps/voice, reached only through the backend's /voice routes.",
+      "files": [
+        "apps/voice/pyproject.toml",
+        "apps/voice/Dockerfile",
+        "apps/voice/.dockerignore",
+        "apps/voice/src/ved_voice/server.py",
+        "apps/voice/src/ved_voice/app.py",
+        "apps/voice/src/ved_voice/service.py",
+        "apps/voice/src/ved_voice/speech.py",
+        "apps/voice/src/ved_voice/speech_text.py",
+        "apps/voice/src/ved_voice/audio.py",
+        "apps/voice/src/ved_voice/kokoro_engine.py",
+        "apps/voice/src/ved_voice/whisper_engine.py",
+        "apps/voice/src/ved_voice/schemas.py",
+        "apps/voice/src/ved_voice/limits.py",
+        "apps/backend/src/ved_backend/voice.py",
+        "apps/backend/src/ved_backend/main.py",
+        "infra/compose.yaml"
+      ],
+      "symbols": [
+        "create_app",
+        "build_app",
+        "VoiceSettings",
+        "VoiceService",
+        "RequestRejectedError",
+        "language_hint",
+        "SpeechSynthesizer",
+        "SpeechRecognizer",
+        "Transcript",
+        "AudioTooLongError",
+        "AudioDecodeError",
+        "KokoroSynthesizer",
+        "describe_voice",
+        "FasterWhisperRecognizer",
+        "clean_for_speech",
+        "split_sentences",
+        "sniff_container",
+        "join_with_pauses",
+        "wav_bytes",
+        "VoiceClient",
+        "VoiceUnavailableError",
+        "VoiceRejectedError",
+        "SPOKEN_REPLY_LINE",
+        "read_voice_status",
+        "list_voices",
+        "speak_reply",
+        "transcribe_audio"
+      ],
+      "settings": [
+        "VED_VOICE_URL (backend, default http://ved-voice:8300)",
+        "VED_VOICE_KOKORO_MODEL_PATH, VED_VOICE_KOKORO_VOICES_PATH, VED_VOICE_WHISPER_MODEL_PATH (container paths under /opt/models)",
+        "VED_VOICE_DEFAULT_VOICE (bm_george)",
+        "VED_VOICE_SPEECH_CONCURRENCY (2), VED_VOICE_TRANSCRIPTION_CONCURRENCY (1), VED_VOICE_TRANSCRIPTION_THREADS (4)"
+      ],
+      "endpoints": [
+        "ved-voice: GET /status, GET /voices, POST /speak (JSON text, voice, speed; returns audio/wav), POST /transcribe (multipart audio, form language en|hi|te|auto)",
+        "backend: GET /voice/status, GET /voice/voices, POST /voice/speak, POST /voice/transcribe; all need CurrentUser"
+      ],
+      "rules": [
+        "Speech stays on the home server. Audio and text never go to a cloud engine; a cloud engine is a new module behind SpeechSynthesizer or SpeechRecognizer plus a setting.",
+        "ved-voice publishes no port. Only the backend reaches it at http://ved-voice:8300 on the compose network.",
+        "Models are pinned by URL and sha256 in apps/voice/Dockerfile and baked into the image at build time. HF_HUB_OFFLINE=1 keeps runtime from downloading anything.",
+        "Kokoro voices offered are English (a*, b*) and Hindi (h*). Kokoro has no Telugu voice, so Telugu is recognition only.",
+        "Text is stripped of markup and emoji, then split into sentences and synthesised in order into one WAV. The text limit is 1500 characters.",
+        "Uploads are capped at 10 MB and 60 seconds. The container is sniffed from magic bytes (WAV, WebM, Ogg, MP4/M4A), not from the content type the browser sends.",
+        "Inference runs in threads behind semaphores (speech 2, transcription 1) so the event loop stays free.",
+        "The backend's /voice/status answers 200 with stt false and no voices when the service is unreachable. Other failures are 503, or the service's own status when it rejects a request.",
+        "A spoken reply is AgentRequest.voice. It adds SPOKEN_REPLY_LINE to the per-turn stamp, never to the cached system prompt."
+      ],
+      "tests": [
+        "apps/voice/tests/test_app.py",
+        "apps/voice/tests/test_speech_text.py",
+        "apps/voice/tests/test_audio.py",
+        "apps/backend/tests/test_voice.py",
+        "apps/backend/tests/test_agent.py",
+        "apps/backend/tests/test_agent_endpoint.py"
       ]
     }
   }

@@ -185,6 +185,24 @@ jobs:
         working-directory: mcp-servers/snappy
         run: uv run pytest -q
 
+  voice:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Lint and format
+        working-directory: apps/voice
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Test
+        working-directory: apps/voice
+        run: uv run pytest -q
+
   web:
     runs-on: ubuntu-latest
     steps:

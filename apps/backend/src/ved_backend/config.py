@@ -20,6 +20,7 @@ LOCAL_SEARXNG_URL = "http://127.0.0.1:8888"
 NOMIC_DOCUMENT_PREFIX = "search_document: "
 NOMIC_QUERY_PREFIX = "search_query: "
 DEFAULT_PLAN_MCP_URL = "http://family-planner:3456/api/mcp"
+DEFAULT_VOICE_URL = "http://ved-voice:8300"
 DEFAULT_OWNER_EMAIL = "owner@ved.local"
 DEFAULT_EXPOSED_TOOLS = [
     "memory.search",
@@ -104,6 +105,8 @@ class Settings(BaseSettings):
     plan_mcp_url: str = DEFAULT_PLAN_MCP_URL
     plan_mcp_token: str = ""
     secret_key: str = ""
+
+    voice_url: str = DEFAULT_VOICE_URL
 
     exposed_tools: Annotated[list[str], NoDecode] = DEFAULT_EXPOSED_TOOLS
 

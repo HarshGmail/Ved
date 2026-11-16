@@ -36,17 +36,22 @@ class FakeAgent:
         self.prompts: list[str] = []
         self.histories: list[list] = []
         self.user_ids: list[uuid.UUID] = []
+        self.spoken: list[bool] = []
 
-    async def run(self, prompt: str, history=(), *, user_id, user_line):
+    async def run(self, prompt: str, history=(), *, user_id, user_line, spoken=False):
         self.prompts.append(prompt)
         self.user_ids.append(user_id)
         self.histories.append(list(history))
+        self.spoken.append(spoken)
         return self._turn
 
-    async def stream(self, prompt: str, history=(), *, user_id, user_line):
+    async def stream(
+        self, prompt: str, history=(), *, user_id, user_line, spoken=False
+    ):
         self.prompts.append(prompt)
         self.user_ids.append(user_id)
         self.histories.append(list(history))
+        self.spoken.append(spoken)
         for call in self._turn.tool_calls:
             yield ToolStartedEvent(name=call.name, arguments=call.arguments)
             yield ToolFinishedEvent(name=call.name, failed=call.failed)
@@ -229,7 +234,7 @@ def test_a_malformed_conversation_id_is_rejected(wired):
 
 def test_a_failed_turn_leaves_no_empty_conversation(wired):
     class FailingAgent:
-        async def run(self, prompt, history=(), *, user_id, user_line):
+        async def run(self, prompt, history=(), *, user_id, user_line, spoken=False):
             raise LLMRequestError("model is down")
 
     _, store = wired()
@@ -347,7 +352,7 @@ def test_stream_without_tools_is_service_unavailable(wired):
 
 
 class FailingMidStreamAgent:
-    async def stream(self, prompt, history=(), *, user_id, user_line):
+    async def stream(self, prompt, history=(), *, user_id, user_line, spoken=False):
         yield TokenEvent(text="Partial ")
         raise LLMRequestError("model is down")
 
@@ -385,7 +390,7 @@ class GatedAgent:
         self.running = 0
         self.max_running = 0
 
-    async def stream(self, prompt, history=(), *, user_id, user_line):
+    async def stream(self, prompt, history=(), *, user_id, user_line, spoken=False):
         self.prompts.append(prompt)
         self.running += 1
         self.max_running = max(self.max_running, self.running)
@@ -472,7 +477,7 @@ async def test_turns_in_one_conversation_run_one_after_another(wired):
 
 
 class ThinkingAgent:
-    async def stream(self, prompt, history=(), *, user_id, user_line):
+    async def stream(self, prompt, history=(), *, user_id, user_line, spoken=False):
         yield ThinkingEvent()
         yield AcknowledgementEvent(text="Setting that up…")
         yield ToolStartedEvent(name="reminders.create", arguments={})
@@ -497,3 +502,22 @@ def test_stream_names_thinking_and_acknowledgement_events(wired):
     ]
     assert events[0][1] == {}
     assert events[1][1] == {"text": "Setting that up…"}
+
+
+def test_the_voice_flag_reaches_the_agent(wired):
+    agent, _ = wired()
+
+    response = client.post(
+        "/agent/message", json={"prompt": "good morning", "voice": True}
+    )
+
+    assert response.status_code == 200
+    assert agent.spoken == [True]
+
+
+def test_the_voice_flag_defaults_to_a_written_reply(wired):
+    agent, _ = wired()
+
+    post("good morning")
+
+    assert agent.spoken == [False]
