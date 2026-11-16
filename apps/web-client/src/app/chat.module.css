@@ -546,3 +546,36 @@
     display: none;
   }
 }
+
+.talk {
+  flex: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  cursor: pointer;
+  transition: transform 150ms ease;
+}
+
+.talk:hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.talk:active {
+  transform: scale(0.94);
+}
+
+.talk:focus-visible {
+  outline: 2px solid color-mix(in srgb, currentColor 45%, transparent);
+  outline-offset: 2px;
+}
+
+.talkIcon {
+  width: 1.125rem;
+  height: 1.125rem;
+}

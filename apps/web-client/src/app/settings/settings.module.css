@@ -278,3 +278,20 @@
   margin: 0.25rem 0;
   accent-color: var(--accent);
 }
+
+.subsection {
+  min-width: 0;
+  padding-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.subheading {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  opacity: 0.75;
+  overflow-wrap: anywhere;
+}

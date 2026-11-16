@@ -16,14 +16,19 @@ import {
 } from "@/connector";
 import styles from "./chat.module.css";
 import { DocumentPicker } from "./documents";
-import { ArrowUpIcon, MicIcon } from "./icons";
+import { ArrowUpIcon, MicIcon, TalkIcon } from "./icons";
 import { MarkdownReply } from "./markdown-reply";
 import { ReadAloudButton } from "./read-aloud-button";
 import { missingVoiceCopy } from "./speech-voice";
 import { type TranscriptTurn, transcriptToTurns } from "./transcript";
+import { TalkOverlay } from "./talk-mode";
+import { type TalkTurnHandlers } from "./talk-session";
 import { type EmblemState, VedEmblem } from "./ved-emblem";
 import { useReadAloud } from "./use-read-aloud";
 import { useSpeechInput } from "./use-speech-input";
+import { getVoicePlayer } from "./voice-player";
+import { recordingSupported } from "./voice-recording";
+import { useVoiceStatus } from "./voice-status";
 import { readVoiceSettings } from "./voice-settings";
 import { Welcome } from "./welcome";
 
@@ -33,6 +38,17 @@ type Turn =
   | { role: "error"; text: string };
 
 type QueuedPrompt = { id: number; text: string };
+
+type PromptOptions = Partial<TalkTurnHandlers> & { voice?: boolean };
+
+type ReplyRequest = {
+  prompt: string;
+  conversationId: string | undefined;
+  voice: boolean;
+  onProgress: (update: (current: StreamingReply) => StreamingReply) => void;
+  onToken?: (text: string) => void;
+  onSegmentBreak?: () => void;
+};
 
 type StreamingReply = {
   text: string;
@@ -125,41 +141,53 @@ function toolLabel(reply: AgentReply): string | null {
     .join(", ");
 }
 
-async function requestReply(
-  prompt: string,
-  conversationId: string | undefined,
-  onProgress: (update: (current: StreamingReply) => StreamingReply) => void,
-): Promise<AgentReply> {
+async function requestReply({
+  prompt,
+  conversationId,
+  voice,
+  onProgress,
+  onToken,
+  onSegmentBreak,
+}: ReplyRequest): Promise<AgentReply> {
   try {
-    return await connector.streamMessage(prompt, conversationId, {
-      onToken: (text) =>
-        onProgress((current) => ({
-          ...current,
-          text: current.text + text,
-          thinking: false,
-          acknowledgement: null,
-        })),
-      onThinking: () =>
-        onProgress((current) => ({ ...current, thinking: true })),
-      onAcknowledgement: ({ text }) =>
-        onProgress((current) => ({
-          ...current,
-          acknowledgement: text,
-          thinking: false,
-        })),
-      onTool: (tool) =>
-        onProgress((current) => ({
-          ...current,
-          text: "",
-          activeTool: tool.name,
-          thinking: false,
-        })),
-      onToolResult: () =>
-        onProgress((current) => ({ ...current, activeTool: null })),
-    });
+    return await connector.streamMessage(
+      prompt,
+      conversationId,
+      {
+        onToken: (text) => {
+          onToken?.(text);
+          onProgress((current) => ({
+            ...current,
+            text: current.text + text,
+            thinking: false,
+            acknowledgement: null,
+          }));
+        },
+        onThinking: () =>
+          onProgress((current) => ({ ...current, thinking: true })),
+        onAcknowledgement: ({ text }) =>
+          onProgress((current) => ({
+            ...current,
+            acknowledgement: text,
+            thinking: false,
+          })),
+        onTool: (tool) => {
+          onSegmentBreak?.();
+          onProgress((current) => ({
+            ...current,
+            text: "",
+            activeTool: tool.name,
+            thinking: false,
+          }));
+        },
+        onToolResult: () =>
+          onProgress((current) => ({ ...current, activeTool: null })),
+      },
+      { voice },
+    );
   } catch (error: unknown) {
     if (error instanceof StreamUnavailableError) {
-      return connector.sendMessage(prompt, conversationId);
+      return connector.sendMessage(prompt, conversationId, { voice });
     }
     throw error;
   }
@@ -192,10 +220,20 @@ export function Chat({
   const nextQueuedId = useRef(0);
   const nextReadId = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [talkOpen, setTalkOpen] = useState(false);
   const readAloud = useReadAloud();
   const speakAloud = readAloud.speak;
+  const voiceStatus = useVoiceStatus();
+  const talkAvailable = voiceStatus.stt && recordingSupported();
   const busy = pending || awaitingBackground;
+  const busyRef = useRef(busy);
   const showWelcome = turns.length === 0 && !busy && queue.length === 0;
+
+  useEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
+
+  const isBusy = useCallback(() => busyRef.current, []);
 
   useEffect(() => {
     if (!initialConversationId) return;
@@ -252,21 +290,28 @@ export function Chat({
   }
 
   const sendPrompt = useCallback(
-    async (text: string) => {
+    async (text: string, options: PromptOptions = {}): Promise<AgentReply | null> => {
+      const voice = options.voice === true;
       setTurns((current) => [...current, { role: "user", text }]);
       setPending(true);
       setStreaming(NOTHING_STREAMED);
 
       try {
-        const reply = await requestReply(text, conversationId, (update) =>
-          setStreaming((current) => update(current ?? NOTHING_STREAMED)),
-        );
+        const reply = await requestReply({
+          prompt: text,
+          conversationId,
+          voice,
+          onProgress: (update) => setStreaming((current) => update(current ?? NOTHING_STREAMED)),
+          onToken: options.onToken,
+          onSegmentBreak: options.onSegmentBreak,
+        });
         const readId = `reply-${nextReadId.current}`;
         nextReadId.current += 1;
         setConversationId(reply.conversation_id);
         setTurns((current) => [...current, { role: "ved", reply, readId }]);
-        if (readVoiceSettings().autoRead) speakAloud(readId, reply.text);
+        if (!voice && readVoiceSettings().autoRead) speakAloud(readId, reply.text);
         onReply?.(reply.conversation_id);
+        return reply;
       } catch (error: unknown) {
         setTurns((current) => [
           ...current,
@@ -275,6 +320,7 @@ export function Chat({
             text: error instanceof Error ? error.message : "Request failed",
           },
         ]);
+        return null;
       } finally {
         setStreaming(null);
         setPending(false);
@@ -283,6 +329,21 @@ export function Chat({
     },
     [conversationId, onReply, speakAloud],
   );
+
+  const askByVoice = useCallback(
+    (prompt: string, handlers: TalkTurnHandlers) => sendPrompt(prompt, { ...handlers, voice: true }),
+    [sendPrompt],
+  );
+
+  function openTalk() {
+    getVoicePlayer().unlock();
+    readAloud.stop();
+    setTalkOpen(true);
+  }
+
+  function closeTalk() {
+    setTalkOpen(false);
+  }
 
   useEffect(() => {
     if (busy || queue.length === 0) return;
@@ -352,7 +413,11 @@ export function Chat({
       onDrop={onDrop}
     >
       {showWelcome ? (
-        <Welcome firstName={firstName} onPick={suggest} />
+        <Welcome
+          firstName={firstName}
+          onPick={suggest}
+          onTalk={talkAvailable ? openTalk : undefined}
+        />
       ) : (
         <ol className={styles.turns}>
           {turns.map((turn, index) => {
@@ -425,16 +490,27 @@ export function Chat({
             placeholder={PLACEHOLDER}
             aria-label="Message Ved"
           />
-          {speech.supported && (
+          {talkAvailable ? (
             <button
               type="button"
-              className={styles.mic}
-              data-listening={speech.listening || undefined}
-              aria-label={speech.listening ? "Stop listening" : "Speak"}
-              onClick={toggleDictation}
+              className={styles.talk}
+              aria-label="Talk to Ved"
+              onClick={openTalk}
             >
-              <MicIcon className={styles.micIcon} />
+              <TalkIcon className={styles.talkIcon} />
             </button>
+          ) : (
+            speech.supported && (
+              <button
+                type="button"
+                className={styles.mic}
+                data-listening={speech.listening || undefined}
+                aria-label={speech.listening ? "Stop listening" : "Speak"}
+                onClick={toggleDictation}
+              >
+                <MicIcon className={styles.micIcon} />
+              </button>
+            )
           )}
           <button className={styles.send} type="submit" aria-label="Send">
             <ArrowUpIcon className={styles.sendIcon} />
@@ -446,6 +522,7 @@ export function Chat({
           </p>
         )}
       </form>
+      {talkOpen && <TalkOverlay ask={askByVoice} isBusy={isBusy} onClose={closeTalk} />}
     </section>
   );
 }
