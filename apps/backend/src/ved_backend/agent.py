@@ -74,6 +74,10 @@ CONNECTED_APPS_GUIDANCE = (
 )
 TOOL_LIMIT_MESSAGE = "I stopped after too many tool calls without reaching an answer."
 NO_REPLY_MESSAGE = "The model stream ended without a reply."
+SPOKEN_REPLY_LINE = (
+    "This reply will be spoken aloud: answer in one to three short conversational "
+    "sentences, no markdown, lists or links, and address the user by name when natural."
+)
 
 ModelRound = Callable[..., AsyncIterator[StreamChunk]]
 FinishedCall = tuple[int, str, bool]
@@ -110,13 +114,21 @@ class Agent:
         self._zone = ZoneInfo(timezone)
         self._timezone = timezone
 
-    def _stamped(self, prompt: str, user_line: str, tools: Sequence[ToolSpec]) -> str:
+    def _stamped(
+        self,
+        prompt: str,
+        user_line: str,
+        tools: Sequence[ToolSpec],
+        spoken: bool = False,
+    ) -> str:
         now = datetime.now(self._zone).strftime(TIME_FORMAT)
         lines = [
             f"Current time: {now}, timezone {self._timezone}.",
             user_line,
             connected_apps_line(tools),
         ]
+        if spoken:
+            lines.append(SPOKEN_REPLY_LINE)
         return "\n".join(lines) + f"\n\n{prompt}"
 
     async def run(
@@ -126,9 +138,12 @@ class Agent:
         *,
         user_id: uuid.UUID,
         user_line: str,
+        spoken: bool = False,
     ) -> AgentTurn:
         async with aclosing(
-            self._events(prompt, history, user_id, user_line, self._complete)
+            self._events(
+                prompt, history, user_id, user_line, self._complete, spoken=spoken
+            )
         ) as events:
             async for event in events:
                 if isinstance(event, AgentTurn):
@@ -142,8 +157,16 @@ class Agent:
         *,
         user_id: uuid.UUID,
         user_line: str,
+        spoken: bool = False,
     ) -> AsyncIterator[AgentEvent]:
-        return self._events(prompt, history, user_id, user_line, self._provider.stream)
+        return self._events(
+            prompt,
+            history,
+            user_id,
+            user_line,
+            self._provider.stream,
+            spoken=spoken,
+        )
 
     async def _complete(
         self,
@@ -163,9 +186,11 @@ class Agent:
         user_id: uuid.UUID,
         user_line: str,
         model_round: ModelRound,
+        *,
+        spoken: bool,
     ) -> AsyncIterator[AgentEvent]:
         tools = await self._toolbox.tools_for(user_id)
-        stamped = self._stamped(prompt, user_line, tools)
+        stamped = self._stamped(prompt, user_line, tools, spoken)
         messages: list[Message] = [*history, UserMessage(text=stamped)]
         invocations: list[ToolInvocation] = []
 

@@ -19,24 +19,26 @@ model (Ollama) and MCP tool servers, with Postgres + pgvector for memory.
 
 ## Status
 
-Phases 1, 2 and 4 are done; 3 (photos) waits for the home server; 5 (voice) is
-next. Ved chats with streaming replies and history, sets and fires reminders by
-Web Push, remembers people and plans birthday reminders and check-ins, searches
-past conversations and uploaded documents by meaning, and searches and reads
-the web. It runs on a local model by default; Claude Haiku 5.5 can answer
-instead through Anthropic's API (`VED_LLM_PROVIDER=anthropic`), and then the
-person's connected apps are exposed to the model.
+Phases 1, 2 and 4 are done; 3 (photos) waits for the home server; 5 (voice) has
+a local neural voice and speech recognition service (Kokoro, faster-whisper)
+behind the backend, and the web client is being wired to it. Ved chats with
+streaming replies and history, sets and fires reminders by Web Push, remembers
+people and plans birthday reminders and check-ins, searches past conversations
+and uploaded documents by meaning, and searches and reads the web. It runs on a
+local model by default; Claude Haiku 5.5 can answer instead through Anthropic's
+API (`VED_LLM_PROVIDER=anthropic`), and then the person's connected apps are
+exposed to the model.
 
 Every person has their own chats, memory, documents, people, reminders, push
 devices and MCP connections (Cloudflare Access email picks the user; the owner is
 `VED_OWNER_EMAIL`). Each person links Plan, MyFinances or a custom MCP server on
 the Connections page; tokens are encrypted with `VED_SECRET_KEY`.
 
-Not yet: the permission layer, voice. Phone access (`./ved phone`) is
-wired but unverified until Tailscale is installed. A home server (Ubuntu, DDR3,
-16 GB max) is being set up from `docs/server.md`; `./ved` runs on Linux, but
-unattended running, auto-deploy and backups aren't built yet. Per-phase detail is in
-`docs/index.json` under `status`.
+Not yet: the permission layer, voice in the web client. Phone access (`./ved
+phone`) is wired but unverified until Tailscale is installed. A home server
+(Ubuntu, DDR3, 16 GB max) is being set up from `docs/server.md`; `./ved` runs on
+Linux, but unattended running, auto-deploy and backups aren't built yet.
+Per-phase detail is in `docs/index.json` under `status`.
 
 ## Layout
 
@@ -44,6 +46,7 @@ unattended running, auto-deploy and backups aren't built yet. Per-phase detail i
 ved                 short commands for everything — ./ved help
 apps/backend/       FastAPI: agent loop, scheduler, memory, documents, push
 apps/web-client/    Next.js 16 PWA; src/connector/ is its only backend client
+apps/voice/         Python: Kokoro text to speech, faster-whisper recognition (ved-voice)
 mcp-servers/        one MCP server per capability: reminders, people, memory, web
 packages/ved-db/    the only place database tables are defined
 infra/              Docker Compose: Postgres, SearXNG, backend, DB browser

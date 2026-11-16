@@ -5,16 +5,28 @@ from contextlib import aclosing, asynccontextmanager
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from pydantic import BaseModel
 from sqlalchemy import text
+from starlette.background import BackgroundTask
 from ved_db import MCPConnection, User
 
 from ved_backend.access import require_access
 from ved_backend.agent import Agent
-from ved_backend.config import settings
+from ved_backend.config import MEBIBYTE, settings
 from ved_backend.connections import (
     PRESETS,
     ConnectionNameTakenError,
@@ -64,6 +76,10 @@ from ved_backend.schemas import (
     TokenEvent,
     ToolFinishedEvent,
     ToolStartedEvent,
+    VoiceInfo,
+    VoiceSpeakRequest,
+    VoiceStatus,
+    VoiceTranscript,
 )
 from ved_backend.token_cipher import TokenCipher
 from ved_backend.tools.servers import (
@@ -80,6 +96,14 @@ from ved_backend.uploads import (
 )
 from ved_backend.usage import UsageStore, money, money_or_none
 from ved_backend.users import CurrentUser, UserDirectory, is_owner, speaker_label
+from ved_backend.voice import (
+    MAX_AUDIO_BYTES,
+    UNAVAILABLE_MESSAGE,
+    WAV_MEDIA_TYPE,
+    VoiceClient,
+    VoiceRejectedError,
+    VoiceUnavailableError,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -168,6 +192,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         max_upload_bytes=settings.documents_max_upload_bytes,
     )
     application.state.push = push
+    application.state.voice = VoiceClient(settings.voice_url)
     application.state.turns = TurnRegistry()
     application.state.scheduler = scheduler
     application.state.agent = Agent(
@@ -194,6 +219,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         closer = getattr(provider, "aclose", None)
         if closer is not None:
             await closer()
+        await application.state.voice.aclose()
         await toolbox.aclose()
         await engine.dispose()
 
@@ -345,6 +371,7 @@ async def agent_message(
             history,
             user_id=user.id,
             user_line=speaker_label(user),
+            spoken=request.voice,
         )
     except LLMRequestError as error:
         logger.warning("LLM unreachable: %s", error)
@@ -375,7 +402,13 @@ async def stream_turn(
             else await store.history(user_id, request.conversation_id)
         )
         async with aclosing(
-            agent.stream(request.prompt, history, user_id=user_id, user_line=user_line)
+            agent.stream(
+                request.prompt,
+                history,
+                user_id=user_id,
+                user_line=user_line,
+                spoken=request.voice,
+            )
         ) as events:
             async for event in events:
                 if isinstance(event, AgentTurn):
@@ -698,4 +731,63 @@ async def test_connection(
     report = await probe(connection)
     return ConnectionTest(
         ok=report.ok, tool_count=report.tool_count, error=report.error
+    )
+
+
+@app.exception_handler(VoiceUnavailableError)
+async def voice_unavailable(
+    _request: Request, _error: VoiceUnavailableError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"detail": UNAVAILABLE_MESSAGE},
+    )
+
+
+@app.exception_handler(VoiceRejectedError)
+async def voice_rejected(_request: Request, error: VoiceRejectedError) -> JSONResponse:
+    return JSONResponse(status_code=error.status_code, content={"detail": error.detail})
+
+
+def voice_client() -> VoiceClient:
+    return app.state.voice
+
+
+@app.get("/voice/status")
+async def read_voice_status(_: CurrentUser) -> VoiceStatus:
+    return await voice_client().status()
+
+
+@app.get("/voice/voices")
+async def list_voices(_: CurrentUser) -> list[VoiceInfo]:
+    return await voice_client().voices()
+
+
+@app.post("/voice/speak")
+async def speak_reply(request: VoiceSpeakRequest, _: CurrentUser) -> StreamingResponse:
+    upstream = await voice_client().speak(request.model_dump(exclude_none=True))
+    return StreamingResponse(
+        upstream.aiter_bytes(),
+        media_type=WAV_MEDIA_TYPE,
+        background=BackgroundTask(upstream.aclose),
+    )
+
+
+@app.post("/voice/transcribe")
+async def transcribe_audio(
+    _: CurrentUser,
+    audio: Annotated[UploadFile, File()],
+    language: Annotated[str | None, Form()] = None,
+) -> VoiceTranscript:
+    data = await audio.read(MAX_AUDIO_BYTES + 1)
+    if len(data) > MAX_AUDIO_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"Audio is larger than {MAX_AUDIO_BYTES // MEBIBYTE} MB.",
+        )
+    return await voice_client().transcribe(
+        data,
+        filename=audio.filename or "audio",
+        content_type=audio.content_type or "application/octet-stream",
+        language=language,
     )

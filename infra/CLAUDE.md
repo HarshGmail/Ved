@@ -13,6 +13,9 @@ Day to day, use `./ved` from the repo root rather than calling compose directly.
 - **The backend container reads `infra/.env`**; `./ved api` reads
   `apps/backend/.env`. Run one or the other — both want port 8000.
 - **Postgres 18 wants its volume at `/var/lib/postgresql`**, not `.../data`.
+- **The voice service has no port.** `ved-voice` (apps/voice) listens on 8300
+  inside the compose network, is capped at 1536 MB, and only the backend calls
+  it. Its models are downloaded at image build, so the build needs network access.
 - **`home` is attached only by `compose.server.yaml`**, used only by `./ved server`
   on the Linux server. The Mac never names it, so `./ved db` and `./ved api` are unchanged.
 
@@ -33,6 +36,9 @@ personal machine they are no-ops and can be ignored.
 - SearXNG's own outbound requests need the same CA. `./ved db` copies the VM's
   certificates into `searxng/ca-certificates/` (gitignored), and does nothing
   when there are none.
+- The voice image downloads its models with curl at build time. On a network
+  that re-signs TLS, that step fails with a self-signed chain until the CA is
+  trusted inside the image; the Colima VM steps above do not cover it.
 - Docker runs through Colima, not Docker Desktop. Compose and buildx need
   symlinks into `~/.docker/cli-plugins/`; buildx is required for the backend
   image's cache mounts.

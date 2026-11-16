@@ -76,6 +76,7 @@ services:
       VED_ADMIN_EMAILS: ${VED_ADMIN_EMAILS:-}
       VED_OWNER_EMAIL: ${VED_OWNER_EMAIL:-}
       VED_PLAN_MCP_URL: ${VED_PLAN_MCP_URL:-http://family-planner:3456/api/mcp}
+      VED_VOICE_URL: ${VED_VOICE_URL:-http://ved-voice:8300}
       VED_PLAN_MCP_TOKEN: ${VED_PLAN_MCP_TOKEN:-}
       VED_SECRET_KEY: ${VED_SECRET_KEY:-}
     volumes:
@@ -110,6 +111,18 @@ services:
       resources:
         limits:
           memory: 128m
+
+  voice:
+    build:
+      context: ../apps/voice
+    container_name: ved-voice
+    restart: unless-stopped
+    expose:
+      - "8300"
+    deploy:
+      resources:
+        limits:
+          memory: 1536m
 
   web:
     build:

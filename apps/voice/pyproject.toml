@@ -1,0 +1,38 @@
+[project]
+name = "ved-voice"
+version = "0.1.0"
+description = "Ved voice service — local neural text to speech and speech recognition"
+requires-python = ">=3.13"
+dependencies = [
+    "av>=14,<14.1",
+    "faster-whisper>=1.2",
+    "fastapi>=0.115",
+    "kokoro-onnx>=0.6.1",
+    "numpy>=2.0.2",
+    "pydantic-settings>=2.6",
+    "python-multipart>=0.0.32",
+    "uvicorn>=0.32",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28",
+    "pytest>=8.3",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ved_voice"]
+
+[tool.ruff]
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
