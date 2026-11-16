@@ -127,6 +127,12 @@ export function TalkOverlay({ ask, isBusy, onClose }: TalkOverlayProps) {
         {status}
       </p>
 
+      {talk.audioHeld && (
+        <button type="button" className={styles.hear} onClick={() => sessionRef.current?.hearAgain()}>
+          Tap to hear
+        </button>
+      )}
+
       <div className={styles.captions}>
         {talk.heard && (
           <p key={talk.heard} className={styles.heard}>

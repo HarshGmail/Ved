@@ -386,21 +386,23 @@
         "MicrophoneUnavailableError",
         "getVoicePlayer",
         "useVoiceStatus",
-        "TalkIcon"
+        "TalkIcon",
+        "resumeHeld",
+        "wake"
       ],
       "settings": [
         "Talk shows only when /voice/status reports stt true and the browser can record (MediaRecorder and getUserMedia)."
       ],
       "rules": [
         "The Talk button replaces the dictation mic in the composer and sits on the welcome screen when talk is available. Without stt the old browser dictation mic stays.",
-        "Each utterance: getUserMedia with echo cancellation and noise suppression; recording starts when speech energy passes SPEECH_LEVEL and stops after 1.2 s of quiet or 30 s. Eight seconds with no speech counts as an empty listen.",
+        "Each utterance: getUserMedia with echo cancellation and noise suppression. The MediaRecorder starts as soon as listening starts, so leading silence is recorded; VAD only decides when to stop: speech is heard at SPEECH_LEVEL, then stop after 1.2 s of quiet or 30 s. No speech within 8 s stops and discards the take (an empty listen). The server's Whisper runs with a VAD filter.",
         "Two empty listens in a row (silence or an empty transcript) pause the loop with Tap to talk. A microphone error pauses it with the reason.",
         "A turn waits until the chat is not busy, then calls the normal send path with voice: true, so the turn appears in the conversation like any other message. Auto-read is skipped for talk turns.",
         "Speech starts after the first complete sentence of the streamed reply (., ?, !, । or a newline followed by space). A tool call breaks the segment; the rest is spoken at the end.",
         "Tapping the emblem interrupts Ved: speech stops, the reply keeps streaming into the chat unspoken, and listening starts at once. Tapping while paused resumes.",
         "The loop stops on End, Escape, the page becoming hidden, or unmount. A new turn never starts after the loop has stopped.",
         "The mic level and the playback level drive the rings through the --level CSS variable, written from requestAnimationFrame. Reduced motion skips the loop and keeps the rings still.",
-        "Recording starts at the first speech energy, so the first syllable can be clipped; check on a real phone before changing it."
+        "After each listen the mic stream is stopped (every track) and dropped before Ved speaks, and the shared AudioContext is woken. On iPhone a live getUserMedia stream routes playback to the earpiece and can suspend the context. If the context stays suspended, that sentence uses the device voice, the rest of the turn does too, and the overlay shows Tap to hear, which resumes the context and replays the held sentence."
       ],
       "tests": []
     },

@@ -61,18 +61,16 @@ class UtteranceCapture {
   private readLevel: () => number = () => 0;
   private timer: ReturnType<typeof setInterval> | null = null;
   private startedAt = 0;
-  private speechStartedAt = 0;
+  private speechHeard = false;
   private lastVoiceAt = 0;
   private settled = false;
   private resolve: (utterance: Utterance) => void = () => undefined;
-  private reject: (error: unknown) => void = () => undefined;
 
   constructor(private readonly onLevel: (level: number) => void) {}
 
   run(): Promise<Utterance> {
     return new Promise<Utterance>((resolve, reject) => {
       this.resolve = resolve;
-      this.reject = reject;
       this.open().catch((error: unknown) => {
         this.settled = true;
         reject(error);
@@ -118,45 +116,44 @@ class UtteranceCapture {
     this.readLevel = createLevelReader(analyser);
 
     this.startedAt = performance.now();
+    this.startRecording(stream);
     this.timer = setInterval(() => this.tick(), LISTEN_TICK_MS);
+  }
+
+  private startRecording(stream: MediaStream): void {
+    const mimeType = preferredMimeType();
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) this.chunks.push(event.data);
+    };
+    recorder.onstop = () => {
+      if (!this.speechHeard) {
+        this.end({ kind: "silence" });
+        return;
+      }
+      this.end({ kind: "speech", blob: new Blob(this.chunks, { type: recorder.mimeType }) });
+    };
+    this.recorder = recorder;
+    recorder.start();
   }
 
   private tick(): void {
     const level = this.readLevel();
     this.onLevel(level);
     const now = performance.now();
-    if (this.recorder === null) {
-      this.waitForSpeech(level, now);
+    if (!this.speechHeard) {
+      if (level >= SPEECH_LEVEL) {
+        this.speechHeard = true;
+        this.lastVoiceAt = now;
+      } else if (now - this.startedAt >= NO_SPEECH_TIMEOUT_MS) {
+        this.stopRecording();
+      }
       return;
     }
     if (level >= SPEECH_LEVEL) this.lastVoiceAt = now;
     const quietFor = now - this.lastVoiceAt;
-    const spokenFor = now - this.speechStartedAt;
-    if (quietFor >= SILENCE_END_MS || spokenFor >= MAX_UTTERANCE_MS) this.stopRecording();
-  }
-
-  private waitForSpeech(level: number, now: number): void {
-    if (level >= SPEECH_LEVEL) {
-      this.startRecording(now);
-      return;
-    }
-    if (now - this.startedAt >= NO_SPEECH_TIMEOUT_MS) this.end({ kind: "silence" });
-  }
-
-  private startRecording(now: number): void {
-    if (!this.stream) return;
-    const mimeType = preferredMimeType();
-    const recorder = new MediaRecorder(this.stream, mimeType ? { mimeType } : undefined);
-    recorder.ondataavailable = (event) => {
-      if (event.data.size > 0) this.chunks.push(event.data);
-    };
-    recorder.onstop = () => {
-      this.end({ kind: "speech", blob: new Blob(this.chunks, { type: recorder.mimeType }) });
-    };
-    this.recorder = recorder;
-    this.speechStartedAt = now;
-    this.lastVoiceAt = now;
-    recorder.start();
+    const listenedFor = now - this.startedAt;
+    if (quietFor >= SILENCE_END_MS || listenedFor >= MAX_UTTERANCE_MS) this.stopRecording();
   }
 
   private stopRecording(): void {
@@ -174,10 +171,12 @@ class UtteranceCapture {
     this.settled = true;
     this.clearTimer();
     if (this.stream) releaseStream(this.stream);
+    this.stream = null;
     if (this.analysis) {
       this.analysis.source.disconnect();
       this.analysis.analyser.disconnect();
       this.analysis.mute.disconnect();
+      this.analysis = null;
     }
     this.onLevel(0);
     this.resolve(utterance);

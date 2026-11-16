@@ -12,6 +12,7 @@ export interface TalkState {
   heard: string | null;
   reply: string;
   notice: string | null;
+  audioHeld: boolean;
 }
 
 export interface TalkTurnHandlers {
@@ -29,6 +30,7 @@ export interface TalkSession {
   start: () => void;
   interrupt: () => void;
   end: () => void;
+  hearAgain: () => void;
   readLevel: () => number;
 }
 
@@ -44,6 +46,7 @@ export const INITIAL_TALK_STATE: TalkState = {
   heard: null,
   reply: "",
   notice: null,
+  audioHeld: false,
 };
 
 const MAX_EMPTY_LISTENS = 2;
@@ -70,6 +73,7 @@ export function createTalkSession(deps: TalkDependencies): TalkSession {
   let listening: { cancel: () => void } | null = null;
   let turn: Turn | null = null;
   let settled: Promise<void> = RESOLVED;
+  const unsubscribeHeld = player.onHeldChange((held) => deps.emit({ audioHeld: held }));
 
   const isCurrent = (id: number) => running && id === loopId;
 
@@ -81,6 +85,7 @@ export function createTalkSession(deps: TalkDependencies): TalkSession {
     return capture.result.finally(() => {
       if (listening === capture) listening = null;
       micLevel = 0;
+      void player.wake();
     });
   }
 
@@ -221,9 +226,13 @@ export function createTalkSession(deps: TalkDependencies): TalkSession {
       player.stop();
       endTurn(interrupted);
     },
+    hearAgain() {
+      void player.resumeHeld();
+    },
     end() {
       running = false;
       loopId += 1;
+      unsubscribeHeld();
       listening?.cancel();
       if (turn !== null) {
         turn.stream.cancel();

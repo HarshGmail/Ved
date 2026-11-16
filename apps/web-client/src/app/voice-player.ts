@@ -4,6 +4,7 @@ import { cancelDeviceSpeech, type DeviceUtterance, speakOnDevice } from "./devic
 import { voiceLanguageFor } from "./speech-voice";
 
 const SAFETY_MARGIN_MS = 2000;
+const RESUME_TIMEOUT_MS = 800;
 
 export interface SpeechOptions {
   voice?: string;
@@ -14,10 +15,18 @@ export interface SpeechOptions {
 export interface VoicePlayer {
   audioContext: () => AudioContext | null;
   unlock: () => void;
+  wake: () => Promise<boolean>;
   enqueue: (text: string, options: SpeechOptions) => void;
   finish: () => Promise<void>;
   stop: () => void;
   level: () => number;
+  resumeHeld: () => Promise<void>;
+  onHeldChange: (listener: (held: boolean) => void) => () => void;
+}
+
+interface HeldSentence {
+  text: string;
+  options: SpeechOptions;
 }
 
 interface Output {
@@ -28,6 +37,7 @@ interface Output {
 
 interface SpeechJob {
   text: string;
+  options: SpeechOptions;
   server: Promise<ArrayBuffer | null> | null;
 }
 
@@ -53,6 +63,20 @@ function playSilence(context: AudioContext): void {
   source.start();
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function resumeContext(context: AudioContext): Promise<boolean> {
+  if (context.state !== "running") {
+    await Promise.race([
+      context.resume().catch(() => undefined),
+      delay(RESUME_TIMEOUT_MS),
+    ]);
+  }
+  return context.state === "running";
+}
+
 function haltSource(source: AudioBufferSourceNode): void {
   try {
     source.stop();
@@ -66,6 +90,14 @@ export function createVoicePlayer(): VoicePlayer {
   let fetches = new AbortController();
   let currentSource: AudioBufferSourceNode | null = null;
   let currentDevice: DeviceUtterance | null = null;
+  let held: HeldSentence | null = null;
+  const heldListeners = new Set<(held: boolean) => void>();
+
+  function setHeld(next: HeldSentence | null): void {
+    if (held === next) return;
+    held = next;
+    heldListeners.forEach((listener) => listener(next !== null));
+  }
 
   function ensureOutput(): Output | null {
     if (output) return output;
@@ -87,15 +119,20 @@ export function createVoicePlayer(): VoicePlayer {
     playSilence(current.context);
   }
 
+  async function wake(): Promise<boolean> {
+    const current = ensureOutput();
+    return current ? resumeContext(current.context) : false;
+  }
+
   function prepare(text: string, options: SpeechOptions): SpeechJob {
-    if (!routesToServer(text, options.serverLanguages)) return { text, server: null };
+    if (!routesToServer(text, options.serverLanguages)) return { text, options, server: null };
     const server = connector
       .speak(text, { voice: options.voice, speed: options.speed, signal: fetches.signal })
       .then(
         (audio) => audio,
         () => null,
       );
-    return { text, server };
+    return { text, options, server };
   }
 
   async function speakOnDeviceNow(text: string, run: number): Promise<void> {
@@ -106,9 +143,15 @@ export function createVoicePlayer(): VoicePlayer {
     if (currentDevice === utterance) currentDevice = null;
   }
 
-  async function playAudio(audio: ArrayBuffer, run: number): Promise<boolean> {
+  async function playAudio(audio: ArrayBuffer, job: SpeechJob, run: number): Promise<boolean> {
     const current = ensureOutput();
     if (!current) return false;
+    const running = held === null ? await resumeContext(current.context) : current.context.state === "running";
+    if (!running) {
+      if (held === null) setHeld({ text: job.text, options: job.options });
+      return false;
+    }
+    setHeld(null);
     const decoded = await current.context.decodeAudioData(audio).catch(() => null);
     if (decoded === null) return false;
     if (run !== generation) return true;
@@ -135,7 +178,7 @@ export function createVoicePlayer(): VoicePlayer {
     if (job.server === null) return speakOnDeviceNow(job.text, run);
     const audio = await job.server;
     if (run !== generation) return;
-    if (audio === null || !(await playAudio(audio, run))) {
+    if (audio === null || !(await playAudio(audio, job, run))) {
       await speakOnDeviceNow(job.text, run);
     }
   }
@@ -148,6 +191,15 @@ export function createVoicePlayer(): VoicePlayer {
     chain = chain.then(() => play(job, run)).catch(() => undefined);
   }
 
+  async function resumeHeld(): Promise<void> {
+    const pending = held;
+    const current = ensureOutput();
+    if (pending === null || current === null) return;
+    if (!(await resumeContext(current.context))) return;
+    setHeld(null);
+    enqueue(pending.text, pending.options);
+  }
+
   function stop(): void {
     generation += 1;
     chain = Promise.resolve();
@@ -157,16 +209,25 @@ export function createVoicePlayer(): VoicePlayer {
     currentSource = null;
     currentDevice?.cancel();
     currentDevice = null;
+    setHeld(null);
     cancelDeviceSpeech();
   }
 
   return {
     audioContext: () => ensureOutput()?.context ?? null,
     unlock,
+    wake,
     enqueue,
     finish: () => chain,
     stop,
     level: () => output?.readLevel() ?? 0,
+    resumeHeld,
+    onHeldChange: (listener) => {
+      heldListeners.add(listener);
+      return () => {
+        heldListeners.delete(listener);
+      };
+    },
   };
 }
 

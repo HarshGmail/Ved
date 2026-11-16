@@ -88,6 +88,24 @@
   opacity: 0.85;
 }
 
+.hear {
+  min-height: 2.75rem;
+  padding: 0 1.25rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, #388bfd 60%, transparent);
+  background: color-mix(in srgb, #388bfd 18%, transparent);
+  color: #ededed;
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hear:focus-visible {
+  outline: 2px solid color-mix(in srgb, #ededed 55%, transparent);
+  outline-offset: 3px;
+}
+
 .captions {
   width: 100%;
   max-width: 30rem;
