@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { TalkIcon } from "./icons";
 import styles from "./welcome.module.css";
 import { VedEmblem } from "./ved-emblem";
 
@@ -15,6 +16,7 @@ const WELCOME_EMBLEM_SIZE = 96;
 const MORNING_ENDS_AT_HOUR = 12;
 const AFTERNOON_ENDS_AT_HOUR = 18;
 const SERVER_GREETING = "Hello";
+const TALK_LABEL = "Talk to Ved";
 
 function partOfDay(hour: number): string {
   if (hour < MORNING_ENDS_AT_HOUR) return "Good morning";
@@ -37,9 +39,10 @@ function serverGreeting(): string {
 interface WelcomeProps {
   firstName: string | null;
   onPick: (suggestion: string) => void;
+  onTalk?: () => void;
 }
 
-export function Welcome({ firstName, onPick }: WelcomeProps) {
+export function Welcome({ firstName, onPick, onTalk }: WelcomeProps) {
   const period = useSyncExternalStore(ignoreSubscription, currentGreeting, serverGreeting);
   const greeting = firstName ? `${period}, ${firstName}` : period;
 
@@ -47,6 +50,12 @@ export function Welcome({ firstName, onPick }: WelcomeProps) {
     <section className={styles.welcome} aria-label="Start a conversation">
       <VedEmblem state="idle" size={WELCOME_EMBLEM_SIZE} />
       <h1 className={styles.greeting}>{greeting}</h1>
+      {onTalk && (
+        <button className={styles.talk} type="button" onClick={onTalk}>
+          <TalkIcon className={styles.talkIcon} />
+          {TALK_LABEL}
+        </button>
+      )}
       <ul className={styles.suggestions}>
         {SUGGESTIONS.map((suggestion) => (
           <li key={suggestion}>

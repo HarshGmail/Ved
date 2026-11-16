@@ -20,6 +20,8 @@ const EMOJI = /[\p{Extended_Pictographic}\p{Regional_Indicator}\u200D\uFE0F\u20E
 const SPACE_BEFORE_PUNCTUATION = /[ \t]+([.,!?;:])/g;
 const ENDS_A_SENTENCE = /[.!?:;]$/;
 const SENTENCE = /[^.!?]+[.!?]*|[.!?]+/g;
+const SENTENCE_END = /[.?!।]+(?=\s)|\n/g;
+const LONG_PENDING_LENGTH = 240;
 
 function tableCellsToText(_row: string, cells: string): string {
   return cells
@@ -41,7 +43,7 @@ function endSentence(line: string): string {
   return ENDS_A_SENTENCE.test(line) ? line : `${line}.`;
 }
 
-function toSpeakableText(markdown: string): string {
+export function toSpeakableText(markdown: string): string {
   return markdown
     .replace(CODE_BLOCK, CODE_BLOCK_REPLACEMENT)
     .replace(HORIZONTAL_RULE, "")
@@ -107,4 +109,32 @@ function fitSentence(sentence: string): string[] {
 
 export function prepareSpeechChunks(markdown: string): string[] {
   return packChunks(sentencesOf(toSpeakableText(markdown)).flatMap(fitSentence));
+}
+
+export interface CutSentences {
+  sentences: string[];
+  rest: string;
+}
+
+function cutLongPending(rest: string, sentences: string[]): string {
+  let pending = rest;
+  while (pending.length > LONG_PENDING_LENGTH) {
+    const cut = pending.lastIndexOf(" ", LONG_PENDING_LENGTH);
+    if (cut <= 0) break;
+    sentences.push(pending.slice(0, cut));
+    pending = pending.slice(cut + 1);
+  }
+  return pending;
+}
+
+export function cutSentences(streamed: string): CutSentences {
+  const sentences: string[] = [];
+  let start = 0;
+  for (const match of streamed.matchAll(SENTENCE_END)) {
+    const end = (match.index ?? 0) + match[0].length;
+    sentences.push(streamed.slice(start, end));
+    start = end;
+  }
+  const rest = cutLongPending(streamed.slice(start), sentences);
+  return { sentences, rest };
 }

@@ -11,6 +11,7 @@ import type {
 export interface ReplyStreamRequest {
   prompt: string;
   conversationId?: string;
+  voice?: boolean;
   handlers: ReplyStreamHandlers;
   signal?: AbortSignal;
   idleTimeoutMs: number;
@@ -24,6 +25,14 @@ interface StreamOutcome {
 const REPLY_STREAM_PATH = "/agent/message/stream";
 const ENDED_WITHOUT_REPLY = "The reply stream ended before Ved finished answering.";
 const MALFORMED_EVENT = "Ved sent a reply event that could not be read.";
+
+export function agentMessageBody(prompt: string, conversationId?: string, voice?: boolean) {
+  return {
+    prompt,
+    conversation_id: conversationId ?? null,
+    ...(voice ? { voice: true } : {}),
+  };
+}
 
 function parsePayload(data: string): unknown {
   try {
@@ -68,7 +77,7 @@ export function createReplyStream(postEventStream: EventStreamClient) {
 
     await postEventStream({
       path: REPLY_STREAM_PATH,
-      body: { prompt: request.prompt, conversation_id: request.conversationId ?? null },
+      body: agentMessageBody(request.prompt, request.conversationId, request.voice),
       onEvent,
       signal: request.signal,
       idleTimeoutMs: request.idleTimeoutMs,

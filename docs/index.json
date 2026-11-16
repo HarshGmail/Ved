@@ -285,15 +285,20 @@
       ]
     },
     "read-aloud": {
-      "summary": "Replies read aloud, and voice dictation, with the device's own speech engines (speechSynthesis and SpeechRecognition). Nothing is sent to Ved's server.",
+      "summary": "Replies read aloud and voice dictation. When Ved's server reports a voice (GET /voice/status), replies are spoken by the server's neural voice through the shared audio engine; otherwise the device's own speech engines (speechSynthesis and SpeechRecognition) are used. Telugu and Hindi sentences use the device voice unless the server speaks that language.",
       "files": [
         "apps/web-client/src/app/use-read-aloud.ts",
         "apps/web-client/src/app/use-speech-input.ts",
         "apps/web-client/src/app/speech-text.ts",
         "apps/web-client/src/app/speech-voice.ts",
+        "apps/web-client/src/app/device-speech.ts",
         "apps/web-client/src/app/voice-settings.ts",
+        "apps/web-client/src/app/voice-status.ts",
+        "apps/web-client/src/app/voice-player.ts",
         "apps/web-client/src/app/read-aloud-button.tsx",
         "apps/web-client/src/app/settings/voice-controls.tsx",
+        "apps/web-client/src/app/settings/server-voice-controls.tsx",
+        "apps/web-client/src/app/settings/settings-fields.tsx",
         "apps/web-client/src/app/chat.tsx",
         "apps/web-client/src/app/chat.module.css",
         "apps/web-client/src/app/settings/settings-panel.tsx",
@@ -308,33 +313,96 @@
         "useSpeechInput",
         "useSpeechInputSupport",
         "prepareSpeechChunks",
+        "toSpeakableText",
         "voiceLanguageFor",
         "planVoice",
         "pickVoice",
         "missingVoiceCopy",
+        "speakOnDevice",
+        "cancelDeviceSpeech",
+        "speechSynthesisAvailable",
+        "getVoicePlayer",
+        "createVoicePlayer",
+        "routesToServer",
+        "useVoiceStatus",
+        "currentVoiceStatus",
+        "speechOptionsFor",
         "parseVoiceSettings",
         "readVoiceSettings",
         "updateVoiceSettings",
         "useVoiceSettings",
+        "transcriptionLanguageFor",
         "ReadAloudButton",
         "VoiceControls",
+        "ServerVoiceControls",
         "SpeakerIcon",
         "StopIcon",
         "MicIcon",
         "SYSTEM_PROMPT"
       ],
       "settings": [
-        "ved.voice (localStorage): autoRead, voiceName, teluguVoiceName, hindiVoiceName, rate (0.8-1.4), pitch (0.8-1.3), listenLang (en-IN, te-IN, hi-IN, en-US), autoSend"
+        "ved.voice (localStorage): autoRead, voiceName, teluguVoiceName, hindiVoiceName, rate (0.8-1.4), pitch (0.8-1.3), listenLang (en-IN, te-IN, hi-IN, en-US), autoSend, serverVoiceName (server voice id, null for the server default), serverSpeed (0.8-1.3)"
       ],
       "rules": [
-        "Speech stays on device. speechSynthesis and SpeechRecognition are the browser's or OS's engines; Ved's server never receives speech audio or speech text. Recognition may still go to Apple or Google, as the Voice card says.",
-        "Read-aloud and dictation are optional: a browser without the API shows no speaker or mic control, and Settings → Voice says so.",
-        "iOS allows speech only after a user gesture. The first pointerdown or keydown in the app speaks an empty utterance to unlock it; the Voice card's hint tells people to tap once.",
-        "Auto-read speaks only replies that arrive in a live send, once, when streaming finishes. History loads, conversation switches and background answers are never read.",
+        "Server voice, when /voice/status lists tts_languages: replies go to POST /voice/speak through the one shared AudioContext (getVoicePlayer). Speech text leaves the device only in that case. Recognition is then done by POST /voice/transcribe in talk mode; the browser's SpeechRecognition is the fallback when stt is false.",
+        "Without a server voice, speech stays on device: speechSynthesis and SpeechRecognition are the browser's or OS's engines, and the Voice card says recognition may go to Apple or Google.",
+        "A sentence in Telugu or Hindi script goes to the device voice when the server does not list that language, and is skipped when the device has no voice for it. A server error on one sentence falls back to the device voice for that sentence.",
+        "iOS allows audio only after a user gesture. getVoicePlayer().unlock() runs on the first pointerdown or keydown in the app and on every talk or read-aloud tap, creating or resuming the AudioContext and playing a silent sample. Device speech unlocks with an empty utterance as before.",
+        "Auto-read and the per-reply speaker button use the same engine as talk mode when a server voice is on. Auto-read never speaks replies sent from talk mode, because talk mode speaks them itself.",
         "Speech stops on a new send, a new or switched conversation (Chat remounts), and when the page is hidden.",
-        "Telugu or Hindi script in a reply picks a voice of that language. With none installed, nothing is read in English; the reply's button says so.",
-        "Dictation auto-sends only when autoSend is on; otherwise the transcript stays in the input for editing. Dictation stops read-aloud speech first.",
-        "Helpers in speech-text.ts and speech-voice.ts are pure. The web client has no test runner yet, so they are checked by running them directly."
+        "Settings → Voice shows the server voice picker, speed and Test voice only when the server voice is on; device controls sit under a subsection headed Device voice.",
+        "Helpers in speech-text.ts, speech-voice.ts, speech-stream.ts (cutSentences) and audio-level.ts are pure. The web client has no test runner yet, so they are checked by running them directly."
+      ],
+      "tests": []
+    },
+    "talk-mode": {
+      "summary": "Hands-free talk with Ved: a full-screen overlay that listens, sends each utterance as a normal turn with voice: true, and speaks the reply sentence by sentence while it streams.",
+      "files": [
+        "apps/web-client/src/app/talk-mode.tsx",
+        "apps/web-client/src/app/talk-mode.module.css",
+        "apps/web-client/src/app/talk-session.ts",
+        "apps/web-client/src/app/voice-recording.ts",
+        "apps/web-client/src/app/speech-stream.ts",
+        "apps/web-client/src/app/voice-player.ts",
+        "apps/web-client/src/app/audio-level.ts",
+        "apps/web-client/src/app/voice-status.ts",
+        "apps/web-client/src/app/chat.tsx",
+        "apps/web-client/src/app/welcome.tsx",
+        "apps/web-client/src/app/welcome.module.css",
+        "apps/web-client/src/app/chat.module.css",
+        "apps/web-client/src/app/icons.tsx",
+        "apps/web-client/src/connector/index.ts",
+        "apps/web-client/src/connector/reply-stream.ts",
+        "apps/web-client/src/connector/http.ts"
+      ],
+      "symbols": [
+        "TalkOverlay",
+        "createTalkSession",
+        "INITIAL_TALK_STATE",
+        "createSpeechStream",
+        "cutSentences",
+        "listenForUtterance",
+        "recordingSupported",
+        "MicrophoneUnavailableError",
+        "getVoicePlayer",
+        "useVoiceStatus",
+        "TalkIcon",
+        "resumeHeld",
+        "wake"
+      ],
+      "settings": [
+        "Talk shows only when /voice/status reports stt true and the browser can record (MediaRecorder and getUserMedia)."
+      ],
+      "rules": [
+        "The Talk button replaces the dictation mic in the composer and sits on the welcome screen when talk is available. Without stt the old browser dictation mic stays.",
+        "Each utterance: getUserMedia with echo cancellation and noise suppression. The MediaRecorder starts as soon as listening starts, so leading silence is recorded; VAD only decides when to stop: speech is heard at SPEECH_LEVEL, then stop after 1.2 s of quiet or 30 s. No speech within 8 s stops and discards the take (an empty listen). The server's Whisper runs with a VAD filter.",
+        "Two empty listens in a row (silence or an empty transcript) pause the loop with Tap to talk. A microphone error pauses it with the reason.",
+        "A turn waits until the chat is not busy, then calls the normal send path with voice: true, so the turn appears in the conversation like any other message. Auto-read is skipped for talk turns.",
+        "Speech starts after the first complete sentence of the streamed reply (., ?, !, । or a newline followed by space). A tool call breaks the segment; the rest is spoken at the end.",
+        "Tapping the emblem interrupts Ved: speech stops, the reply keeps streaming into the chat unspoken, and listening starts at once. Tapping while paused resumes.",
+        "The loop stops on End, Escape, the page becoming hidden, or unmount. A new turn never starts after the loop has stopped.",
+        "The mic level and the playback level drive the rings through the --level CSS variable, written from requestAnimationFrame. Reduced motion skips the loop and keeps the rings still.",
+        "After each listen the mic stream is stopped (every track) and dropped before Ved speaks, and the shared AudioContext is woken. On iPhone a live getUserMedia stream routes playback to the earpiece and can suspend the context. If the context stays suspended, that sentence uses the device voice, the rest of the turn does too, and the overlay shows Tap to hear, which resumes the context and replays the held sentence."
       ],
       "tests": []
     },
@@ -612,7 +680,14 @@
         "testConnection",
         "listConnectionPresets",
         "claudeUsage",
-        "setClaudeBalance"
+        "setClaudeBalance",
+        "voiceStatus",
+        "voices",
+        "speak",
+        "transcribe",
+        "agentMessageBody",
+        "ReplyOptions",
+        "SpeakOptions"
       ],
       "settings": [
         "NEXT_PUBLIC_VED_API_URL"
@@ -621,7 +696,10 @@
         "No React or Next imports.",
         "Components call connector.*, never fetch.",
         "HttpError surfaces the backend's detail message.",
-        "conversationStatus reads GET /conversations/{id}/status."
+        "conversationStatus reads GET /conversations/{id}/status.",
+        "speak returns an ArrayBuffer: a request with binary: true reads the response with arrayBuffer() instead of parsing JSON or text.",
+        "transcribe sends multipart field audio (filename from the blob type: webm, mp4 or ogg) and an optional language field.",
+        "voice: true is sent only on talk-mode turns; other requests keep the old body."
       ],
       "endpoints": [
         "GET /connections",
@@ -631,7 +709,12 @@
         "POST /connections/{id}/test",
         "GET /connections/presets",
         "GET /usage/claude",
-        "PUT /usage/claude/balance"
+        "PUT /usage/claude/balance",
+        "GET /voice/status",
+        "GET /voice/voices",
+        "POST /voice/speak",
+        "POST /voice/transcribe",
+        "POST /agent/message/stream and POST /agent/message accept voice: true"
       ]
     },
     "web-ui": {

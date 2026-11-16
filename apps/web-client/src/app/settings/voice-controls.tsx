@@ -1,9 +1,10 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { cancelDeviceSpeech, speakOnDevice } from "../device-speech";
 import { orderVoicesForPicker, voiceLabel, voicesForLanguage, type VoiceLanguage, VOICE_LANGUAGE_NAMES } from "../speech-voice";
-import { useReadAloud, useSpeechVoices } from "../use-read-aloud";
+import { useSpeechSupport, useSpeechVoices } from "../use-read-aloud";
 import { useSpeechInputSupport } from "../use-speech-input";
+import { serverSpeaks, useVoiceStatus } from "../voice-status";
 import {
   LISTEN_LANGUAGES,
   PITCH_RANGE,
@@ -11,9 +12,11 @@ import {
   updateVoiceSettings,
   useVoiceSettings,
 } from "../voice-settings";
+import { Field, formatRate, RangeField, ToggleRow } from "./settings-fields";
+import { ServerVoiceControls } from "./server-voice-controls";
 import styles from "./settings.module.css";
 
-const UNSUPPORTED_COPY = "This browser can't read replies aloud.";
+const UNSUPPORTED_DEVICE_COPY = "This browser can't read replies aloud on its own.";
 const AUTO_READ_LABEL = "Read replies aloud automatically";
 const AUTO_SEND_LABEL = "Send automatically after speaking";
 const IPHONE_TAP_HINT = "On iPhone, Ved starts reading after you've tapped once in the app.";
@@ -22,52 +25,14 @@ const ENHANCED_VOICE_TIP =
 const TELUGU_VOICE_TIP =
   "For Telugu, add a Telugu voice in your phone's text-to-speech settings (Android: Google Text-to-speech → Install voice data → Telugu).";
 const DICTATION_TIP = "Tip: tap the mic on your keyboard to dictate.";
-const PRIVACY_NOTE = "Speech recognition is done by your phone or browser (Apple or Google), not by Ved's server.";
+const SERVER_PRIVACY_NOTE =
+  "Talk mode sends your voice to Ved's server to be transcribed, and the server voice speaks the replies. Device voices and browser dictation are handled by your phone or browser.";
+const DEVICE_PRIVACY_NOTE =
+  "Speech recognition is done by your phone or browser (Apple or Google), not by Ved's server.";
+const DEVICE_HEADING = "Device voice (used for Telugu or when the server voice is off)";
 const AUTO_VOICE_LABEL = "Automatic (Indian English when available)";
 const AUTO_LANGUAGE_VOICE_LABEL = "Automatic";
-const TEST_ID = "voice-settings-test";
-const TEST_PHRASE = "Hi, I'm Ved.";
-
-function formatRate(rate: number): string {
-  return `${rate.toFixed(1)}×`;
-}
-
-function formatPitch(pitch: number): string {
-  return pitch.toFixed(1);
-}
-
-function ToggleRow({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <label className={styles.switchRow}>
-      <span>{label}</span>
-      <input
-        className={styles.switchInput}
-        type="checkbox"
-        role="switch"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-      <span className={styles.switchTrack} aria-hidden="true" />
-    </label>
-  );
-}
-
-function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
-  return (
-    <label className={styles.field}>
-      <span className={styles.fieldLabel}>{label}</span>
-      {children}
-    </label>
-  );
-}
+const DEVICE_TEST_PHRASE = "Hi, I'm Ved.";
 
 function VoicePicker({
   label,
@@ -96,40 +61,6 @@ function VoicePicker({
           </option>
         ))}
       </select>
-    </Field>
-  );
-}
-
-function RangeField({
-  label,
-  value,
-  range,
-  format,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  range: { min: number; max: number; step: number };
-  format: (value: number) => string;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <Field
-      label={
-        <>
-          {label} <output className={styles.fieldValue}>{format(value)}</output>
-        </>
-      }
-    >
-      <input
-        className={styles.slider}
-        type="range"
-        min={range.min}
-        max={range.max}
-        step={range.step}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-      />
     </Field>
   );
 }
@@ -163,30 +94,13 @@ function LanguageVoicePicker({
   );
 }
 
-export function VoiceControls() {
-  const { supported, speak } = useReadAloud();
+function DeviceVoiceControls() {
   const voices = useSpeechVoices();
   const settings = useVoiceSettings();
-  const dictationSupported = useSpeechInputSupport();
-
-  if (!supported) return <p className={styles.text}>{UNSUPPORTED_COPY}</p>;
 
   return (
-    <>
-      <div className={styles.group}>
-        <ToggleRow
-          label={AUTO_READ_LABEL}
-          checked={settings.autoRead}
-          onChange={(autoRead) => updateVoiceSettings({ autoRead })}
-        />
-        <p className={styles.hint}>{IPHONE_TAP_HINT}</p>
-      </div>
-
-      <ToggleRow
-        label={AUTO_SEND_LABEL}
-        checked={settings.autoSend}
-        onChange={(autoSend) => updateVoiceSettings({ autoSend })}
-      />
+    <div className={styles.subsection}>
+      <h3 className={styles.subheading}>{DEVICE_HEADING}</h3>
 
       <div className={styles.group}>
         <VoicePicker
@@ -217,7 +131,7 @@ export function VoiceControls() {
       />
 
       <RangeField
-        label="Speed"
+        label="Device speed"
         value={settings.rate}
         range={RATE_RANGE}
         format={formatRate}
@@ -228,8 +142,47 @@ export function VoiceControls() {
         label="Pitch"
         value={settings.pitch}
         range={PITCH_RANGE}
-        format={formatPitch}
+        format={(pitch) => pitch.toFixed(1)}
         onChange={(pitch) => updateVoiceSettings({ pitch })}
+      />
+
+      <button
+        className={styles.primary}
+        type="button"
+        onClick={() => {
+          cancelDeviceSpeech();
+          speakOnDevice(DEVICE_TEST_PHRASE);
+        }}
+      >
+        Test device voice
+      </button>
+    </div>
+  );
+}
+
+export function VoiceControls() {
+  const status = useVoiceStatus();
+  const settings = useVoiceSettings();
+  const dictationSupported = useSpeechInputSupport();
+  const deviceSupported = useSpeechSupport();
+
+  return (
+    <>
+      <ServerVoiceControls status={status} settings={settings} />
+
+      <div className={styles.group}>
+        <ToggleRow
+          label={AUTO_READ_LABEL}
+          checked={settings.autoRead}
+          onChange={(autoRead) => updateVoiceSettings({ autoRead })}
+        />
+        <p className={styles.hint}>{IPHONE_TAP_HINT}</p>
+      </div>
+
+      <ToggleRow
+        label={AUTO_SEND_LABEL}
+        checked={settings.autoSend}
+        onChange={(autoSend) => updateVoiceSettings({ autoSend })}
       />
 
       <div className={styles.group}>
@@ -251,15 +204,9 @@ export function VoiceControls() {
         {!dictationSupported && <p className={styles.hint}>{DICTATION_TIP}</p>}
       </div>
 
-      <button
-        className={styles.primary}
-        type="button"
-        onClick={() => speak(TEST_ID, TEST_PHRASE)}
-      >
-        Test voice
-      </button>
+      {deviceSupported ? <DeviceVoiceControls /> : <p className={styles.hint}>{UNSUPPORTED_DEVICE_COPY}</p>}
 
-      <p className={styles.hint}>{PRIVACY_NOTE}</p>
+      <p className={styles.hint}>{serverSpeaks(status) ? SERVER_PRIVACY_NOTE : DEVICE_PRIVACY_NOTE}</p>
     </>
   );
 }

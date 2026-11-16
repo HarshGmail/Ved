@@ -1,8 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { speechSynthesisAvailable } from "./device-speech";
 import { prepareSpeechChunks } from "./speech-text";
 import { planVoice, type VoiceLanguage } from "./speech-voice";
+import { getVoicePlayer } from "./voice-player";
+import { currentVoiceStatus, serverSpeaks, speechOptionsFor, useVoiceStatus } from "./voice-status";
 import { readVoiceSettings } from "./voice-settings";
 
 const FALLBACK_LANGUAGE = "en-US";
@@ -20,14 +23,6 @@ let speechUnlocked = false;
 
 export function noSubscription(): () => void {
   return () => undefined;
-}
-
-export function speechSynthesisAvailable(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    "speechSynthesis" in window &&
-    "SpeechSynthesisUtterance" in window
-  );
 }
 
 export function useSpeechSupport(): boolean {
@@ -50,13 +45,16 @@ export function useSpeechVoices(): SpeechSynthesisVoice[] {
 }
 
 function unlockSpeech(): void {
+  getVoicePlayer().unlock();
   if (speechUnlocked || !speechSynthesisAvailable()) return;
   speechUnlocked = true;
   window.speechSynthesis.speak(new SpeechSynthesisUtterance(""));
 }
 
 export function useReadAloud(): ReadAloud {
-  const supported = useSpeechSupport();
+  const deviceSupported = useSpeechSupport();
+  const serverReady = serverSpeaks(useVoiceStatus());
+  const supported = deviceSupported || serverReady;
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [unvoiced, setUnvoiced] = useState<{ id: string; language: VoiceLanguage } | null>(null);
   const runRef = useRef(0);
@@ -69,18 +67,36 @@ export function useReadAloud(): ReadAloud {
   }, []);
 
   const stop = useCallback(() => {
-    if (!speechSynthesisAvailable()) return;
     runRef.current += 1;
     utterancesRef.current = [];
-    window.speechSynthesis.cancel();
+    getVoicePlayer().stop();
     setSpeakingId(null);
   }, []);
 
+  const speakOnServer = useCallback(
+    (id: string, chunks: string[]) => {
+      const player = getVoicePlayer();
+      runRef.current += 1;
+      const run = runRef.current;
+      player.stop();
+      setUnvoiced(null);
+      setSpeakingId(id);
+      const options = speechOptionsFor(readVoiceSettings(), currentVoiceStatus());
+      chunks.forEach((chunk) => player.enqueue(chunk, options));
+      void player.finish().then(() => finishRun(run));
+    },
+    [finishRun],
+  );
+
   const speak = useCallback(
     (id: string, text: string) => {
-      if (!speechSynthesisAvailable()) return;
       const chunks = prepareSpeechChunks(text);
       if (chunks.length === 0) return;
+      if (serverReady) {
+        speakOnServer(id, chunks);
+        return;
+      }
+      if (!speechSynthesisAvailable()) return;
 
       const engine = window.speechSynthesis;
       const settings = readVoiceSettings();
@@ -110,11 +126,10 @@ export function useReadAloud(): ReadAloud {
       setSpeakingId(id);
       utterances.forEach((utterance) => engine.speak(utterance));
     },
-    [finishRun],
+    [finishRun, serverReady, speakOnServer],
   );
 
   useEffect(() => {
-    if (!speechSynthesisAvailable()) return;
     const stopWhenHidden = () => {
       if (document.hidden) stop();
     };

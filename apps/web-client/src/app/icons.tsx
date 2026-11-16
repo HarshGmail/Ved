@@ -106,3 +106,11 @@ export function MicIcon({ className }: IconProps) {
     </StrokeIcon>
   );
 }
+
+export function TalkIcon({ className }: IconProps) {
+  return (
+    <StrokeIcon className={className}>
+      <path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4" />
+    </StrokeIcon>
+  );
+}

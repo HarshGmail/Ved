@@ -11,6 +11,8 @@ export interface VoiceSettings {
   pitch: number;
   listenLang: ListenLanguage;
   autoSend: boolean;
+  serverVoiceName: string | null;
+  serverSpeed: number;
 }
 
 interface NumberRange {
@@ -31,6 +33,14 @@ export const LISTEN_LANGUAGES: readonly { code: ListenLanguage; label: string }[
 
 export const RATE_RANGE: NumberRange = { min: 0.8, max: 1.4, step: 0.1 };
 export const PITCH_RANGE: NumberRange = { min: 0.8, max: 1.3, step: 0.1 };
+export const SERVER_SPEED_RANGE: NumberRange = { min: 0.8, max: 1.3, step: 0.1 };
+
+const SPOKEN_LANGUAGE_CODES: Record<ListenLanguage, string> = {
+  "en-IN": "en",
+  "te-IN": "te",
+  "hi-IN": "hi",
+  "en-US": "en",
+};
 
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   autoRead: false,
@@ -41,6 +51,8 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   pitch: 1,
   listenLang: "en-IN",
   autoSend: true,
+  serverVoiceName: null,
+  serverSpeed: 1,
 };
 
 function isFiniteNumber(value: unknown): value is number {
@@ -58,6 +70,10 @@ function optionalName(value: unknown): string | null {
 
 function isListenLanguage(value: unknown): value is ListenLanguage {
   return LISTEN_LANGUAGES.some((language) => language.code === value);
+}
+
+export function transcriptionLanguageFor(listenLang: ListenLanguage): string {
+  return SPOKEN_LANGUAGE_CODES[listenLang];
 }
 
 export function parseVoiceSettings(raw: string | null): VoiceSettings {
@@ -81,6 +97,10 @@ export function parseVoiceSettings(raw: string | null): VoiceSettings {
         ? fields.listenLang
         : DEFAULT_VOICE_SETTINGS.listenLang,
       autoSend: typeof fields.autoSend === "boolean" ? fields.autoSend : DEFAULT_VOICE_SETTINGS.autoSend,
+      serverVoiceName: optionalName(fields.serverVoiceName),
+      serverSpeed: isFiniteNumber(fields.serverSpeed)
+        ? clampToRange(fields.serverSpeed, SERVER_SPEED_RANGE)
+        : DEFAULT_VOICE_SETTINGS.serverSpeed,
     };
   } catch {
     return DEFAULT_VOICE_SETTINGS;

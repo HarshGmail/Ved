@@ -5,9 +5,11 @@ import {
   resolveConfig,
   STREAM_IDLE_TIMEOUT_MS,
   UPLOAD_TIMEOUT_MS,
+  VOICE_SPEAK_TIMEOUT_MS,
+  VOICE_TRANSCRIBE_TIMEOUT_MS,
 } from "./config";
 import { createHttpClient, type RequestOptions } from "./http";
-import { createReplyStream } from "./reply-stream";
+import { agentMessageBody, createReplyStream } from "./reply-stream";
 import { createEventStreamClient } from "./sse";
 import { createStreamClient } from "./stream";
 import type {
@@ -29,13 +31,43 @@ import type {
   PushStatus,
   PushTestResult,
   ReplyStreamHandlers,
+  Transcription,
+  VoiceInfo,
+  VoiceStatus,
 } from "./types";
 
 const DOCUMENT_FIELD = "file";
+const AUDIO_FIELD = "audio";
+const LANGUAGE_FIELD = "language";
+const DEFAULT_AUDIO_EXTENSION = "webm";
+const AUDIO_EXTENSIONS: ReadonlyArray<readonly [needle: string, extension: string]> = [
+  ["mp4", "mp4"],
+  ["ogg", "ogg"],
+];
+
+export interface ReplyOptions extends Pick<RequestOptions, "signal"> {
+  voice?: boolean;
+}
+
+export interface SpeakOptions extends Pick<RequestOptions, "signal"> {
+  voice?: string;
+  speed?: number;
+}
 
 function documentForm(file: Blob, filename: string): FormData {
   const form = new FormData();
   form.append(DOCUMENT_FIELD, file, filename);
+  return form;
+}
+
+function audioExtension(mediaType: string): string {
+  return AUDIO_EXTENSIONS.find(([needle]) => mediaType.includes(needle))?.[1] ?? DEFAULT_AUDIO_EXTENSION;
+}
+
+function transcriptionForm(audio: Blob, language?: string): FormData {
+  const form = new FormData();
+  form.append(AUDIO_FIELD, audio, `voice.${audioExtension(audio.type)}`);
+  if (language) form.append(LANGUAGE_FIELD, language);
   return form;
 }
 
@@ -58,26 +90,52 @@ export function createConnector(overrides: Partial<ConnectorConfig> = {}) {
     sendMessage: (
       prompt: string,
       conversationId?: string,
-      options: Pick<RequestOptions, "signal"> = {},
+      options: ReplyOptions = {},
     ) =>
       request<AgentReply>({
         method: "POST",
         path: "/agent/message",
-        body: { prompt, conversation_id: conversationId ?? null },
+        body: agentMessageBody(prompt, conversationId, options.voice),
         timeoutMs: AGENT_TIMEOUT_MS,
-        ...options,
+        signal: options.signal,
       }),
     streamMessage: (
       prompt: string,
       conversationId: string | undefined,
       handlers: ReplyStreamHandlers,
-      options: Pick<RequestOptions, "signal"> = {},
+      options: ReplyOptions = {},
     ) =>
       streamReply({
         prompt,
         conversationId,
+        voice: options.voice,
         handlers,
         idleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
+        signal: options.signal,
+      }),
+    voiceStatus: (options: Pick<RequestOptions, "signal"> = {}) =>
+      request<VoiceStatus>({ path: "/voice/status", ...options }),
+    voices: (options: Pick<RequestOptions, "signal"> = {}) =>
+      request<VoiceInfo[]>({ path: "/voice/voices", ...options }),
+    speak: (text: string, options: SpeakOptions = {}) =>
+      request<ArrayBuffer>({
+        method: "POST",
+        path: "/voice/speak",
+        body: { text, voice: options.voice, speed: options.speed },
+        binary: true,
+        timeoutMs: VOICE_SPEAK_TIMEOUT_MS,
+        signal: options.signal,
+      }),
+    transcribe: (
+      audio: Blob,
+      language?: string,
+      options: Pick<RequestOptions, "signal"> = {},
+    ) =>
+      request<Transcription>({
+        method: "POST",
+        path: "/voice/transcribe",
+        body: transcriptionForm(audio, language),
+        timeoutMs: VOICE_TRANSCRIBE_TIMEOUT_MS,
         ...options,
       }),
     listConversations: (options: Pick<RequestOptions, "signal"> = {}) =>
@@ -254,5 +312,8 @@ export type {
   ToolFinished,
   ToolInvocation,
   ToolStarted,
+  Transcription,
   TranscriptMessage,
+  VoiceInfo,
+  VoiceStatus,
 } from "./types";

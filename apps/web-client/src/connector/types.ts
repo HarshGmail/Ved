@@ -161,3 +161,22 @@ export interface ClaudeUsage {
   last_30_days_usd: number;
   can_edit: boolean;
 }
+
+export interface VoiceStatus {
+  stt: boolean;
+  tts_languages: string[];
+  default_voice: string | null;
+}
+
+export interface VoiceInfo {
+  id: string;
+  name: string;
+  language: string;
+  gender: string;
+}
+
+export interface Transcription {
+  text: string;
+  language: string;
+  duration_seconds: number;
+}

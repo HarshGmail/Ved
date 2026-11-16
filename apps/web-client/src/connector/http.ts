@@ -11,6 +11,7 @@ export interface RequestOptions {
   headers?: Record<string, string>;
   signal?: AbortSignal;
   timeoutMs?: number;
+  binary?: boolean;
 }
 
 export function buildUrl(
@@ -113,11 +114,13 @@ export function createHttpClient(config: ConnectorConfig) {
       cleanup();
     }
 
-    const body = await parseBody(response);
     if (!response.ok) {
-      throw new HttpError(response.status, response.statusText, body);
+      throw new HttpError(response.status, response.statusText, await parseBody(response));
     }
-    return body as TResponse;
+    if (options.binary) {
+      return (await response.arrayBuffer()) as TResponse;
+    }
+    return (await parseBody(response)) as TResponse;
   };
 }
 
