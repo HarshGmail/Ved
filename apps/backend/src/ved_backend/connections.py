@@ -21,7 +21,9 @@ from ved_backend.tools.toolbox import (
 
 CONNECTION_NAME_MIN_LENGTH = 2
 CONNECTION_NAME_PATTERN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
-BUILT_IN_PREFIXES = frozenset({"memory", "documents", "web", "people", "reminders"})
+BUILT_IN_PREFIXES = frozenset(
+    {"memory", "documents", "family", "web", "people", "reminders"}
+)
 ALLOWED_URL_SCHEMES = frozenset({"http", "https"})
 URL_MAX_LENGTH = 2048
 TOKEN_MAX_LENGTH = 2048

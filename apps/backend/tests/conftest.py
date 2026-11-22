@@ -86,3 +86,14 @@ def build_pdf(pages: list[list[str]]) -> bytes:
 @pytest.fixture
 def make_pdf():
     return build_pdf
+
+
+@pytest.fixture(autouse=True)
+def no_family_directory():
+    from ved_backend.family import NoFamilyDirectory
+    from ved_backend.main import app
+
+    previous = getattr(app.state, "family", None)
+    app.state.family = NoFamilyDirectory()
+    yield
+    app.state.family = previous

@@ -21,10 +21,13 @@ NOMIC_DOCUMENT_PREFIX = "search_document: "
 NOMIC_QUERY_PREFIX = "search_query: "
 DEFAULT_PLAN_MCP_URL = "http://family-planner:3456/api/mcp"
 DEFAULT_VOICE_URL = "http://ved-voice:8300"
+DEFAULT_FAMILY_DIRECTORY_URL = "http://home-admin:3470/api/family"
 DEFAULT_OWNER_EMAIL = "owner@ved.local"
 DEFAULT_EXPOSED_TOOLS = [
     "memory.search",
     "documents.search",
+    "family.remember",
+    "family.notes",
     "web.search",
     "web.fetch",
     "people.list",
@@ -107,6 +110,9 @@ class Settings(BaseSettings):
     secret_key: str = ""
 
     voice_url: str = DEFAULT_VOICE_URL
+
+    family_directory_url: str = DEFAULT_FAMILY_DIRECTORY_URL
+    family_directory_token: str = ""
 
     exposed_tools: Annotated[list[str], NoDecode] = DEFAULT_EXPOSED_TOOLS
 

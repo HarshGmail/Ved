@@ -17,6 +17,7 @@ import {
 } from "../theme";
 import { usePerson } from "../use-person";
 import { ClaudeUsageCard } from "./claude-usage";
+import { WhatVedKnows } from "./what-ved-knows";
 import { VoiceControls } from "./voice-controls";
 import styles from "./settings.module.css";
 
@@ -133,6 +134,10 @@ export function SettingsPanel() {
 
       <SettingsSection id="integrations" title="Integrations" plain>
         <ConnectionsPanel />
+      </SettingsSection>
+
+      <SettingsSection id="what-ved-knows" title="What Ved knows">
+        <WhatVedKnows />
       </SettingsSection>
 
       <SettingsSection id="claude-usage" title="Claude usage">

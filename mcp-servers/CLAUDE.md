@@ -7,7 +7,7 @@ backend. Look topics up in `../docs/index.json` before searching.
 | --- | --- |
 | `reminders/` | `reminders.create`, `.list`, `.reschedule`, `.complete` |
 | `people/` | `people.remember`, `.list`, `.forget` |
-| `memory/` | `memory.search`, `documents.search`, `documents.list` |
+| `memory/` | `memory.search`, `documents.search`, `documents.list`, `family.remember`, `family.notes` |
 | `web/` | `web.search` (swappable provider), `web.fetch` |
 | `snappy/` | `search_photos`, `list_people`, `photos_of_person`, `list_albums`, `album_photos`, `recent_photos`, `photo_details` (HTTP, not stdio) |
 
@@ -28,6 +28,9 @@ backend. Look topics up in `../docs/index.json` before searching.
   by it.** `people`, `memory` and `reminders` do; the backend's `MCPToolbox`
   injects it on every stdio call whose schema declares `user_id` and hides it
   from the model, so never mention it in a docstring. `web` has none.
+- **`family.*` tools read and write the shared `family_notes` table.** `user_id`
+  is the author, not a filter: every note is readable by everyone. There is no
+  delete tool; a person deletes their own note from the web page.
 - **Return Pydantic models, not `dict`**, or the tool has no output schema.
 - **Raise `ToolError` for bad input.** Other exceptions reach the model as a
   generic message it cannot act on.

@@ -16,6 +16,7 @@ from ved_backend.agent import (
     TOOL_LIMIT_MESSAGE,
     Agent,
 )
+from ved_backend.family import Family, family_block
 from ved_backend.llm.base import (
     AssistantMessage,
     LLMRequestError,
@@ -794,3 +795,221 @@ async def test_streamed_spoken_turns_carry_the_spoken_reply_line(toolbox):
         pass
 
     assert SPOKEN_REPLY_LINE in provider.seen[0][-1].text
+
+
+FAMILY = Family.model_validate(
+    {
+        "people": [
+            {
+                "id": "p1",
+                "name": "Harsh",
+                "aliases": ["Chinna"],
+                "relation": "self",
+                "email": "harsh@example.com",
+                "birthday": "2001-08-16",
+            },
+            {
+                "id": "p2",
+                "name": "Amma",
+                "aliases": ["Mummy"],
+                "relation": "mother",
+                "email": "amma@example.com",
+                "birthday": "--03-03",
+                "language": "te",
+            },
+        ]
+    }
+)
+
+
+class FixedFamily:
+    def __init__(self, family: Family) -> None:
+        self.family = family
+        self.fetches = 0
+
+    async def current(self) -> Family:
+        self.fetches += 1
+        return self.family
+
+    async def aclose(self) -> None:
+        return None
+
+
+def family_agent(provider, family: Family = FAMILY) -> Agent:
+    return Agent(
+        provider,
+        FakeToolbox(),
+        max_tool_rounds=4,
+        timezone="Asia/Kolkata",
+        family=FixedFamily(family),
+    )
+
+
+async def test_the_family_block_ends_the_system_prompt():
+    provider = ScriptedProvider([AssistantMessage(text="hi")])
+
+    await family_agent(provider).run("hello", (), user_id=USER_ID, user_line=USER_LINE)
+
+    system = provider.systems[0]
+    assert system.startswith(SYSTEM_PROMPT)
+    assert system == f"{SYSTEM_PROMPT}\n\n{family_block(FAMILY)}"
+    assert "- Amma (also called Mummy), the owner's mother, birthday 3 March" in system
+
+
+async def test_the_system_prompt_is_byte_identical_across_turns_and_speakers():
+    provider = ScriptedProvider(
+        [AssistantMessage(text="a"), AssistantMessage(text="b")]
+    )
+    agent = family_agent(provider)
+
+    await agent.run(
+        "hello",
+        (),
+        user_id=USER_ID,
+        user_line="You are talking with Amma (the owner's mother).",
+        reply_language="te",
+    )
+    await agent.run(
+        "again",
+        (),
+        user_id=uuid.uuid4(),
+        user_line="You are talking with Harsh (the owner).",
+        reply_language="en",
+    )
+
+    assert provider.systems[0] == provider.systems[1]
+
+
+async def test_the_system_prompt_carries_no_emails_and_no_per_turn_facts():
+    provider = ScriptedProvider([AssistantMessage(text="hi")])
+
+    await family_agent(provider).run(
+        "hello", (), user_id=USER_ID, user_line=USER_LINE, reply_language="te"
+    )
+
+    system = provider.systems[0]
+    assert "@" not in system
+    assert "example.com" not in system
+    assert "timezone Asia/Kolkata" not in system
+    assert USER_LINE not in system
+    assert "Telugu, in Telugu script" not in system
+
+
+async def test_an_empty_directory_leaves_the_system_prompt_untouched():
+    provider = ScriptedProvider([AssistantMessage(text="hi")])
+
+    await family_agent(provider, Family()).run(
+        "hello", (), user_id=USER_ID, user_line=USER_LINE
+    )
+
+    assert provider.systems == [SYSTEM_PROMPT]
+
+
+async def test_the_system_prompt_is_rebuilt_when_the_directory_changes():
+    provider = ScriptedProvider(
+        [AssistantMessage(text="a"), AssistantMessage(text="b")]
+    )
+    directory = FixedFamily(FAMILY)
+    agent = Agent(
+        provider, FakeToolbox(), max_tool_rounds=4, timezone="UTC", family=directory
+    )
+
+    await agent.run("one", (), user_id=USER_ID, user_line=USER_LINE)
+    directory.family = Family()
+    await agent.run("two", (), user_id=USER_ID, user_line=USER_LINE)
+
+    assert provider.systems[0] != provider.systems[1]
+    assert provider.systems[1] == SYSTEM_PROMPT
+
+
+async def test_the_family_block_survives_tool_rounds():
+    provider = ScriptedProvider(
+        [
+            AssistantMessage(
+                text="",
+                tool_calls=[ToolCall(id="c1", name="reminders.create", arguments={})],
+            ),
+            AssistantMessage(text="done"),
+        ]
+    )
+
+    await family_agent(provider).run("hello", (), user_id=USER_ID, user_line=USER_LINE)
+
+    assert provider.systems[0] == provider.systems[1]
+    assert provider.systems[0].endswith(family_block(FAMILY))
+
+
+def test_the_prompt_teaches_nicknames_privacy_and_family_notes():
+    assert "same person whoever is speaking" in SYSTEM_PROMPT
+    assert "never reveal" in SYSTEM_PROMPT.lower()
+    assert "private by default" in SYSTEM_PROMPT
+    assert "family.remember" in SYSTEM_PROMPT
+    assert "family.notes" in SYSTEM_PROMPT
+    assert "Say what you saved" in SYSTEM_PROMPT
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        ("te", "Default reply language: Telugu, in Telugu script."),
+        ("hi", "Default reply language: Hindi, in Devanagari script."),
+        ("en", "Default reply language: English."),
+    ],
+)
+async def test_a_preferred_language_adds_a_line_to_the_stamp(toolbox, code, expected):
+    provider = ScriptedProvider([AssistantMessage(text="hi")])
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    await agent.run(
+        "hello", (), user_id=USER_ID, user_line=USER_LINE, reply_language=code
+    )
+
+    stamped = provider.seen[0][-1].text
+    assert expected in stamped
+    assert "unless the user writes in another language" in stamped
+    assert stamped.index(USER_LINE) < stamped.index(expected)
+    assert stamped.index(expected) < stamped.index(agent_module.NO_CONNECTED_APPS_LINE)
+
+
+@pytest.mark.parametrize("code", [None, "", "ta"])
+async def test_no_or_unknown_language_adds_no_line(toolbox, code):
+    provider = ScriptedProvider([AssistantMessage(text="hi")])
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    await agent.run(
+        "hello", (), user_id=USER_ID, user_line=USER_LINE, reply_language=code
+    )
+
+    assert "Default reply language" not in provider.seen[0][-1].text
+
+
+async def test_spoken_turns_keep_the_language_line_before_the_spoken_line(toolbox):
+    provider = ScriptedProvider([AssistantMessage(text="hi")])
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    await agent.run(
+        "hello",
+        (),
+        user_id=USER_ID,
+        user_line=USER_LINE,
+        spoken=True,
+        reply_language="te",
+    )
+
+    stamped = provider.seen[0][-1].text
+    assert stamped.index("Default reply language: Telugu") < stamped.index(
+        SPOKEN_REPLY_LINE
+    )
+    assert stamped.endswith(f"{SPOKEN_REPLY_LINE}\n\nhello")
+
+
+async def test_streamed_turns_carry_the_language_line(toolbox):
+    provider = ScriptedProvider([AssistantMessage(text="hi")])
+    agent = Agent(provider, toolbox, max_tool_rounds=4, timezone="Asia/Kolkata")
+
+    async for _ in agent.stream(
+        "hello", (), user_id=USER_ID, user_line=USER_LINE, reply_language="hi"
+    ):
+        pass
+
+    assert "Default reply language: Hindi" in provider.seen[0][-1].text

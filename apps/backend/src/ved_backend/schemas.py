@@ -200,6 +200,34 @@ class MeResponse(BaseModel):
     name: str | None = None
 
 
+class FamilyPersonSummary(BaseModel):
+    id: str
+    name: str
+    aliases: list[str]
+    relation: str | None
+    birthday_month: int | None
+    birthday_day: int | None
+    language: str | None
+
+
+class FamilyOverview(BaseModel):
+    people: list[FamilyPersonSummary]
+    me: FamilyPersonSummary | None
+    owner_name: str | None
+
+
+class FamilyNoteSummary(BaseModel):
+    id: uuid.UUID
+    text: str
+    author_name: str | None
+    created_at: datetime
+    mine: bool
+
+
+class FamilyNoteList(BaseModel):
+    notes: list[FamilyNoteSummary]
+
+
 class ConnectionSummary(BaseModel):
     id: uuid.UUID
     name: str

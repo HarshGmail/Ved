@@ -180,3 +180,31 @@ export interface Transcription {
   language: string;
   duration_seconds: number;
 }
+
+export interface FamilyPerson {
+  id: string;
+  name: string;
+  aliases: string[];
+  relation: string | null;
+  birthday_month: number | null;
+  birthday_day: number | null;
+  language: string | null;
+}
+
+export interface FamilyOverview {
+  people: FamilyPerson[];
+  me: FamilyPerson | null;
+  owner_name: string | null;
+}
+
+export interface FamilyNote {
+  id: string;
+  text: string;
+  author_name: string | null;
+  created_at: string;
+  mine: boolean;
+}
+
+export interface FamilyNoteList {
+  notes: FamilyNote[];
+}

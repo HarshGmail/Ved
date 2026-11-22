@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from ved_db import User
 
+from ved_backend.family import Family
 from ved_backend.llm.base import LLMRequestError, ToolSpec
 from ved_backend.main import agent_message_stream, app, conversation_status
 from ved_backend.memory import ConversationNotFoundError
@@ -37,21 +38,43 @@ class FakeAgent:
         self.histories: list[list] = []
         self.user_ids: list[uuid.UUID] = []
         self.spoken: list[bool] = []
+        self.user_lines: list[str] = []
+        self.languages: list[str | None] = []
 
-    async def run(self, prompt: str, history=(), *, user_id, user_line, spoken=False):
-        self.prompts.append(prompt)
-        self.user_ids.append(user_id)
-        self.histories.append(list(history))
-        self.spoken.append(spoken)
-        return self._turn
-
-    async def stream(
-        self, prompt: str, history=(), *, user_id, user_line, spoken=False
+    async def run(
+        self,
+        prompt: str,
+        history=(),
+        *,
+        user_id,
+        user_line,
+        spoken=False,
+        reply_language=None,
     ):
         self.prompts.append(prompt)
         self.user_ids.append(user_id)
         self.histories.append(list(history))
         self.spoken.append(spoken)
+        self.user_lines.append(user_line)
+        self.languages.append(reply_language)
+        return self._turn
+
+    async def stream(
+        self,
+        prompt: str,
+        history=(),
+        *,
+        user_id,
+        user_line,
+        spoken=False,
+        reply_language=None,
+    ):
+        self.prompts.append(prompt)
+        self.user_ids.append(user_id)
+        self.histories.append(list(history))
+        self.spoken.append(spoken)
+        self.user_lines.append(user_line)
+        self.languages.append(reply_language)
         for call in self._turn.tool_calls:
             yield ToolStartedEvent(name=call.name, arguments=call.arguments)
             yield ToolFinishedEvent(name=call.name, failed=call.failed)
@@ -234,7 +257,16 @@ def test_a_malformed_conversation_id_is_rejected(wired):
 
 def test_a_failed_turn_leaves_no_empty_conversation(wired):
     class FailingAgent:
-        async def run(self, prompt, history=(), *, user_id, user_line, spoken=False):
+        async def run(
+            self,
+            prompt,
+            history=(),
+            *,
+            user_id,
+            user_line,
+            spoken=False,
+            reply_language=None,
+        ):
             raise LLMRequestError("model is down")
 
     _, store = wired()
@@ -352,7 +384,16 @@ def test_stream_without_tools_is_service_unavailable(wired):
 
 
 class FailingMidStreamAgent:
-    async def stream(self, prompt, history=(), *, user_id, user_line, spoken=False):
+    async def stream(
+        self,
+        prompt,
+        history=(),
+        *,
+        user_id,
+        user_line,
+        spoken=False,
+        reply_language=None,
+    ):
         yield TokenEvent(text="Partial ")
         raise LLMRequestError("model is down")
 
@@ -390,7 +431,16 @@ class GatedAgent:
         self.running = 0
         self.max_running = 0
 
-    async def stream(self, prompt, history=(), *, user_id, user_line, spoken=False):
+    async def stream(
+        self,
+        prompt,
+        history=(),
+        *,
+        user_id,
+        user_line,
+        spoken=False,
+        reply_language=None,
+    ):
         self.prompts.append(prompt)
         self.running += 1
         self.max_running = max(self.max_running, self.running)
@@ -477,7 +527,16 @@ async def test_turns_in_one_conversation_run_one_after_another(wired):
 
 
 class ThinkingAgent:
-    async def stream(self, prompt, history=(), *, user_id, user_line, spoken=False):
+    async def stream(
+        self,
+        prompt,
+        history=(),
+        *,
+        user_id,
+        user_line,
+        spoken=False,
+        reply_language=None,
+    ):
         yield ThinkingEvent()
         yield AcknowledgementEvent(text="Setting that up…")
         yield ToolStartedEvent(name="reminders.create", arguments={})
@@ -521,3 +580,103 @@ def test_the_voice_flag_defaults_to_a_written_reply(wired):
     post("good morning")
 
     assert agent.spoken == [False]
+
+
+AMMA_ENTRY = {
+    "id": "p2",
+    "name": "Amma",
+    "aliases": ["Mummy"],
+    "relation": "mother",
+    "email": "First@Example.com",
+    "language": "te",
+}
+
+
+class FixedFamily:
+    def __init__(self, *people: dict) -> None:
+        self._family = Family.model_validate({"people": list(people)})
+
+    async def current(self) -> Family:
+        return self._family
+
+    async def aclose(self) -> None:
+        return None
+
+
+class RecordingUsers:
+    def __init__(self) -> None:
+        self.adopted: list[tuple[uuid.UUID, str]] = []
+
+    async def adopt_name(self, user_id: uuid.UUID, name: str) -> None:
+        self.adopted.append((user_id, name))
+
+
+@pytest.fixture
+def in_directory(wired):
+    users = RecordingUsers()
+
+    def _install(*people: dict, user: User = USER):
+        agent, store = wired()
+        app.state.family = FixedFamily(*people)
+        app.state.users = users
+        app.dependency_overrides[current_user] = lambda: user
+        return agent, users
+
+    yield _install
+    app.state.users = None
+
+
+def test_a_family_member_is_addressed_by_name_and_relation_and_language(in_directory):
+    agent, _ = in_directory(AMMA_ENTRY)
+
+    post("hello")
+
+    assert agent.user_lines == ["You are talking with Amma (the owner's mother)."]
+    assert agent.languages == ["te"]
+
+
+def test_the_streamed_turn_gets_the_same_speaker(in_directory):
+    agent, _ = in_directory(AMMA_ENTRY)
+
+    post_stream("hello")
+
+    assert agent.user_lines == ["You are talking with Amma (the owner's mother)."]
+    assert agent.languages == ["te"]
+
+
+def test_an_unnamed_user_takes_the_directory_name_once(in_directory):
+    _, users = in_directory(AMMA_ENTRY)
+
+    post("hello")
+
+    assert users.adopted == [(USER.id, "Amma")]
+
+
+def test_a_user_who_already_has_a_name_is_not_written_again(in_directory):
+    named = User(id=USER.id, email=USER.email, name="Amma")
+    _, users = in_directory(AMMA_ENTRY, user=named)
+
+    post("hello")
+
+    assert users.adopted == []
+
+
+def test_someone_outside_the_directory_keeps_the_old_behaviour(in_directory):
+    agent, users = in_directory({**AMMA_ENTRY, "email": "other@example.com"})
+
+    post("hello")
+
+    assert agent.user_lines == [
+        "You don't know this person's name yet. Ask for it once, early, "
+        "and remember it with people.remember."
+    ]
+    assert agent.languages == [None]
+    assert users.adopted == []
+
+
+def test_the_speaker_line_never_carries_the_email(in_directory):
+    agent, _ = in_directory(AMMA_ENTRY)
+
+    post("hello")
+
+    assert "@" not in agent.user_lines[0]

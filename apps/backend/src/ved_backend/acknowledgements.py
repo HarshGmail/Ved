@@ -9,6 +9,8 @@ ACKNOWLEDGEMENTS: dict[str, str] = {
     "people.list": "Let me check…",
     "memory.search": "Let me look back…",
     "documents": "Let me check your documents…",
+    "family": "Noting that for the family…",
+    "family.notes": "Let me check the family notes…",
     "web": "Let me check that…",
 }
 

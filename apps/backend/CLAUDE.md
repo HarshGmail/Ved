@@ -11,9 +11,17 @@ FastAPI, Python 3.13, managed by **uv** — `uv run` handles the venv; never
   change. Never build a client at import time. Moving the local model is a URL
   change (`VED_LLM_BASE_URL`): that provider speaks the OpenAI `/v1` shape.
   Claude goes through `AnthropicProvider` with the official SDK only.
-- **The system prompt carries the current time and timezone**, rebuilt every
-  turn. A model has no clock and invents dates otherwise. `VED_TIMEZONE` is what
-  turns "8 PM" into `20:00+05:30`.
+- **The current time and timezone ride on the latest user message**, rebuilt
+  every turn. A model has no clock and invents dates otherwise. `VED_TIMEZONE`
+  is what turns "8 PM" into `20:00+05:30`. The system prompt itself must stay
+  byte-identical between turns (`SYSTEM_PROMPT` plus the deterministic Family
+  block from `family_block`), or prompt caching breaks; anything that differs per
+  person or per turn goes on the stamp.
+- **The family directory is read-only and never fails a turn.**
+  `FamilyDirectory` is a Protocol; `HomeAdminFamilyDirectory` caches 5 minutes,
+  serves the last good copy on any error and never logs the token or emails.
+  Emails never reach a prompt or `speaker_label`. Family notes are the one
+  shared table; the model can write and read them but has no delete tool.
 - **One agent loop, `Agent._events`, serves both endpoints**, so their
   guarantees can't drift. Tool failures go back to the model as `is_error`
   results, never raised. `VED_AGENT_MAX_TOOL_ROUNDS` caps a looping model.

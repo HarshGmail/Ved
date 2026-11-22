@@ -153,3 +153,14 @@ async def test_the_migration_round_trips(engine):
     alembic("downgrade", REVISION_BEFORE_USERS)
     alembic("upgrade", "head")
     alembic("check")
+
+
+async def test_family_notes_are_added_and_removed_by_their_own_revision(engine):
+    alembic("upgrade", "head")
+    assert await scalar(engine, "SELECT to_regclass('family_notes')") == "family_notes"
+
+    alembic("downgrade", "-1")
+    assert await scalar(engine, "SELECT to_regclass('family_notes')") is None
+
+    alembic("upgrade", "head")
+    alembic("check")

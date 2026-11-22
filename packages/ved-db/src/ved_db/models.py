@@ -32,6 +32,7 @@ DOCUMENT_STATUSES: tuple[DocumentStatus, ...] = ("pending", "indexed", "failed")
 SHA256_HEX_LENGTH = 64
 EMAIL_MAX_LENGTH = 320
 CONNECTION_NAME_MAX_LENGTH = 20
+FAMILY_NOTE_MAX_LENGTH = 1000
 
 CONVERSATION_MESSAGE_SEQUENCE = Sequence("conversation_messages_sequence_seq")
 
@@ -211,6 +212,34 @@ class MCPConnection(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class FamilyNote(Base):
+    __tablename__ = "family_notes"
+    __table_args__ = (
+        CheckConstraint(
+            f"char_length(text) BETWEEN 1 AND {FAMILY_NOTE_MAX_LENGTH}",
+            name="ck_family_notes_text_length",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    text: Mapped[str] = mapped_column(Text)
+    author_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            ondelete="SET NULL",
+            name="fk_family_notes_author_user_id_users",
+        ),
+        index=True,
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
     )
 
 

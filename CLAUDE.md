@@ -34,6 +34,13 @@ devices and MCP connections (Cloudflare Access email picks the user; the owner i
 `VED_OWNER_EMAIL`). Each person links Plan, MyFinances or a custom MCP server on
 the Connections page; tokens are encrypted with `VED_SECRET_KEY`.
 
+Ved knows the family. home-admin's directory (`VED_FAMILY_DIRECTORY_URL`,
+`VED_FAMILY_DIRECTORY_TOKEN`) tells it who is speaking (by Access email), their
+relation to the owner and preferred language (en, te, hi), and lists the household
+in the system prompt. Anyone can have Ved save a shared family note
+(`family.remember`, opt-in) and read all of them; Settings > What Ved knows shows
+the person, the family and the notes. See the `family` topic in `docs/index.json`.
+
 Not yet: the permission layer, voice in the web client. Phone access (`./ved
 phone`) is wired but unverified until Tailscale is installed. A home server
 (Ubuntu, DDR3, 16 GB max) is being set up from `docs/server.md`; `./ved` runs on
@@ -47,7 +54,7 @@ ved                 short commands for everything — ./ved help
 apps/backend/       FastAPI: agent loop, scheduler, memory, documents, push
 apps/web-client/    Next.js 16 PWA; src/connector/ is its only backend client
 apps/voice/         Python: Kokoro text to speech, faster-whisper recognition (ved-voice)
-mcp-servers/        one MCP server per capability: reminders, people, memory, web
+mcp-servers/        one MCP server per capability: reminders, people, memory (and family notes), web
 packages/ved-db/    the only place database tables are defined
 infra/              Docker Compose: Postgres, SearXNG, backend, DB browser
 docs/               index.json, server.md, master-plan.md, phone-access.md
