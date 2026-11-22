@@ -13,7 +13,8 @@
     ],
     "home_server": "noddy: containerised setup via ./ved server written, not yet run there; Cloudflare tunnel hostname and streaming through it unconfirmed; auth, unattended running and backups not built yet",
     "per_user_data": "done: users table, Access email picks the user, chats, memory, documents, people, reminders and push are per person; owner from VED_OWNER_EMAIL",
-    "claude_provider": "done: Claude Haiku 5.5 through Anthropic's SDK behind VED_LLM_PROVIDER=anthropic, with the person's MCP connections exposed to it; Ved's connection-aware stamp and no-email labels; Settings shows Claude credit left, counted from each response's usage against an owner-entered balance."
+    "claude_provider": "done: Claude Haiku 5.5 through Anthropic's SDK behind VED_LLM_PROVIDER=anthropic, with the person's MCP connections exposed to it; Ved's connection-aware stamp and no-email labels; Settings shows Claude credit left, counted from each response's usage against an owner-entered balance.",
+    "family_directory": "done: Ved reads the household directory from home-admin (VED_FAMILY_DIRECTORY_URL/TOKEN), knows who is speaking and replies in their language, lists the family in the system prompt, shares opt-in family notes (family.remember / family.notes) and shows it all under Settings > What Ved knows"
   },
   "topics": {
     "agent-loop": {
@@ -31,7 +32,10 @@
         "TOOL_LIMIT_MESSAGE",
         "connected_apps",
         "connected_apps_line",
-        "BUILT_IN_SERVERS"
+        "BUILT_IN_SERVERS",
+        "system_prompt_for",
+        "reply_language_line",
+        "REPLY_LANGUAGE_NAMES"
       ],
       "settings": [
         "VED_AGENT_MAX_TOOL_ROUNDS",
@@ -41,13 +45,14 @@
       "rules": [
         "Both endpoints go through Agent._events; never fork the loop.",
         "Tool failures return to the model as is_error, never raised.",
-        "The system prompt is a constant, kept short; the current time, timezone and the signed-in user's name ride on the latest user message, never in history.",
+        "The system prompt is SYSTEM_PROMPT plus the deterministic Family block (system_prompt_for); the current time, timezone, the signed-in user's line and default reply language ride on the latest user message, never in history or the system prompt.",
         "Tool calls in one round run concurrently; outcomes go back in call order.",
-        "Agent.run and Agent.stream require user_id and user_line; user_id goes to toolbox calls and never into prompts or stored tool arguments. user_line is speaker_label(user): a name sentence, or an ask-for-the-name sentence, never the email.",
+        "Agent.run and Agent.stream require user_id and user_line and take reply_language; user_id goes to toolbox calls and never into prompts or stored tool arguments. user_line is speaker_label(user, person): a name sentence, or an ask-for-the-name sentence, never the email.",
         "The model sees a fixed tool list (VED_EXPOSED_TOOLS, sorted by name), never a per-message choice: Ollama reuses its cache only for an identical system prompt plus tools prefix.",
-        "The latest user line is stamped with the current time, the user line and a Connected apps line (non-built-in tool prefixes, from the same tools_for call the round uses). The system prompt tells the model to use these lines silently.",
-        "SYSTEM_PROMPT asks replies to follow the user's language and script (English, Telugu, Hindi or a mix); keep that sentence when editing the prompt.",
-        "AgentRequest.voice is the spoken-reply flag. It adds SPOKEN_REPLY_LINE to the per-turn stamp, never to the system prompt, and reaches Agent.run and Agent.stream unchanged."
+        "The latest user line is stamped with the current time, the user line, a Default reply language line (when the directory knows the person's language) and a Connected apps line (non-built-in tool prefixes, from the same tools_for call the round uses). The system prompt tells the model to use these lines silently.",
+        "SYSTEM_PROMPT asks replies to follow the user's language and script (English, Telugu, Hindi or a mix); keep that sentence when editing the prompt. A Default reply language line from the family directory overrides that default.",
+        "AgentRequest.voice is the spoken-reply flag. It adds SPOKEN_REPLY_LINE to the per-turn stamp, never to the system prompt, and reaches Agent.run and Agent.stream unchanged.",
+        "Agent takes a FamilyDirectory (default NoFamilyDirectory) and reads it once per turn for the Family block; see the family topic."
       ],
       "tests": [
         "apps/backend/tests/test_agent.py",
@@ -470,7 +475,8 @@
         "Embedding never blocks or fails a turn; the scheduler tick backfills.",
         "Dimension is coupled to vector(768), VED_EMBEDDING_DIMENSIONS and the model.",
         "nomic-embed-text uses search_document: and search_query: prefixes.",
-        "memory.search and documents.search only return the calling user's messages and passages."
+        "memory.search and documents.search only return the calling user's messages and passages.",
+        "family.remember and family.notes live in the memory server but read and write family_notes, which is shared by everyone; see the family topic."
       ],
       "tests": [
         "apps/backend/tests/test_indexing.py",
@@ -630,7 +636,8 @@
         "packages/ved-db/src/ved_db/__init__.py",
         "apps/backend/src/ved_backend/models.py",
         "apps/backend/migrations/",
-        "apps/backend/migrations/versions/b41e7c9d2a6f_add_llm_usage_and_balance.py"
+        "apps/backend/migrations/versions/b41e7c9d2a6f_add_llm_usage_and_balance.py",
+        "apps/backend/migrations/versions/d7a3f0b8c215_add_family_notes.py"
       ],
       "symbols": [
         "Base",
@@ -641,7 +648,9 @@
         "User",
         "owner_column",
         "LlmUsage",
-        "LlmBalance"
+        "LlmBalance",
+        "FamilyNote",
+        "FAMILY_NOTE_MAX_LENGTH"
       ],
       "settings": [
         "VED_DATABASE_URL",
@@ -653,7 +662,8 @@
         "Autogenerate misses sequences and the vector extension; read and round-trip every migration.",
         "Test schema setup goes only through ved_db.testing; it refuses a database without 'test' in its name.",
         "users owns people, reminders, push_subscriptions, conversations and documents via non-null indexed user_id; messages and chunks inherit through their parent.",
-        "Person names are unique per (user_id, lower(name)); documents per (user_id, sha256)."
+        "Person names are unique per (user_id, lower(name)); documents per (user_id, sha256).",
+        "family_notes (id, text 1-1000 chars, author_user_id SET NULL, created_at) is shared across users, not owned by one; it has no user_id owner column."
       ]
     },
     "connector": {
@@ -688,7 +698,10 @@
         "transcribe",
         "agentMessageBody",
         "ReplyOptions",
-        "SpeakOptions"
+        "SpeakOptions",
+        "family",
+        "familyNotes",
+        "deleteFamilyNote"
       ],
       "settings": [
         "NEXT_PUBLIC_VED_API_URL"
@@ -715,7 +728,10 @@
         "GET /voice/voices",
         "POST /voice/speak",
         "POST /voice/transcribe",
-        "POST /agent/message/stream and POST /agent/message accept voice: true"
+        "POST /agent/message/stream and POST /agent/message accept voice: true",
+        "GET /family",
+        "GET /family/notes",
+        "DELETE /family/notes/{id}"
       ]
     },
     "web-ui": {
@@ -751,7 +767,9 @@
         "apps/web-client/src/app/settings/settings-panel.tsx",
         "apps/web-client/src/app/settings/settings.module.css",
         "apps/web-client/src/app/settings/claude-usage.tsx",
-        "apps/web-client/src/app/settings/claude-usage.module.css"
+        "apps/web-client/src/app/settings/claude-usage.module.css",
+        "apps/web-client/src/app/settings/what-ved-knows.tsx",
+        "apps/web-client/src/app/settings/what-ved-knows.module.css"
       ],
       "rules": [
         "Check node_modules/next/dist/docs/ before writing Next code.",
@@ -766,7 +784,7 @@
         "The typing indicator (TypingIndicator in chat.tsx) shows three CSS-animated dots from send until the first reply text, with the tool, acknowledgement or thinking label beside them, and in the answering placeholder after a refresh. It has role=status and aria-label=\"Ved is typing\", and reduced motion swaps the bounce for an opacity pulse.",
         "Connections lives in Settings (/settings#integrations); /connections redirects there. It calls connector.* only, shows a per-connection on/off switch, Test and Remove, and offers the Plan and MyFinances presets or a custom server.",
         "The home top bar holds conversations, new conversation and a gear to /settings, plus a backend status dot whose tooltip and aria-label carry the full status text. The reminder banner appears only while reminders are off or failed and links to /settings#notifications.",
-        "Settings (/settings) has sections Integrations, Claude usage, Notifications, Install app, Appearance, Voice and About, in that order; each section id is a hash target.",
+        "Settings (/settings) has sections Integrations, What Ved knows, Claude usage, Notifications, Install app, Appearance, Voice and About, in that order; each section id is a hash target.",
         "The theme is stored under localStorage key ved.theme (system, light or dark). THEME_INIT_SCRIPT in the layout head sets data-theme before paint; globals.css lets data-theme override prefers-color-scheme.",
         "The mic and speaker controls exist only when the browser supports them; see the read-aloud topic."
       ],
@@ -798,7 +816,8 @@
         "readThemeChoice",
         "writeThemeChoice",
         "THEME_INIT_SCRIPT",
-        "promptInstall"
+        "promptInstall",
+        "WhatVedKnows"
       ],
       "settings": [
         "NEXT_PUBLIC_VED_API_URL",
@@ -856,7 +875,9 @@
         "VED_ACCESS_TEAM_DOMAIN",
         "VED_ACCESS_AUD",
         "VED_ADMIN_EMAILS",
-        "VED_VOICE_URL"
+        "VED_VOICE_URL",
+        "VED_FAMILY_DIRECTORY_URL",
+        "VED_FAMILY_DIRECTORY_TOKEN"
       ],
       "rules": [
         "Every port binds to 127.0.0.1.",
@@ -867,7 +888,8 @@
         "The ollama service is behind the server compose profile, publishes no port and is capped at 4.5 GB.",
         "compose.server.yaml is the only file that attaches services to the external 'home' network; ./ved server passes it, nothing else does.",
         "The web and backend containers use container_name ved-web and ved-backend; the tunnel reaches ved-web:3000 on home.",
-        "The voice service (ved-voice, apps/voice) publishes no port and is capped at 1536 MB. It is in the default profile, so ./ved server builds and starts it."
+        "The voice service (ved-voice, apps/voice) publishes no port and is capped at 1536 MB. It is in the default profile, so ./ved server builds and starts it.",
+        "The backend reaches home-admin at http://home-admin:3470/api/family over the 'home' network; ./ved set-family-token <file> writes VED_FAMILY_DIRECTORY_TOKEN into infra/.env and restarts the backend."
       ]
     },
     "server": {
@@ -970,7 +992,8 @@
         "packages/ved-db/src/ved_db/models.py",
         "apps/web-client/src/app/use-person.ts",
         "apps/backend/src/ved_backend/connections.py",
-        "apps/backend/tests/test_connections.py"
+        "apps/backend/tests/test_connections.py",
+        "apps/backend/src/ved_backend/family.py"
       ],
       "symbols": [
         "User",
@@ -987,7 +1010,10 @@
         "add_user",
         "speaker_label",
         "UNKNOWN_NAME_LINE",
-        "is_owner"
+        "is_owner",
+        "Speaker",
+        "speaker_for",
+        "UserDirectory.adopt_name"
       ],
       "endpoints": [
         "GET /me"
@@ -1005,7 +1031,7 @@
         "Birthday reminders and check-ins inherit the person's owner; push goes only to the owner's subscriptions.",
         "A push endpoint belongs to one user; subscribing from another account moves it.",
         "MCP connections belong to one user and are listed, tested, changed and deleted only by that user.",
-        "speaker_label never returns the email: a named user is 'You are talking with {name}.', an unnamed one gets a line asking for the name once and saving it with people.remember (there is no memory save tool)."
+        "speaker_label never returns the email: a person found in the family directory is 'You are talking with {directory name} (the owner's {relation}).', otherwise a named user is 'You are talking with {name}.' and an unnamed one gets a line asking for the name once and saving it with people.remember (there is no memory save tool). See the family topic."
       ],
       "tests": [
         "apps/backend/tests/test_users.py",
@@ -1019,7 +1045,8 @@
         "mcp-servers/people/tests",
         "mcp-servers/reminders/tests",
         "mcp-servers/memory/tests",
-        "apps/backend/tests/test_connections.py"
+        "apps/backend/tests/test_connections.py",
+        "apps/backend/tests/test_family.py"
       ]
     },
     "connections": {
@@ -1063,7 +1090,7 @@
         "Connection tokens are Fernet-encrypted with VED_SECRET_KEY and never returned; responses carry has_token only.",
         "Without VED_SECRET_KEY, connection writes return 503 and only the owner's VED_PLAN_MCP_TOKEN fallback is served.",
         "Every connection query filters by user_id; another person's connection is a 404.",
-        "Names are 2-20 lowercase slugs and may not be a built-in prefix (memory, documents, web, people, reminders).",
+        "Names are 2-20 lowercase slugs and may not be a built-in prefix (memory, documents, family, web, people, reminders).",
         "A connection's name is its tool prefix; delete_* tools from any remote server are never exposed.",
         "plan keeps the VED_EXPOSED_TOOLS allowlist; other connections expose non-destructive tools in name order, capped at 15 (40 under anthropic).",
         "A user with an enabled plan connection (or the owner fallback) has Ved's reminders.* tools hidden from the model; the reminders server still runs.",
@@ -1260,6 +1287,87 @@
         "apps/backend/tests/test_voice.py",
         "apps/backend/tests/test_agent.py",
         "apps/backend/tests/test_agent_endpoint.py"
+      ]
+    },
+    "family": {
+      "summary": "Ved knows the family: a cached read-only directory from home-admin, who is speaking, the Family block in the system prompt, opt-in shared family notes, and the What Ved knows page.",
+      "files": [
+        "apps/backend/src/ved_backend/family.py",
+        "apps/backend/src/ved_backend/family_notes.py",
+        "apps/backend/src/ved_backend/users.py",
+        "apps/backend/src/ved_backend/agent.py",
+        "apps/backend/src/ved_backend/main.py",
+        "apps/backend/src/ved_backend/schemas.py",
+        "apps/backend/src/ved_backend/config.py",
+        "apps/backend/migrations/versions/d7a3f0b8c215_add_family_notes.py",
+        "packages/ved-db/src/ved_db/models.py",
+        "mcp-servers/memory/src/ved_memory/family.py",
+        "mcp-servers/memory/src/ved_memory/server.py",
+        "apps/web-client/src/app/settings/what-ved-knows.tsx",
+        "apps/web-client/src/app/settings/what-ved-knows.module.css",
+        "apps/web-client/src/connector/index.ts",
+        "apps/web-client/src/connector/types.ts",
+        "infra/compose.yaml",
+        "infra/.env.example",
+        "apps/backend/.env.example",
+        "ved"
+      ],
+      "symbols": [
+        "FamilyDirectory",
+        "HomeAdminFamilyDirectory",
+        "NoFamilyDirectory",
+        "build_family_directory",
+        "Family",
+        "FamilyPerson",
+        "family_block",
+        "Speaker",
+        "speaker_for",
+        "speaker_label",
+        "UserDirectory.adopt_name",
+        "system_prompt_for",
+        "reply_language_line",
+        "REPLY_LANGUAGE_NAMES",
+        "FamilyNote",
+        "FAMILY_NOTE_MAX_LENGTH",
+        "FamilyNoteStore",
+        "FamilyNoteNotFoundError",
+        "NotNoteAuthorError",
+        "family.remember",
+        "family.notes",
+        "WhatVedKnows",
+        "familyNotes",
+        "deleteFamilyNote"
+      ],
+      "endpoints": [
+        "GET /family",
+        "GET /family/notes",
+        "DELETE /family/notes/{note_id}"
+      ],
+      "settings": [
+        "VED_FAMILY_DIRECTORY_URL",
+        "VED_FAMILY_DIRECTORY_TOKEN"
+      ],
+      "rules": [
+        "The directory is home-admin's GET /api/family with a Bearer token. Relations are relative to the owner (relation \"self\"). An empty VED_FAMILY_DIRECTORY_TOKEN turns the feature off and the directory is empty.",
+        "FamilyDirectory is a Protocol (current, aclose). HomeAdminFamilyDirectory fetches with a 3 s timeout, caches 5 minutes, keeps the last good copy on any error and waits 30 s before retrying a failure. It never logs the token or emails.",
+        "A signed-in user is matched to a directory person by email, case-insensitively. A match changes speaker_label to 'You are talking with {name} (the owner's {relation}).', sets User.name once when it is empty (UserDirectory.adopt_name, never overwrites) and passes the person's language (en, te, hi) to Agent as reply_language. No email ever reaches a prompt or a label.",
+        "reply_language adds a 'Default reply language' line to the per-turn stamp, after the user line, so spoken replies follow it too. The Telugu name says Telugu script.",
+        "The system prompt is SYSTEM_PROMPT plus the Family block (system_prompt_for), identical for every speaker and turn while the directory is unchanged: owner first, then by name; nicknames sorted; names, nicknames, relation to the owner and birthday day and month only, no emails or ids. Per-speaker facts ride on the stamp, never in the system prompt, so prompt caching holds.",
+        "SYSTEM_PROMPT teaches nicknames and relative relations, never revealing one person's conversations, memory, documents, people or reminders to another, and that family notes are saved only on a clear 'for everyone' signal and the model says what it saved.",
+        "family_notes is shared and global: anyone reads every note (family.notes, max 100, newest first, case-insensitive query, author display name), the author is users.name or 'Someone'. author_user_id is SET NULL when a user is deleted. Text is 1 to 1000 characters.",
+        "The model has no tool to delete or edit a family note. A person deletes their own note from the web page (DELETE /family/notes/{id}): 404 when it does not exist, 403 when someone else wrote it or its author is gone.",
+        "GET /family returns people (name, nicknames, relation, birthday month and day, language), me (the caller's match or null) and owner_name. It never returns emails or birth years.",
+        "Settings > What Ved knows (/settings#what-ved-knows) shows who Ved thinks you are, the family list and the notes; empty directory shows 'Ved doesn't know your family yet. The household admin can add people in home-admin.'",
+        "'family' is a built-in tool prefix (BUILT_IN_SERVERS, BUILT_IN_PREFIXES); a connection cannot take that name. ./ved set-family-token <file> stores the token in infra/.env on the server."
+      ],
+      "tests": [
+        "apps/backend/tests/test_family.py",
+        "apps/backend/tests/test_family_notes.py",
+        "apps/backend/tests/test_agent.py",
+        "apps/backend/tests/test_agent_endpoint.py",
+        "apps/backend/tests/test_migration.py",
+        "mcp-servers/memory/tests/test_family.py",
+        "mcp-servers/memory/tests/test_parse.py"
       ]
     }
   }

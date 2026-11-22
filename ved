@@ -343,6 +343,20 @@ cmd_set_plan_token() {
   server_compose up -d backend
 }
 
+cmd_set_family_token() {
+  local token_file="${1:-}" token
+  [ -n "$token_file" ] || fail "usage: ./ved set-family-token <file>"
+  [ -f "$token_file" ] || fail "no such file: $token_file"
+  token="$(tr -d '[:space:]' <"$token_file")"
+  [ -n "$token" ] || fail "$token_file is empty. Use FAMILY_DIRECTORY_TOKEN from home-admin"
+  is_macos && fail "set-family-token restarts the backend container on the home server. On the Mac set VED_FAMILY_DIRECTORY_TOKEN in apps/backend/.env"
+  [ -f "$INFRA/.env" ] || fail "infra/.env missing. Run ./ved server first."
+  say "writing VED_FAMILY_DIRECTORY_TOKEN into infra/.env"
+  set_env_value "$INFRA/.env" VED_FAMILY_DIRECTORY_TOKEN "$token"
+  say "restarting the backend so it picks up the token"
+  server_compose up -d backend
+}
+
 cmd_set_anthropic_key() {
   local key_file="${1:-}" key old_model
   [ -n "$key_file" ] || fail "usage: ./ved set-anthropic-key <file>"
@@ -542,6 +556,8 @@ Home server (Linux, see docs/server.md)
             apply migrations and wait until backend and web answer
   server-eval <model>...  Pull each model and score it on Ved's tool calls
   set-plan-token <file>  Store Plan's API token from a file and restart the backend
+  set-family-token <file>  Store home-admin's family directory token from a file and
+                         restart the backend
   set-anthropic-key <file>  Answer with Claude Haiku 5.5 using the Anthropic key in
             the file (starts with sk-ant-) and restart the backend
   use-local-model  Answer with the local model again and restart the backend
@@ -563,6 +579,7 @@ case "${1:-help}" in
   server) cmd_server ;;
   server-eval) shift; cmd_server_eval "$@" ;;
   set-plan-token) shift; cmd_set_plan_token "$@" ;;
+  set-family-token) shift; cmd_set_family_token "$@" ;;
   set-anthropic-key) shift; cmd_set_anthropic_key "$@" ;;
   use-local-model) cmd_use_local_model ;;
   model) cmd_model ;;

@@ -78,6 +78,8 @@ services:
       VED_PLAN_MCP_URL: ${VED_PLAN_MCP_URL:-http://family-planner:3456/api/mcp}
       VED_VOICE_URL: ${VED_VOICE_URL:-http://ved-voice:8300}
       VED_PLAN_MCP_TOKEN: ${VED_PLAN_MCP_TOKEN:-}
+      VED_FAMILY_DIRECTORY_URL: ${VED_FAMILY_DIRECTORY_URL:-http://home-admin:3470/api/family}
+      VED_FAMILY_DIRECTORY_TOKEN: ${VED_FAMILY_DIRECTORY_TOKEN:-}
       VED_SECRET_KEY: ${VED_SECRET_KEY:-}
     volumes:
       - documents:/app/data/documents
