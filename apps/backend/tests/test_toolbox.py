@@ -483,7 +483,7 @@ def test_exposed_tools_default_and_parse_from_a_comma_list():
 
     assert "memory.search" in defaults.exposed_tools
     assert "reminders.create" in defaults.exposed_tools
-    assert len(defaults.exposed_tools) == 14
+    assert len(defaults.exposed_tools) == 16
     assert parsed.exposed_tools == ["memory.search", "web.fetch"]
 
 

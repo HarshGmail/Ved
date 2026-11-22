@@ -38,6 +38,16 @@ from ved_backend.connections import (
 from ved_backend.database import engine, session_factory
 from ved_backend.documents import DocumentLibrary, DocumentNotFoundError
 from ved_backend.extraction import UnsupportedDocumentError
+from ved_backend.family import (
+    FamilyDirectory,
+    FamilyPerson,
+    build_family_directory,
+)
+from ved_backend.family_notes import (
+    FamilyNoteNotFoundError,
+    FamilyNoteStore,
+    NotNoteAuthorError,
+)
 from ved_backend.indexing import DocumentIndexer, MessageIndexer
 from ved_backend.llm import ANTHROPIC, build_embedder, build_provider
 from ved_backend.llm.base import LLMProvider, LLMRequestError, Message
@@ -64,6 +74,10 @@ from ved_backend.schemas import (
     ConversationTranscript,
     DocumentList,
     DocumentSummary,
+    FamilyNoteList,
+    FamilyNoteSummary,
+    FamilyOverview,
+    FamilyPersonSummary,
     HealthStatus,
     MeResponse,
     PushStatus,
@@ -95,7 +109,13 @@ from ved_backend.uploads import (
     UploadTooLargeError,
 )
 from ved_backend.usage import UsageStore, money, money_or_none
-from ved_backend.users import CurrentUser, UserDirectory, is_owner, speaker_label
+from ved_backend.users import (
+    CurrentUser,
+    Speaker,
+    UserDirectory,
+    is_owner,
+    speaker_for,
+)
 from ved_backend.voice import (
     MAX_AUDIO_BYTES,
     UNAVAILABLE_MESSAGE,
@@ -113,6 +133,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 NO_TOOLS_MESSAGE = "No MCP servers are connected, so Ved cannot act yet."
+NOTE_NOT_FOUND_MESSAGE = "That family note does not exist."
+NOT_NOTE_AUTHOR_MESSAGE = "Only the person who wrote a family note can delete it."
 NOT_OWNER_BALANCE_MESSAGE = "Only the owner can change the Claude balance."
 UNEXPECTED_STREAM_FAILURE = "Ved hit an unexpected error while answering."
 
@@ -158,6 +180,11 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     application.state.llm = provider
     application.state.connections = connections
     application.state.users = UserDirectory(session_factory)
+    family = build_family_directory(
+        settings.family_directory_url, settings.family_directory_token
+    )
+    application.state.family = family
+    application.state.family_notes = FamilyNoteStore(session_factory)
     application.state.conversations = ConversationStore(
         session_factory, history_limit=settings.conversation_history_limit
     )
@@ -200,6 +227,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         toolbox,
         max_tool_rounds=settings.agent_max_tool_rounds,
         timezone=settings.timezone,
+        family=family,
     )
     logger.info(
         "Agent ready on %s with %d built-in tools", provider.model, len(toolbox.tools)
@@ -220,6 +248,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         if closer is not None:
             await closer()
         await application.state.voice.aclose()
+        await family.aclose()
         await toolbox.aclose()
         await engine.dispose()
 
@@ -303,6 +332,15 @@ async def set_claude_balance(
     return await claude_usage_for(user)
 
 
+async def identify_speaker(user: User) -> Speaker:
+    family: FamilyDirectory = app.state.family
+    person = (await family.current()).person_for_email(user.email)
+    if person is not None and not user.name:
+        directory: UserDirectory = app.state.users
+        await directory.adopt_name(user.id, person.name)
+    return speaker_for(user, person)
+
+
 async def conversation_history(
     request: AgentRequest, user: CurrentUser
 ) -> list[Message]:
@@ -365,13 +403,15 @@ async def agent_message(
     request: AgentRequest, history: History, user: CurrentUser
 ) -> AgentReply:
     agent: Agent = app.state.agent
+    speaker = await identify_speaker(user)
     try:
         turn = await agent.run(
             request.prompt,
             history,
             user_id=user.id,
-            user_line=speaker_label(user),
+            user_line=speaker.line,
             spoken=request.voice,
+            reply_language=speaker.language,
         )
     except LLMRequestError as error:
         logger.warning("LLM unreachable: %s", error)
@@ -391,7 +431,7 @@ TurnGuard = Annotated[None, Depends(ensure_turn_can_run)]
 
 
 async def stream_turn(
-    user_id: uuid.UUID, user_line: str, request: AgentRequest
+    user_id: uuid.UUID, speaker: Speaker, request: AgentRequest
 ) -> AsyncIterator[TurnItem]:
     agent: Agent = app.state.agent
     store: ConversationStore = app.state.conversations
@@ -406,8 +446,9 @@ async def stream_turn(
                 request.prompt,
                 history,
                 user_id=user_id,
-                user_line=user_line,
+                user_line=speaker.line,
                 spoken=request.voice,
+                reply_language=speaker.language,
             )
         ) as events:
             async for event in events:
@@ -437,10 +478,11 @@ async def agent_message_stream(
 ) -> AsyncIterable[ServerSentEvent]:
     turns: TurnRegistry = app.state.turns
     conversation_key = request.conversation_id or uuid.uuid4()
+    speaker = await identify_speaker(user)
     items = turns.start(
         user.id,
         conversation_key,
-        lambda: stream_turn(user.id, speaker_label(user), request),
+        lambda: stream_turn(user.id, speaker, request),
     )
     while (item := await items.get()) is not None:
         yield server_sent_event(item)
@@ -622,6 +664,64 @@ async def delete_document(document_id: uuid.UUID, user: CurrentUser) -> None:
     except DocumentNotFoundError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
+        ) from error
+
+
+def family_person_summary(person: FamilyPerson) -> FamilyPersonSummary:
+    month_day = person.birth_month_day
+    return FamilyPersonSummary(
+        id=person.id,
+        name=person.name,
+        aliases=person.aliases,
+        relation=person.relation,
+        birthday_month=month_day[0] if month_day else None,
+        birthday_day=month_day[1] if month_day else None,
+        language=person.language,
+    )
+
+
+@app.get("/family")
+async def read_family(user: CurrentUser) -> FamilyOverview:
+    family = await app.state.family.current()
+    me = family.person_for_email(user.email)
+    owner = family.owner
+    return FamilyOverview(
+        people=[family_person_summary(person) for person in family.people],
+        me=family_person_summary(me) if me else None,
+        owner_name=owner.name if owner else None,
+    )
+
+
+@app.get("/family/notes")
+async def list_family_notes(user: CurrentUser) -> FamilyNoteList:
+    store: FamilyNoteStore = app.state.family_notes
+    entries = await store.recent()
+    return FamilyNoteList(
+        notes=[
+            FamilyNoteSummary(
+                id=entry.id,
+                text=entry.text,
+                author_name=entry.author_name,
+                created_at=entry.created_at,
+                mine=entry.author_user_id == user.id,
+            )
+            for entry in entries
+        ]
+    )
+
+
+@app.delete("/family/notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_family_note(note_id: uuid.UUID, user: CurrentUser) -> None:
+    store: FamilyNoteStore = app.state.family_notes
+    try:
+        await store.delete(user.id, note_id)
+    except FamilyNoteNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=NOTE_NOT_FOUND_MESSAGE
+        ) from error
+    except NotNoteAuthorError as error:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=NOT_NOTE_AUTHOR_MESSAGE
         ) from error
 
 
