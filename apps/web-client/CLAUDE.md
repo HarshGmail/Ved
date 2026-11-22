@@ -21,6 +21,11 @@ Next.js 16 App Router + TypeScript PWA. Look topics up in
   `connector.conversationStatus` every 3 s and reloads when it finishes.
 - **The open conversation lives in the URL as `?c=<id>`**, written with
   `history.pushState`. `useSearchParams` needs a `<Suspense>` boundary.
+- **Settings has a "What Ved knows" section** (`settings/what-ved-knows.tsx`):
+  who Ved thinks you are, the family list and the shared family notes. It reads
+  `connector.family()` and `connector.familyNotes()`; only your own notes show
+  Delete (`connector.deleteFamilyNote`). The directory is edited in home-admin,
+  never here.
 - **Assistant replies render as markdown** through `markdown-reply.tsx`. Raw
   HTML is never rendered; links open with `rel="noopener noreferrer"`.
 - **Every icon is generated from `assets/ved-mark.png`** by

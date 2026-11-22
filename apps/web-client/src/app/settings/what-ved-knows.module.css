@@ -1,0 +1,152 @@
+.body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.block {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.block + .block {
+  padding-top: 0.75rem;
+  border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.heading {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  opacity: 0.75;
+  overflow-wrap: anywhere;
+}
+
+.details {
+  min-width: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.detail {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.125rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+.detailLabel {
+  opacity: 0.6;
+}
+
+.detailValue {
+  min-width: 0;
+  margin: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.muted,
+.hint,
+.error {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.muted {
+  opacity: 0.7;
+}
+
+.hint {
+  font-size: 0.8125rem;
+  opacity: 0.6;
+}
+
+.error {
+  color: var(--danger);
+}
+
+.list {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.item {
+  min-width: 0;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  border-radius: 0.75rem;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  background: color-mix(in srgb, currentColor 3%, transparent);
+}
+
+.itemTitle {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.itemMeta {
+  min-width: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  opacity: 0.65;
+  overflow-wrap: anywhere;
+}
+
+.noteText {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.noteFoot {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.danger {
+  flex: none;
+  min-height: 2.75rem;
+  margin: -0.375rem -0.25rem -0.375rem 0;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--danger);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.danger:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.danger:focus-visible {
+  outline: 2px solid color-mix(in srgb, currentColor 45%, transparent);
+  outline-offset: 2px;
+}

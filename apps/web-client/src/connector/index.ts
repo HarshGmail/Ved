@@ -26,6 +26,8 @@ import type {
   ConversationTranscript,
   DocumentList,
   DocumentSummary,
+  FamilyNoteList,
+  FamilyOverview,
   HealthStatus,
   Me,
   PushStatus,
@@ -208,6 +210,19 @@ export function createConnector(overrides: Partial<ConnectorConfig> = {}) {
         path: `/documents/${documentId}`,
         ...options,
       }),
+    family: (options: Pick<RequestOptions, "signal"> = {}) =>
+      request<FamilyOverview>({ path: "/family", ...options }),
+    familyNotes: (options: Pick<RequestOptions, "signal"> = {}) =>
+      request<FamilyNoteList>({ path: "/family/notes", ...options }),
+    deleteFamilyNote: (
+      noteId: string,
+      options: Pick<RequestOptions, "signal"> = {},
+    ) =>
+      request<null>({
+        method: "DELETE",
+        path: `/family/notes/${noteId}`,
+        ...options,
+      }),
     listConnections: (options: Pick<RequestOptions, "signal"> = {}) =>
       request<McpConnectionList>({ path: "/connections", ...options }),
     listConnectionPresets: (options: Pick<RequestOptions, "signal"> = {}) =>
@@ -303,6 +318,10 @@ export type {
   DocumentList,
   DocumentStatus,
   DocumentSummary,
+  FamilyNote,
+  FamilyNoteList,
+  FamilyOverview,
+  FamilyPerson,
   HealthStatus,
   Me,
   PushStatus,
