@@ -20,7 +20,8 @@ Day to day, use `./ved` from the repo root rather than calling compose directly.
   on the Linux server. The Mac never names it, so `./ved db` and `./ved api` are unchanged.
 - **The backend reads the family directory from `home-admin`** over that `home`
   network (`VED_FAMILY_DIRECTORY_URL`). The token lives only in `infra/.env`
-  (`./ved set-family-token <file>`); empty turns the feature off.
+  (`./ved set-family-token <file>`, or copied automatically by `./ved server`
+  from `~/home-admin/.env`); empty turns the feature off.
 
 ## The home server
 
