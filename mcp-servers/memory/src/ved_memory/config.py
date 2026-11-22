@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     search_default_limit: int = 5
     search_max_limit: int = 20
     documents_list_limit: int = 100
+    family_notes_limit: int = 100
 
 
 settings = Settings()
