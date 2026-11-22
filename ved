@@ -30,6 +30,7 @@ ANTHROPIC_MODEL="claude-haiku-5-5"
 EMBEDDING_MODEL="nomic-embed-text"
 SERVER_WAIT_SECONDS=300
 SERVER_COMPOSE_FILE="compose.server.yaml"
+HOME_ADMIN_ENV="${VED_HOME_ADMIN_ENV:-$HOME/home-admin/.env}"
 
 say() { printf '\033[1m==> %s\033[0m\n' "$*"; }
 fail() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -253,6 +254,7 @@ ensure_server_env() {
   ensure_push_keys
   ensure_server_secret_key
   ensure_infra_env_value VED_LLM_BASE_URL "http://ollama:11434/v1"
+  adopt_family_directory_token
   if uses_anthropic; then
     return 0
   fi
@@ -262,6 +264,16 @@ ensure_server_env() {
     say "using $SERVER_MODEL as the chat model; $DEFAULT_MODEL is too large for this server"
     set_env_value "$INFRA/.env" VED_LLM_MODEL "$SERVER_MODEL"
   fi
+}
+
+adopt_family_directory_token() {
+  local shared
+  [ -f "$HOME_ADMIN_ENV" ] || return 0
+  shared="$(infra_env_value "$HOME_ADMIN_ENV" FAMILY_DIRECTORY_TOKEN)"
+  [ -n "$shared" ] || return 0
+  [ "$shared" = "$(infra_env_value "$INFRA/.env" VED_FAMILY_DIRECTORY_TOKEN)" ] && return 0
+  say "using home-admin's family directory token from $HOME_ADMIN_ENV"
+  set_env_value "$INFRA/.env" VED_FAMILY_DIRECTORY_TOKEN "$shared"
 }
 
 uses_anthropic() {

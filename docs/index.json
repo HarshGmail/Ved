@@ -889,7 +889,7 @@
         "compose.server.yaml is the only file that attaches services to the external 'home' network; ./ved server passes it, nothing else does.",
         "The web and backend containers use container_name ved-web and ved-backend; the tunnel reaches ved-web:3000 on home.",
         "The voice service (ved-voice, apps/voice) publishes no port and is capped at 1536 MB. It is in the default profile, so ./ved server builds and starts it.",
-        "The backend reaches home-admin at http://home-admin:3470/api/family over the 'home' network; ./ved set-family-token <file> writes VED_FAMILY_DIRECTORY_TOKEN into infra/.env and restarts the backend."
+        "The backend reaches home-admin at http://home-admin:3470/api/family over the 'home' network; ./ved set-family-token <file> writes VED_FAMILY_DIRECTORY_TOKEN into infra/.env and restarts the backend. ./ved server copies FAMILY_DIRECTORY_TOKEN from ~/home-admin/.env (VED_HOME_ADMIN_ENV) when it differs, so deploys set it up without a shell."
       ]
     },
     "server": {
