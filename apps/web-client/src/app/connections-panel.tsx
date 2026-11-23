@@ -12,7 +12,15 @@ import styles from "./connections.module.css";
 const NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const NAME_MIN_LENGTH = 2;
 const NAME_MAX_LENGTH = 20;
-const RESERVED_NAMES = new Set(["memory", "documents", "family", "web", "people", "reminders"]);
+const RESERVED_NAMES = new Set([
+  "memory",
+  "documents",
+  "family",
+  "notes",
+  "web",
+  "people",
+  "reminders",
+]);
 const CUSTOM_KEY = "custom";
 const CUSTOM_LABEL = "Custom MCP server";
 const CUSTOM_DESCRIPTION = "Any MCP server that takes a token";

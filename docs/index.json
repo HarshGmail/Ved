@@ -14,7 +14,8 @@
     "home_server": "noddy: containerised setup via ./ved server written, not yet run there; Cloudflare tunnel hostname and streaming through it unconfirmed; auth, unattended running and backups not built yet",
     "per_user_data": "done: users table, Access email picks the user, chats, memory, documents, people, reminders and push are per person; owner from VED_OWNER_EMAIL",
     "claude_provider": "done: Claude Haiku 5.5 through Anthropic's SDK behind VED_LLM_PROVIDER=anthropic, with the person's MCP connections exposed to it; Ved's connection-aware stamp and no-email labels; Settings shows Claude credit left, counted from each response's usage against an owner-entered balance.",
-    "family_directory": "done: Ved reads the household directory from home-admin (VED_FAMILY_DIRECTORY_URL/TOKEN), knows who is speaking and replies in their language, lists the family in the system prompt, shares opt-in family notes (family.remember / family.notes) and shows it all under Settings > What Ved knows"
+    "family_directory": "done: Ved reads the household directory from home-admin (VED_FAMILY_DIRECTORY_URL/TOKEN), knows who is speaking and replies in their language, lists the family in the system prompt, shares opt-in family notes (family.remember / family.notes) and shows it all under Settings > What Ved knows",
+    "private_notes": "done: 'remember this just for me' saves a per-user private note (notes.remember / notes.recall); Settings > What Ved knows lists them above the family notes with Delete"
   },
   "topics": {
     "agent-loop": {
@@ -447,6 +448,60 @@
         "apps/backend/tests/test_checkins.py"
       ]
     },
+    "private-notes": {
+      "summary": "Private notes: a per-user note store the model writes by default when asked to remember something, read back with notes.recall, listed and deleted on the What Ved knows page.",
+      "files": [
+        "packages/ved-db/src/ved_db/models.py",
+        "apps/backend/migrations/versions/e5b8c2a97d41_add_private_notes.py",
+        "mcp-servers/memory/src/ved_memory/notes.py",
+        "mcp-servers/memory/src/ved_memory/server.py",
+        "apps/backend/src/ved_backend/private_notes.py",
+        "apps/backend/src/ved_backend/main.py",
+        "apps/backend/src/ved_backend/schemas.py",
+        "apps/backend/src/ved_backend/agent.py",
+        "apps/backend/src/ved_backend/config.py",
+        "apps/backend/src/ved_backend/connections.py",
+        "apps/backend/src/ved_backend/acknowledgements.py",
+        "apps/web-client/src/app/settings/what-ved-knows.tsx",
+        "apps/web-client/src/app/connections-panel.tsx",
+        "apps/web-client/src/connector/index.ts",
+        "apps/web-client/src/connector/types.ts"
+      ],
+      "symbols": [
+        "PrivateNote",
+        "PRIVATE_NOTE_MAX_LENGTH",
+        "PrivateNoteStore",
+        "PrivateNoteNotFoundError",
+        "PRIVATE_NOTES_LIMIT",
+        "notes.remember",
+        "notes.recall",
+        "privateNotes",
+        "deletePrivateNote"
+      ],
+      "endpoints": [
+        "GET /notes",
+        "DELETE /notes/{note_id}"
+      ],
+      "settings": [
+        "VED_EXPOSED_TOOLS"
+      ],
+      "rules": [
+        "private_notes is owned per user (owner_column, ON DELETE CASCADE); text is 1 to 1000 characters with a database check.",
+        "notes.recall returns only the calling user's notes, newest first, max 100, with a case-insensitive literal query (LIKE wildcards escaped). notes.remember trims and returns the saved note.",
+        "The model has no tool to delete or edit a private note. A person deletes their own from the web page; DELETE /notes/{id} is a 404 for a missing note and for someone else's.",
+        "SYSTEM_PROMPT says to save with notes.remember by default, use family.remember only on a clear 'for everyone' signal, check notes.recall and family.notes before saying 'I don't know' about a personal fact, and never reveal one person's notes to another.",
+        "'notes' is a built-in tool prefix (BUILT_IN_SERVERS, BUILT_IN_PREFIXES, the web RESERVED_NAMES); a connection cannot take that name. Both tools are in DEFAULT_EXPOSED_TOOLS."
+      ],
+      "tests": [
+        "apps/backend/tests/test_private_notes.py",
+        "apps/backend/tests/test_migration.py",
+        "apps/backend/tests/test_agent.py",
+        "apps/backend/tests/test_toolbox.py",
+        "apps/backend/tests/test_connections.py",
+        "mcp-servers/memory/tests/test_notes.py",
+        "mcp-servers/memory/tests/test_parse.py"
+      ]
+    },
     "semantic-memory": {
       "summary": "Messages embedded in the background; memory.search finds past conversations by meaning.",
       "files": [
@@ -476,7 +531,8 @@
         "Dimension is coupled to vector(768), VED_EMBEDDING_DIMENSIONS and the model.",
         "nomic-embed-text uses search_document: and search_query: prefixes.",
         "memory.search and documents.search only return the calling user's messages and passages.",
-        "family.remember and family.notes live in the memory server but read and write family_notes, which is shared by everyone; see the family topic."
+        "family.remember and family.notes live in the memory server but read and write family_notes, which is shared by everyone; see the family topic.",
+        "notes.remember and notes.recall also live in the memory server and read and write the per-user private_notes table; see the private-notes topic."
       ],
       "tests": [
         "apps/backend/tests/test_indexing.py",
@@ -1353,7 +1409,7 @@
         "A signed-in user is matched to a directory person by email, case-insensitively. A match changes speaker_label to 'You are talking with {name} (the owner's {relation}).', sets User.name once when it is empty (UserDirectory.adopt_name, never overwrites) and passes the person's language (en, te, hi) to Agent as reply_language. No email ever reaches a prompt or a label.",
         "reply_language adds a 'Default reply language' line to the per-turn stamp, after the user line, so spoken replies follow it too. The Telugu name says Telugu script.",
         "The system prompt is SYSTEM_PROMPT plus the Family block (system_prompt_for), identical for every speaker and turn while the directory is unchanged: owner first, then by name; nicknames sorted; names, nicknames, relation to the owner and birthday day and month only, no emails or ids. Per-speaker facts ride on the stamp, never in the system prompt, so prompt caching holds.",
-        "SYSTEM_PROMPT teaches nicknames and relative relations, never revealing one person's conversations, memory, documents, people or reminders to another, and that family notes are saved only on a clear 'for everyone' signal and the model says what it saved.",
+        "SYSTEM_PROMPT teaches nicknames and relative relations, never revealing one person's conversations, memory, documents, people or reminders to another, and that family notes are saved only on a clear 'for everyone' signal and the model says what it saved; anything else goes to private notes (see the private-notes topic).",
         "family_notes is shared and global: anyone reads every note (family.notes, max 100, newest first, case-insensitive query, author display name), the author is users.name or 'Someone'. author_user_id is SET NULL when a user is deleted. Text is 1 to 1000 characters.",
         "The model has no tool to delete or edit a family note. A person deletes their own note from the web page (DELETE /family/notes/{id}): 404 when it does not exist, 403 when someone else wrote it or its author is gone.",
         "GET /family returns people (name, nicknames, relation, birthday month and day, language), me (the caller's match or null) and owner_name. It never returns emails or birth years.",

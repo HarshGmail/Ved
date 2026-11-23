@@ -13,6 +13,8 @@ import these models through `[tool.uv.sources]` (path, editable).
   documents** through a non-null indexed `user_id`. Messages and chunks inherit
   through their parent; never add `user_id` to them. Names and file hashes are
   unique per user, not globally. Tests add users with `ved_db.testing.add_user`.
+- **`private_notes` is owned per user** (`owner_column`, cascade on delete); no one
+  reads another person's rows.
 - **`family_notes` is the shared exception to per-user ownership.** Its
   `author_user_id` is nullable (`ON DELETE SET NULL`) and is not an owner
   column; every user may read every note.

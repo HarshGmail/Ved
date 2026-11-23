@@ -30,6 +30,7 @@ import type {
   FamilyOverview,
   HealthStatus,
   Me,
+  PrivateNoteList,
   PushStatus,
   PushTestResult,
   ReplyStreamHandlers,
@@ -223,6 +224,17 @@ export function createConnector(overrides: Partial<ConnectorConfig> = {}) {
         path: `/family/notes/${noteId}`,
         ...options,
       }),
+    privateNotes: (options: Pick<RequestOptions, "signal"> = {}) =>
+      request<PrivateNoteList>({ path: "/notes", ...options }),
+    deletePrivateNote: (
+      noteId: string,
+      options: Pick<RequestOptions, "signal"> = {},
+    ) =>
+      request<null>({
+        method: "DELETE",
+        path: `/notes/${noteId}`,
+        ...options,
+      }),
     listConnections: (options: Pick<RequestOptions, "signal"> = {}) =>
       request<McpConnectionList>({ path: "/connections", ...options }),
     listConnectionPresets: (options: Pick<RequestOptions, "signal"> = {}) =>
@@ -324,6 +336,8 @@ export type {
   FamilyPerson,
   HealthStatus,
   Me,
+  PrivateNote,
+  PrivateNoteList,
   PushStatus,
   PushTestResult,
   ReplyStreamHandlers,

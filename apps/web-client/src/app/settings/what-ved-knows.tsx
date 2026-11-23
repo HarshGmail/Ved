@@ -1,7 +1,13 @@
 "use client";
 
 import { type ReactNode, useCallback, useEffect, useState } from "react";
-import { connector, type FamilyNote, type FamilyOverview, type FamilyPerson } from "@/connector";
+import {
+  connector,
+  type FamilyNote,
+  type FamilyOverview,
+  type FamilyPerson,
+  type PrivateNote,
+} from "@/connector";
 import { relativeTime } from "../relative-time";
 import styles from "./what-ved-knows.module.css";
 
@@ -13,6 +19,8 @@ const NOT_RECOGNISED_COPY = "Ved doesn't know who you are yet.";
 const ADMIN_NOTE_COPY = "Edited by the household admin";
 const NO_NOTES_COPY =
   "No family notes yet. Tell Ved something is for everyone and it will show up here.";
+const NO_PRIVATE_NOTES_COPY =
+  "Nothing yet. Say “remember…” and Ved keeps it here, just for you.";
 const DELETE_FAILED_COPY = "Couldn't delete that note.";
 const UNKNOWN_AUTHOR_COPY = "Someone";
 const OWNER_LABEL = "Owner";
@@ -40,6 +48,7 @@ const LANGUAGE_NAMES: Readonly<Record<string, string>> = {
 interface Loaded {
   overview: FamilyOverview;
   notes: FamilyNote[];
+  privateNotes: PrivateNote[];
   loadedAt: number;
 }
 
@@ -126,25 +135,22 @@ function FamilyBlock({ overview }: { overview: FamilyOverview }) {
 }
 
 function NoteCard({
-  note,
-  now,
+  text,
+  meta,
   deleting,
   onDelete,
 }: {
-  note: FamilyNote;
-  now: number;
+  text: string;
+  meta: ReactNode;
   deleting: boolean;
-  onDelete: () => void;
+  onDelete: (() => void) | null;
 }) {
   return (
     <li className={styles.item}>
-      <p className={styles.noteText}>{note.text}</p>
+      <p className={styles.noteText}>{text}</p>
       <div className={styles.noteFoot}>
-        <span className={styles.itemMeta}>
-          {note.author_name ?? UNKNOWN_AUTHOR_COPY} ·{" "}
-          <time dateTime={note.created_at}>{relativeTime(note.created_at, now)}</time>
-        </span>
-        {note.mine && (
+        <span className={styles.itemMeta}>{meta}</span>
+        {onDelete && (
           <button
             type="button"
             className={styles.danger}
@@ -157,6 +163,50 @@ function NoteCard({
         )}
       </div>
     </li>
+  );
+}
+
+function NoteProblem({ problem }: { problem: string | null }) {
+  if (!problem) return null;
+  return (
+    <p className={styles.error} role="alert">
+      {problem}
+    </p>
+  );
+}
+
+function PrivateNotesBlock({
+  notes,
+  now,
+  deletingId,
+  problem,
+  onDelete,
+}: {
+  notes: PrivateNote[];
+  now: number;
+  deletingId: string | null;
+  problem: string | null;
+  onDelete: (note: PrivateNote) => void;
+}) {
+  return (
+    <Block id="knows-private-notes" heading="Private notes — only you can see these">
+      {notes.length === 0 ? (
+        <p className={styles.muted}>{NO_PRIVATE_NOTES_COPY}</p>
+      ) : (
+        <ul className={styles.list}>
+          {notes.map((note) => (
+            <NoteCard
+              key={note.id}
+              text={note.text}
+              meta={<time dateTime={note.created_at}>{relativeTime(note.created_at, now)}</time>}
+              deleting={deletingId === note.id}
+              onDelete={() => onDelete(note)}
+            />
+          ))}
+        </ul>
+      )}
+      <NoteProblem problem={problem} />
+    </Block>
   );
 }
 
@@ -182,19 +232,20 @@ function NotesBlock({
           {notes.map((note) => (
             <NoteCard
               key={note.id}
-              note={note}
-              now={now}
+              text={note.text}
+              meta={
+                <>
+                  {note.author_name ?? UNKNOWN_AUTHOR_COPY} ·{" "}
+                  <time dateTime={note.created_at}>{relativeTime(note.created_at, now)}</time>
+                </>
+              }
               deleting={deletingId === note.id}
-              onDelete={() => onDelete(note)}
+              onDelete={note.mine ? () => onDelete(note) : null}
             />
           ))}
         </ul>
       )}
-      {problem && (
-        <p className={styles.error} role="alert">
-          {problem}
-        </p>
-      )}
+      <NoteProblem problem={problem} />
     </Block>
   );
 }
@@ -204,15 +255,22 @@ export function WhatVedKnows() {
   const [loadProblem, setLoadProblem] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteProblem, setDeleteProblem] = useState<string | null>(null);
+  const [privateDeleteProblem, setPrivateDeleteProblem] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
     Promise.all([
       connector.family({ signal: controller.signal }),
       connector.familyNotes({ signal: controller.signal }),
+      connector.privateNotes({ signal: controller.signal }),
     ]).then(
-      ([overview, listing]) =>
-        setLoaded({ overview, notes: listing.notes, loadedAt: Date.now() }),
+      ([overview, listing, privateListing]) =>
+        setLoaded({
+          overview,
+          notes: listing.notes,
+          privateNotes: privateListing.notes,
+          loadedAt: Date.now(),
+        }),
       (caught: unknown) => {
         if (!controller.signal.aborted) setLoadProblem(describe(caught));
       },
@@ -231,6 +289,25 @@ export function WhatVedKnows() {
       );
     } catch (caught: unknown) {
       setDeleteProblem(`${DELETE_FAILED_COPY} ${describe(caught)}`);
+    } finally {
+      setDeletingId(null);
+    }
+  }, []);
+
+  const deletePrivateNote = useCallback(async (note: PrivateNote) => {
+    if (!window.confirm("Delete this note? Ved will forget it.")) return;
+    setDeletingId(note.id);
+    setPrivateDeleteProblem(null);
+    try {
+      await connector.deletePrivateNote(note.id);
+      setLoaded((current) =>
+        current && {
+          ...current,
+          privateNotes: current.privateNotes.filter((entry) => entry.id !== note.id),
+        },
+      );
+    } catch (caught: unknown) {
+      setPrivateDeleteProblem(`${DELETE_FAILED_COPY} ${describe(caught)}`);
     } finally {
       setDeletingId(null);
     }
@@ -257,6 +334,13 @@ export function WhatVedKnows() {
       ) : (
         <p className={styles.muted}>{NO_FAMILY_COPY}</p>
       )}
+      <PrivateNotesBlock
+        notes={loaded.privateNotes}
+        now={loaded.loadedAt}
+        deletingId={deletingId}
+        problem={privateDeleteProblem}
+        onDelete={deletePrivateNote}
+      />
       <NotesBlock
         notes={loaded.notes}
         now={loaded.loadedAt}
