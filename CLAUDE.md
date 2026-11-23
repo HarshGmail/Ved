@@ -40,6 +40,9 @@ relation to the owner and preferred language (en, te, hi), and lists the househo
 in the system prompt. Anyone can have Ved save a shared family note
 (`family.remember`, opt-in) and read all of them; Settings > What Ved knows shows
 the person, the family and the notes. See the `family` topic in `docs/index.json`.
+When someone says "remember this", Ved saves a private note only they can read
+(`notes.remember`, `notes.recall`; `private-notes` topic), listed and deletable
+under What Ved knows.
 
 Not yet: the permission layer, voice in the web client. Phone access (`./ved
 phone`) is wired but unverified until Tailscale is installed. A home server
@@ -54,7 +57,7 @@ ved                 short commands for everything — ./ved help
 apps/backend/       FastAPI: agent loop, scheduler, memory, documents, push
 apps/web-client/    Next.js 16 PWA; src/connector/ is its only backend client
 apps/voice/         Python: Kokoro text to speech, faster-whisper recognition (ved-voice)
-mcp-servers/        one MCP server per capability: reminders, people, memory (and family notes), web
+mcp-servers/        one MCP server per capability: reminders, people, memory (and family and private notes), web
 packages/ved-db/    the only place database tables are defined
 infra/              Docker Compose: Postgres, SearXNG, backend, DB browser
 docs/               index.json, server.md, master-plan.md, phone-access.md

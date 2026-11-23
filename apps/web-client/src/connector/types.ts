@@ -208,3 +208,13 @@ export interface FamilyNote {
 export interface FamilyNoteList {
   notes: FamilyNote[];
 }
+
+export interface PrivateNote {
+  id: string;
+  text: string;
+  created_at: string;
+}
+
+export interface PrivateNoteList {
+  notes: PrivateNote[];
+}

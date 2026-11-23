@@ -69,7 +69,7 @@ def test_malformed_names_are_rejected(name):
 
 
 @pytest.mark.parametrize(
-    "name", ["memory", "documents", "family", "web", "people", "reminders"]
+    "name", ["memory", "documents", "family", "notes", "web", "people", "reminders"]
 )
 def test_built_in_prefixes_are_reserved(name):
     with pytest.raises(InvalidConnectionError, match="reserved"):

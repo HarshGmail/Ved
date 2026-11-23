@@ -11,6 +11,8 @@ ACKNOWLEDGEMENTS: dict[str, str] = {
     "documents": "Let me check your documents…",
     "family": "Noting that for the family…",
     "family.notes": "Let me check the family notes…",
+    "notes": "Saving that for you…",
+    "notes.recall": "Let me check your notes…",
     "web": "Let me check that…",
 }
 

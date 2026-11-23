@@ -22,6 +22,9 @@ FastAPI, Python 3.13, managed by **uv** — `uv run` handles the venv; never
   serves the last good copy on any error and never logs the token or emails.
   Emails never reach a prompt or `speaker_label`. Family notes are the one
   shared table; the model can write and read them but has no delete tool.
+  Private notes (`private_notes`) are per user: the model saves them by default and
+  has no delete tool; `GET /notes` and `DELETE /notes/{id}` are 404 for anyone
+  else's.
 - **One agent loop, `Agent._events`, serves both endpoints**, so their
   guarantees can't drift. Tool failures go back to the model as `is_error`
   results, never raised. `VED_AGENT_MAX_TOOL_ROUNDS` caps a looping model.

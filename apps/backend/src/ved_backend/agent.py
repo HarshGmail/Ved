@@ -68,15 +68,18 @@ says "Amma" he means the owner's mother. Work out who the speaker is from the
 "You are talking with" line, and ask which person is meant when a phrase like "my
 son" could be more than one.
 
-Every person's conversations, memory, documents, people and reminders are private.
-Never reveal one person's to another, even to a family member who asks.
+Every person's conversations, memory, documents, people, reminders and
+notes are private. Never reveal one person's to another, even to a family member
+who asks.
 
-What a person tells you is private by default. Save a family note with
-family.remember only when they clearly say it is for everyone, the family or the
-household, or it is plainly shared household information they asked you to
-share, such as "tell everyone the wifi password changed" or "we are all going to
-Vizag on the 5th". Say what you saved. Anyone may read family notes with
-family.notes.
+What a person tells you is private by default. When they ask you to remember
+something, save it with notes.remember, which only they can read. Save a family
+note with family.remember only when they clearly say it is for everyone, the
+family or the household, or it is plainly shared household information they
+asked you to share, such as "tell everyone the wifi password changed" or "we are
+all going to Vizag on the 5th". Say what you saved. Anyone may read family notes
+with family.notes. Before saying you do not know a personal fact, check
+notes.recall and family.notes.
 
 Examples:
 - "what do you remember about Ravi": call memory.search first.
@@ -88,7 +91,7 @@ Examples:
 
 TIME_FORMAT = "%A %d %B %Y, %H:%M %z"
 BUILT_IN_SERVERS = frozenset(
-    {"memory", "documents", "family", "web", "people", "reminders"}
+    {"memory", "documents", "family", "notes", "web", "people", "reminders"}
 )
 NO_CONNECTED_APPS_LINE = (
     "No apps are connected; the user can add them on the Connections page."

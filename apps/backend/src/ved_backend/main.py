@@ -52,6 +52,7 @@ from ved_backend.indexing import DocumentIndexer, MessageIndexer
 from ved_backend.llm import ANTHROPIC, build_embedder, build_provider
 from ved_backend.llm.base import LLMProvider, LLMRequestError, Message
 from ved_backend.memory import ConversationNotFoundError, ConversationStore
+from ved_backend.private_notes import PrivateNoteNotFoundError, PrivateNoteStore
 from ved_backend.push import Notification, PushNotConfiguredError, PushService
 from ved_backend.scheduler import ReminderScheduler
 from ved_backend.schemas import (
@@ -80,6 +81,8 @@ from ved_backend.schemas import (
     FamilyPersonSummary,
     HealthStatus,
     MeResponse,
+    PrivateNoteList,
+    PrivateNoteSummary,
     PushStatus,
     PushSubscribeRequest,
     PushTestResult,
@@ -134,6 +137,7 @@ logger = logging.getLogger(__name__)
 
 NO_TOOLS_MESSAGE = "No MCP servers are connected, so Ved cannot act yet."
 NOTE_NOT_FOUND_MESSAGE = "That family note does not exist."
+PRIVATE_NOTE_NOT_FOUND_MESSAGE = "That note does not exist."
 NOT_NOTE_AUTHOR_MESSAGE = "Only the person who wrote a family note can delete it."
 NOT_OWNER_BALANCE_MESSAGE = "Only the owner can change the Claude balance."
 UNEXPECTED_STREAM_FAILURE = "Ved hit an unexpected error while answering."
@@ -185,6 +189,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     )
     application.state.family = family
     application.state.family_notes = FamilyNoteStore(session_factory)
+    application.state.private_notes = PrivateNoteStore(session_factory)
     application.state.conversations = ConversationStore(
         session_factory, history_limit=settings.conversation_history_limit
     )
@@ -722,6 +727,32 @@ async def delete_family_note(note_id: uuid.UUID, user: CurrentUser) -> None:
     except NotNoteAuthorError as error:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail=NOT_NOTE_AUTHOR_MESSAGE
+        ) from error
+
+
+@app.get("/notes")
+async def list_private_notes(user: CurrentUser) -> PrivateNoteList:
+    store: PrivateNoteStore = app.state.private_notes
+    entries = await store.recent(user.id)
+    return PrivateNoteList(
+        notes=[
+            PrivateNoteSummary(
+                id=entry.id, text=entry.text, created_at=entry.created_at
+            )
+            for entry in entries
+        ]
+    )
+
+
+@app.delete("/notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_private_note(note_id: uuid.UUID, user: CurrentUser) -> None:
+    store: PrivateNoteStore = app.state.private_notes
+    try:
+        await store.delete(user.id, note_id)
+    except PrivateNoteNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=PRIVATE_NOTE_NOT_FOUND_MESSAGE,
         ) from error
 
 

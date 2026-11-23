@@ -516,6 +516,8 @@ async def test_a_tool_call_that_already_spoke_is_not_acknowledged(toolbox):
         ("reminders.create", "Setting that up…"),
         ("reminders.reschedule", "Setting that up…"),
         ("memory.search", "Let me look back…"),
+        ("notes.remember", "Saving that for you…"),
+        ("notes.recall", "Let me check your notes…"),
         ("web.search", "Let me check that…"),
         ("web.fetch", "Let me check that…"),
         ("weather.today", DEFAULT_ACKNOWLEDGEMENT),
@@ -946,6 +948,13 @@ def test_the_prompt_teaches_nicknames_privacy_and_family_notes():
     assert "family.remember" in SYSTEM_PROMPT
     assert "family.notes" in SYSTEM_PROMPT
     assert "Say what you saved" in SYSTEM_PROMPT
+
+
+def test_the_prompt_saves_privately_by_default_and_checks_notes_before_giving_up():
+    assert "save it with notes.remember" in SYSTEM_PROMPT
+    assert "only when they clearly say it is for everyone" in SYSTEM_PROMPT
+    assert "notes.recall" in SYSTEM_PROMPT
+    assert "notes are private" in " ".join(SYSTEM_PROMPT.split())
 
 
 @pytest.mark.parametrize(

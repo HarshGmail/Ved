@@ -28,6 +28,8 @@ DEFAULT_EXPOSED_TOOLS = [
     "documents.search",
     "family.remember",
     "family.notes",
+    "notes.remember",
+    "notes.recall",
     "web.search",
     "web.fetch",
     "people.list",

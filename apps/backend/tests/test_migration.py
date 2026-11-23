@@ -17,6 +17,7 @@ pytestmark = pytest.mark.skipif(
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 REVISION_BEFORE_USERS = "0c5bb64b7977"
+REVISION_BEFORE_FAMILY_NOTES = "b41e7c9d2a6f"
 OWNED_TABLES = (
     "people",
     "reminders",
@@ -159,8 +160,21 @@ async def test_family_notes_are_added_and_removed_by_their_own_revision(engine):
     alembic("upgrade", "head")
     assert await scalar(engine, "SELECT to_regclass('family_notes')") == "family_notes"
 
-    alembic("downgrade", "-1")
+    alembic("downgrade", REVISION_BEFORE_FAMILY_NOTES)
     assert await scalar(engine, "SELECT to_regclass('family_notes')") is None
+
+    alembic("upgrade", "head")
+    alembic("check")
+
+
+async def test_private_notes_are_added_and_removed_by_their_own_revision(engine):
+    alembic("upgrade", "head")
+    table = await scalar(engine, "SELECT to_regclass('private_notes')")
+    assert table == "private_notes"
+
+    alembic("downgrade", "-1")
+    assert await scalar(engine, "SELECT to_regclass('private_notes')") is None
+    assert await scalar(engine, "SELECT to_regclass('family_notes')") == "family_notes"
 
     alembic("upgrade", "head")
     alembic("check")

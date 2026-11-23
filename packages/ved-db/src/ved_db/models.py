@@ -33,6 +33,7 @@ SHA256_HEX_LENGTH = 64
 EMAIL_MAX_LENGTH = 320
 CONNECTION_NAME_MAX_LENGTH = 20
 FAMILY_NOTE_MAX_LENGTH = 1000
+PRIVATE_NOTE_MAX_LENGTH = 1000
 
 CONVERSATION_MESSAGE_SEQUENCE = Sequence("conversation_messages_sequence_seq")
 
@@ -238,6 +239,25 @@ class FamilyNote(Base):
         index=True,
         nullable=True,
     )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+
+class PrivateNote(Base):
+    __tablename__ = "private_notes"
+    __table_args__ = (
+        CheckConstraint(
+            f"char_length(text) BETWEEN 1 AND {PRIVATE_NOTE_MAX_LENGTH}",
+            name="ck_private_notes_text_length",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = owner_column("private_notes")
+    text: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )

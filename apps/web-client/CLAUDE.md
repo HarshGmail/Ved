@@ -22,9 +22,11 @@ Next.js 16 App Router + TypeScript PWA. Look topics up in
 - **The open conversation lives in the URL as `?c=<id>`**, written with
   `history.pushState`. `useSearchParams` needs a `<Suspense>` boundary.
 - **Settings has a "What Ved knows" section** (`settings/what-ved-knows.tsx`):
-  who Ved thinks you are, the family list and the shared family notes. It reads
-  `connector.family()` and `connector.familyNotes()`; only your own notes show
-  Delete (`connector.deleteFamilyNote`). The directory is edited in home-admin,
+  who Ved thinks you are, the family list, your private notes and the shared
+  family notes. It reads `connector.family()`, `connector.privateNotes()` and
+  `connector.familyNotes()`; private notes always show Delete
+  (`connector.deletePrivateNote`), family notes only your own
+  (`connector.deleteFamilyNote`). The directory is edited in home-admin,
   never here.
 - **Assistant replies render as markdown** through `markdown-reply.tsx`. Raw
   HTML is never rendered; links open with `rel="noopener noreferrer"`.

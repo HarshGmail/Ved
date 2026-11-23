@@ -228,6 +228,16 @@ class FamilyNoteList(BaseModel):
     notes: list[FamilyNoteSummary]
 
 
+class PrivateNoteSummary(BaseModel):
+    id: uuid.UUID
+    text: str
+    created_at: datetime
+
+
+class PrivateNoteList(BaseModel):
+    notes: list[PrivateNoteSummary]
+
+
 class ConnectionSummary(BaseModel):
     id: uuid.UUID
     name: str

@@ -7,7 +7,7 @@ backend. Look topics up in `../docs/index.json` before searching.
 | --- | --- |
 | `reminders/` | `reminders.create`, `.list`, `.reschedule`, `.complete` |
 | `people/` | `people.remember`, `.list`, `.forget` |
-| `memory/` | `memory.search`, `documents.search`, `documents.list`, `family.remember`, `family.notes` |
+| `memory/` | `memory.search`, `documents.search`, `documents.list`, `family.remember`, `family.notes`, `notes.remember`, `notes.recall` |
 | `web/` | `web.search` (swappable provider), `web.fetch` |
 | `snappy/` | `search_photos`, `list_people`, `photos_of_person`, `list_albums`, `album_photos`, `recent_photos`, `photo_details` (HTTP, not stdio) |
 
@@ -31,6 +31,9 @@ backend. Look topics up in `../docs/index.json` before searching.
 - **`family.*` tools read and write the shared `family_notes` table.** `user_id`
   is the author, not a filter: every note is readable by everyone. There is no
   delete tool; a person deletes their own note from the web page.
+- **`notes.*` tools read and write the per-user `private_notes` table.** `user_id` is
+  the owner and filters every query; no one reads another person's notes. There is
+  no delete tool; a person deletes their own from the web page.
 - **Return Pydantic models, not `dict`**, or the tool has no output schema.
 - **Raise `ToolError` for bad input.** Other exceptions reach the model as a
   generic message it cannot act on.
